@@ -718,3 +718,109 @@ async def get_audit_log(
     """View the admin audit trail."""
     per_page = min(per_page, 200)
     return await admin_service.get_audit_log(db, page, per_page)
+
+
+# ── Simulation / Data Management ──────────────────────────────────────────────
+
+@router.post("/simulation/seed")
+async def seed_simulation_ticks(
+    days_ago: int = 1,
+    admin: User = Depends(require_2fa_session),
+):
+    """
+    Trigger background seeding of the historical_ticks table.
+    Seeds a full trading day (9:15–15:30 IST) for 55+ symbols.
+    Returns immediately; seeding runs as a background task.
+    """
+    import asyncio
+
+    async def _run_seed():
+        try:
+            import sys, os
+            sys.path.append(os.path.join(os.path.dirname(__file__), "..", "tools"))
+            from tools.seed_ticks import seed_historical_ticks
+            await seed_historical_ticks(days_ago=days_ago)
+            logger.info(f"Admin {admin.email}: background seed completed (days_ago={days_ago})")
+        except Exception as e:
+            logger.error(f"Admin seed task failed: {e}", exc_info=True)
+
+    asyncio.create_task(_run_seed())
+    logger.info(f"Admin {admin.email}: initiated tick seeding (days_ago={days_ago})")
+    return {
+        "status": "started",
+        "message": f"Seeding {days_ago} day(s) ago in background. Check server logs for progress.",
+        "days_ago": days_ago,
+    }
+
+
+@router.get("/simulation/status")
+async def simulation_status(
+    admin: User = Depends(require_2fa_session),
+):
+    """Return current simulation engine status and DB tick counts."""
+    from market_data.storage.candle_repository import candle_repository
+    from market_data.replay.replay_engine import replay_engine
+    from market_data.replay.tick_queue import tick_queue
+    from market_data.replay.simulation_clock import simulation_clock
+
+    symbols = await candle_repository.list_symbols()
+    queue_size = await tick_queue.size()
+
+    return {
+        "engine_running": replay_engine._running,
+        "subscribed_symbols": len(replay_engine._subscribed_symbols),
+        "queue_size": queue_size,
+        "simulation_time": simulation_clock.now().isoformat(),
+        "db_symbols_with_ticks": len(symbols),
+        "db_symbol_list": symbols[:50],  # cap at 50 for display
+    }
+
+
+@router.post("/simulation/csv-import")
+async def csv_import(
+    folder: str = "eq",
+    date_str: Optional[str] = None,
+    admin: User = Depends(require_2fa_session),
+):
+    """
+    Import CSV files from the server's data/ directory into the tick database.
+    folder: eq | fno | mcx | bfo | combined
+    date_str: YYYY-MM-DD (optional filter)
+    """
+    from market_data.downloader.csv_loader import csv_loader
+    from datetime import datetime
+
+    date = None
+    if date_str:
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD")
+
+    import asyncio
+
+    async def _run_import():
+        try:
+            if date:
+                count = await csv_loader.load_date(date)
+            else:
+                files = csv_loader.discover_files()
+                count = 0
+                for meta in files:
+                    if folder and meta["folder"] != folder:
+                        continue
+                    count += await csv_loader.load_file(
+                        meta["path"], meta["symbol"], meta["exchange"]
+                    )
+            logger.info(f"Admin {admin.email}: CSV import complete → {count} ticks")
+        except Exception as e:
+            logger.error(f"CSV import task failed: {e}", exc_info=True)
+
+    asyncio.create_task(_run_import())
+    return {
+        "status": "started",
+        "message": "CSV import running in background. Check server logs.",
+        "folder": folder,
+        "date_filter": date_str,
+    }
+
