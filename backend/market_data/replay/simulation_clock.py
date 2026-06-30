@@ -1,10 +1,9 @@
-# simulation_clock.py - Global simulation clock for AlphaSync
-from datetime import datetime, timezone, timedelta
+# simulation_clock.py - Global simulation clock
 import time
 import logging
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
-
 
 class SimulationClock:
     """

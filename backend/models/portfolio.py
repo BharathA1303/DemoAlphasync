@@ -16,7 +16,7 @@ from database.connection import Base
 
 
 def _utcnow():
-    from core.simulation_clock import simulation_clock
+    from market_data.replay.simulation_clock import simulation_clock
     return simulation_clock.now()
 
 

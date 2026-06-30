@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, List, Any
 
 from providers.base import MarketProvider, ProviderHealth, ProviderStatus, Quote
-from services.replay_engine import replay_engine
-from core.simulation_clock import simulation_clock
+from market_data.replay.replay_engine import replay_engine
+from market_data.replay.simulation_clock import simulation_clock
+from market_data.replay.market_publisher import market_publisher
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +38,18 @@ class ReplayProvider(MarketProvider):
         self._started_at = time.time()
         self._status = ProviderStatus.CONNECTED
         
-        # Register callback with the global replay engine
-        replay_engine.register_callback(self._on_engine_tick)
-        logger.info("ReplayProvider started and registered with ReplayEngine")
+        # Set redis client on the publisher
+        market_publisher.set_redis(self._redis)
+        
+        # Start the global replay engine
+        await replay_engine.start()
+        logger.info("ReplayProvider started and ReplayEngine initialized")
 
     async def stop(self) -> None:
         """Stop the provider."""
         self._running = False
         self._status = ProviderStatus.DISCONNECTED
+        await replay_engine.stop()
         logger.info("ReplayProvider stopped")
 
     async def subscribe(self, symbols: List[str]) -> None:
