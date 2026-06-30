@@ -1,14 +1,14 @@
 # ============================================================
-#  AlphaSync DEMO — Docker Compose (Contabo VPS)
+#  AlphaSync SIMULATION — Docker Compose (Contabo VPS)
 #  Domain: demo.alphasync.app
 #  Ports: frontend=3001, backend=8001
-#  Fully isolated — no shared networks/volumes/names with alpha_zebu
+#  Container prefix: simalpha-* (fully isolated from other stacks)
 # ============================================================
 #  Usage:
-#    docker compose -p alphasync-demo -f docker-compose.demo.yml up -d --build
+#    docker compose -p simalpha -f docker-compose.demo.yml up -d --build
 # ============================================================
 
-name: alphasync-demo
+name: simalpha
 
 services:
   # ── Backend API (FastAPI + PostgreSQL) ───────────────────────
@@ -17,11 +17,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.demo
-    container_name: alphasync-demo-backend
+    container_name: simalpha-backend
     ports:
       - "127.0.0.1:8001:8000"
     volumes:
-      - alphasync-demo-uploads:/app/uploads
+      - simalpha-uploads:/app/uploads
       - ./firebase-credentials.json:/app/firebase-credentials.json:ro
     environment:
       - APP_NAME=AlphaSync-Demo
@@ -55,18 +55,18 @@ services:
         condition: service_started
     restart: unless-stopped
     networks:
-      - alphasync-demo-net
+      - simalpha-net
 
-  # ── PostgreSQL (demo-only, isolated) ───────────────────────
+  # ── PostgreSQL (simulation-only, isolated) ───────────────────────
   demo-pg:
     image: postgres:16-alpine
-    container_name: alphasync-demo-pg
+    container_name: simalpha-pg
     environment:
       POSTGRES_DB: ${DEMO_POSTGRES_DB:-alphasync_demo}
       POSTGRES_USER: ${DEMO_POSTGRES_USER:-alphasync_demo}
       POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-alphasync_demo}
     volumes:
-      - alphasync-demo-pgdata:/var/lib/postgresql/data
+      - simalpha-pgdata:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DEMO_POSTGRES_USER:-alphasync_demo} -d ${DEMO_POSTGRES_DB:-alphasync_demo}"]
@@ -74,27 +74,27 @@ services:
       timeout: 5s
       retries: 8
     networks:
-      - alphasync-demo-net
+      - simalpha-net
 
-  # ── Redis (shared price cache — all users read from here) ──
+  # ── Redis (simulation price cache) ──────────────────────────
   demo-redis:
     image: redis:7-alpine
-    container_name: alphasync-demo-redis
+    container_name: simalpha-redis
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --save ""
     volumes:
-      - alphasync-demo-redis:/data
+      - simalpha-redis:/data
     restart: unless-stopped
     networks:
-      - alphasync-demo-net
+      - simalpha-net
 
-  # ── Frontend (React → Nginx → proxies /api to backend) ─────
+  # ── Frontend (React → Nginx → proxies /api to backend) ──────
   # Uses the pre-built dist/ from CI — no npm install on server.
   demo-frontend:
     image: alphasync-demo-frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile.demo.prebuilt
-    container_name: alphasync-demo-frontend
+    container_name: simalpha-frontend
     ports:
       - "127.0.0.1:3001:80"
     depends_on:
@@ -104,14 +104,14 @@ services:
         condition: service_started
     restart: unless-stopped
     networks:
-      - alphasync-demo-net
+      - simalpha-net
 
 volumes:
-  alphasync-demo-uploads:
-  alphasync-demo-pgdata:
-  alphasync-demo-redis:
+  simalpha-uploads:
+  simalpha-pgdata:
+  simalpha-redis:
 
 
 networks:
-  alphasync-demo-net:
+  simalpha-net:
     driver: bridge

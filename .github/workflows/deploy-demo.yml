@@ -286,33 +286,33 @@ jobs:
             fi
 
             echo "=== Updating containers (no full teardown) ==="
-            # Stop old demo containers first so renamed/new services (demo-pg) can be created cleanly.
-            # Volumes are preserved, so SQLite backup files and demo Postgres data remain safe.
-            docker compose -p alphasync-demo -f docker-compose.demo.yml down --remove-orphans || true
-            # If a previous manual/test container is still holding the fixed demo-pg name, remove only the container.
-            # This does NOT delete the PostgreSQL volume.
-            docker rm -f alphasync-demo-pg 2>/dev/null || true
+            # Bring down the old simalpha stack. Volumes are preserved.
+            docker compose -p simalpha -f docker-compose.demo.yml down --remove-orphans || true
+            # Also clean up old alphasync-demo-* containers in case they exist from a previous naming scheme.
+            docker rm -f simalpha-backend simalpha-frontend simalpha-pg simalpha-redis \
+                         alphasync-demo-backend alphasync-demo-frontend alphasync-demo-pg alphasync-demo-redis \
+                         2>/dev/null || true
             GROK_API_KEY="${GROK_API_KEY}" XAI_API_KEY="${XAI_API_KEY}" \
-              docker compose -p alphasync-demo -f docker-compose.demo.yml up -d --no-build --remove-orphans
+              docker compose -p simalpha -f docker-compose.demo.yml up -d --no-build --remove-orphans
 
             echo "=== Waiting for backend health (max 180s) ==="
             HEALTHY=0
             for i in $(seq 1 60); do
-              STATUS=$(docker inspect --format='{{.State.Health.Status}}' alphasync-demo-backend 2>/dev/null || echo "unknown")
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' simalpha-backend 2>/dev/null || echo "unknown")
               if [ "${STATUS}" = "healthy" ]; then
                 echo "Backend healthy after $((i * 3))s!"
                 HEALTHY=1
                 break
               fi
-              STATE=$(docker inspect --format='{{.State.Status}}' alphasync-demo-backend 2>/dev/null || echo "unknown")
+              STATE=$(docker inspect --format='{{.State.Status}}' simalpha-backend 2>/dev/null || echo "unknown")
               if [ "${STATE}" = "exited" ] || [ "${STATE}" = "dead" ]; then
                 echo "ERROR: Backend container crashed. Last 100 log lines:"
-                docker logs alphasync-demo-backend --tail 100 2>&1
+                docker logs simalpha-backend --tail 100 2>&1
                 exit 1
               fi
               if [ "${STATUS}" = "unhealthy" ]; then
                 echo "ERROR: Backend marked unhealthy. Last 100 log lines:"
-                docker logs alphasync-demo-backend --tail 100 2>&1
+                docker logs simalpha-backend --tail 100 2>&1
                 exit 1
               fi
               echo "  waiting... ($((i * 3))s elapsed, status=${STATUS} state=${STATE})"
@@ -321,7 +321,7 @@ jobs:
 
             if [ "${HEALTHY}" -eq 0 ]; then
               echo "ERROR: Backend did not become healthy in 180s. Last 100 log lines:"
-              docker logs alphasync-demo-backend --tail 100 2>&1
+              docker logs simalpha-backend --tail 100 2>&1
               exit 1
             fi
 
@@ -347,7 +347,7 @@ jobs:
 
             echo ""
             echo "=== Final status ==="
-            docker compose -p alphasync-demo -f docker-compose.demo.yml ps
+            docker compose -p simalpha -f docker-compose.demo.yml ps
             docker ps --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"
 
             # Clean up dangling images in background
