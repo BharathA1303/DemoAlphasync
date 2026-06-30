@@ -1,0 +1,1012 @@
+/**
+ * ZebuLiveChart — Pure HTML5 Canvas candlestick chart.
+ *
+ * Zero dependency on lightweight-charts or TradingView.
+ * All OHLCV data comes from Zebu REST API (/TPSeries, /EODChartData).
+ * Live candle updates come from Zebu WebSocket ticks via the market store.
+ *
+ * Features:
+ *  - Historical candles rendered on HTML5 Canvas 2D
+ *  - Real-time current candle updates from live tick data
+ *  - Horizontal/vertical crosshair with price/time labels
+ *  - Live price line (dashed)
+ *  - Volume histogram at bottom
+ *  - Mouse wheel zoom, click-drag pan
+ *  - Price scale (right) + time scale (bottom)
+ *  - Indicator overlays (EMA, SMA, BB, VWAP, SuperTrend, Ichimoku)
+ *  - Drawing tools (horizontal line)
+ *  - Responsive resize via ResizeObserver
+ *  - ZEBU LIVE badge
+ */
+
+import { useEffect, useRef, useState, useCallback, memo } from 'react';
+import { HiTrendingUp, HiTrendingDown, HiMinusCircle } from 'react-icons/hi';
+import { useTheme } from '../../context/ThemeContext';
+import { useMarketStore } from '../../store/useMarketStore';
+import { cn } from '../../utils/cn';
+import Skeleton from '../ui/Skeleton';
+import { CHART_PERIODS } from '../../utils/constants';
+import {
+    sma, ema, bollingerBands, vwap,
+    supertrend, ichimoku,
+} from '../../strategy/indicators';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const TREND_STYLE = {
+    BULLISH: { cls: 'signal-pill signal-pill-bullish', icon: '▲', label: 'BULLISH' },
+    BEARISH: { cls: 'signal-pill signal-pill-bearish', icon: '▼', label: 'BEARISH' },
+    NEUTRAL: { cls: 'signal-pill signal-pill-neutral', icon: '—', label: 'NEUTRAL' },
+};
+
+const INDICATOR_DEFS = {
+    ema20: { label: 'EMA 20', group: 'Moving Averages', color: '#F59E0B', width: 1.5 },
+    ema50: { label: 'EMA 50', group: 'Moving Averages', color: '#8B5CF6', width: 1.5 },
+    ema200: { label: 'EMA 200', group: 'Moving Averages', color: '#EC4899', width: 1.5 },
+    sma20: { label: 'SMA 20', group: 'Moving Averages', color: '#06B6D4', width: 1.5 },
+    sma50: { label: 'SMA 50', group: 'Moving Averages', color: '#14B8A6', width: 1.5 },
+    sma200: { label: 'SMA 200', group: 'Moving Averages', color: '#F472B6', width: 1.5 },
+    bb: { label: 'Bollinger Bands', group: 'Bands', color: '#f59e0b', width: 1 },
+    vwap: { label: 'VWAP', group: 'Volume', color: '#A855F7', width: 2 },
+    supertrend: { label: 'SuperTrend', group: 'Trend', color: '#10B981', width: 2 },
+    ichimoku: { label: 'Ichimoku Cloud', group: 'Trend', color: '#F97316', width: 1 },
+};
+
+const UP_COLOR = '#26A69A';
+const DOWN_COLOR = '#EF5350';
+const UP_VOL_COLOR = 'rgba(38,166,154,0.35)';
+const DOWN_VOL_COLOR = 'rgba(239,83,80,0.35)';
+const GRID_COLOR_DARK = 'rgba(255,255,255,0.04)';
+const GRID_COLOR_LIGHT = 'rgba(0,0,0,0.06)';
+const TEXT_COLOR = '#9ca3af';
+const CROSSHAIR_COLOR = 'rgba(99,102,241,0.5)';
+const LIVE_LINE_COLOR = '#f59e0b';
+const PRICE_SCALE_W = 72;
+const TIME_SCALE_H = 28;
+const CANDLE_MIN_W = 2;
+const CANDLE_MAX_W = 30;
+const VOLUME_FRACTION = 0.18;
+
+// ── Indicator computation ─────────────────────────────────────────────────────
+
+function computeOverlayLines(id, candles) {
+    const closes = candles.map(c => c.close);
+    const times = candles.map(c => c.time);
+    const toLine = (vals, clr, w = 1.5) => ({ values: vals, times, color: clr, width: w });
+
+    switch (id) {
+        case 'ema20': return [toLine(ema(closes, 20), INDICATOR_DEFS.ema20.color, INDICATOR_DEFS.ema20.width)];
+        case 'ema50': return [toLine(ema(closes, 50), INDICATOR_DEFS.ema50.color, INDICATOR_DEFS.ema50.width)];
+        case 'ema200': return [toLine(ema(closes, 200), INDICATOR_DEFS.ema200.color, INDICATOR_DEFS.ema200.width)];
+        case 'sma20': return [toLine(sma(closes, 20), INDICATOR_DEFS.sma20.color, INDICATOR_DEFS.sma20.width)];
+        case 'sma50': return [toLine(sma(closes, 50), INDICATOR_DEFS.sma50.color, INDICATOR_DEFS.sma50.width)];
+        case 'sma200': return [toLine(sma(closes, 200), INDICATOR_DEFS.sma200.color, INDICATOR_DEFS.sma200.width)];
+        case 'vwap': return [toLine(vwap(candles), INDICATOR_DEFS.vwap.color, INDICATOR_DEFS.vwap.width)];
+        case 'bb': {
+            const { upper, middle, lower } = bollingerBands(closes, 20, 2);
+            return [toLine(upper, '#fbbf24', 1), toLine(middle, '#f59e0b', 1), toLine(lower, '#fbbf24', 1)];
+        }
+        case 'supertrend': {
+            const { supertrend: st, direction: dir } = supertrend(candles, 10, 3);
+            const bull = st.map((v, i) => dir[i] === 1 ? v : NaN);
+            const bear = st.map((v, i) => dir[i] !== 1 ? v : NaN);
+            return [toLine(bull, '#10B981', 2), toLine(bear, '#EF4444', 2)];
+        }
+        case 'ichimoku': {
+            const { tenkan, kijun, senkouA, senkouB } = ichimoku(candles, 9, 26, 52);
+            return [toLine(tenkan, '#2DD4BF', 1), toLine(kijun, '#F87171', 1), toLine(senkouA, '#A3E635', 1), toLine(senkouB, '#FB923C', 1)];
+        }
+        default: return [];
+    }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getCandleBucketTime(period, nowEpoch) {
+    const cfg = CHART_PERIODS[period];
+    if (!cfg) return nowEpoch;
+    const interval = cfg.interval;
+    if (interval === '1d') {
+        const d = new Date(nowEpoch * 1000);
+        d.setHours(0, 0, 0, 0);
+        return Math.floor(d.getTime() / 1000);
+    }
+    const mins = { '1m': 1, '3m': 3, '5m': 5, '10m': 10, '15m': 15, '30m': 30, '1h': 60, '2h': 120, '4h': 240 }[interval] || 1;
+    return Math.floor(nowEpoch / (mins * 60)) * (mins * 60);
+}
+
+function fmtPrice(v) {
+    if (v >= 100000) return v.toFixed(0);
+    if (v >= 1000) return v.toFixed(1);
+    return v.toFixed(2);
+}
+
+function fmtTimeLabel(epoch, isIntraday) {
+    const d = new Date(epoch * 1000);
+    if (isIntraday) return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+}
+
+function niceStep(range, targetTicks) {
+    const rough = range / targetTicks;
+    const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+    const res = rough / mag;
+    let nice;
+    if (res <= 1.5) nice = 1; else if (res <= 3) nice = 2; else if (res <= 7) nice = 5; else nice = 10;
+    return nice * mag;
+}
+
+// ── Toolbar sub-components ────────────────────────────────────────────────────
+
+function TimeframeBar({ period, onPeriodChange }) {
+    return (
+        <div className="flex items-center gap-0.5">
+            {Object.entries(CHART_PERIODS).map(([key, cfg]) => (
+                <button key={key} onClick={() => onPeriodChange(key)}
+                    className={cn('px-2 py-1 text-[11px] font-semibold font-price rounded transition-colors',
+                        period === key ? 'bg-primary-500/20 text-primary-600' : 'text-gray-500 hover:text-gray-700 hover:bg-surface-800/60')}>
+                    {cfg.label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+function IndicatorMenu({ active, onToggle, menuRef }) {
+    const groups = {};
+    Object.entries(INDICATOR_DEFS).forEach(([id, def]) => { (groups[def.group] = groups[def.group] || []).push({ id, ...def }); });
+    return (
+        <div ref={menuRef} className="absolute top-full left-0 mt-1 w-56 bg-surface-800 border border-edge/10 rounded-xl shadow-panel z-50 animate-slide-in overflow-hidden"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}>
+            <div className="px-3 py-2 border-b border-edge/5 text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Indicators</div>
+            <div className="max-h-72 overflow-y-auto py-1">
+                {Object.entries(groups).map(([group, items]) => (
+                    <div key={group}>
+                        <div className="px-3 pt-2 pb-1 text-[10px] text-gray-600 uppercase tracking-wider font-medium">{group}</div>
+                        {items.map(ind => (
+                            <button key={ind.id} onClick={() => onToggle(ind.id)}
+                                className="w-full flex items-center gap-2.5 px-3 py-1.5 hover:bg-overlay/5 transition-colors text-left">
+                                <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0 border"
+                                    style={{ backgroundColor: active.has(ind.id) ? ind.color : 'transparent', borderColor: ind.color }} />
+                                <span className={cn('text-xs', active.has(ind.id) ? 'text-heading font-medium' : 'text-gray-400')}>{ind.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                ))}
+            </div>
+            <div className="px-3 py-1.5 border-t border-edge/5">
+                <button onClick={() => active.forEach(id => onToggle(id))} className="text-[11px] text-gray-600 hover:text-gray-400 transition-colors">Clear all</button>
+            </div>
+        </div>
+    );
+}
+
+function ToolsMenu({ activeTool, onSelect, onClose, menuRef }) {
+    const tools = [
+        { id: 'crosshair', label: 'Crosshair', icon: '＋' },
+        { id: 'hline', label: 'Horizontal Line', icon: '─' },
+    ];
+    return (
+        <div ref={menuRef} className="absolute top-full left-0 mt-1 w-44 bg-surface-800 border border-edge/10 rounded-xl shadow-panel z-50 animate-slide-in overflow-hidden">
+            <div className="px-3 py-2 border-b border-edge/5 text-[11px] text-gray-500 font-semibold uppercase tracking-wider">Tools</div>
+            <div className="py-1">
+                {tools.map(t => (
+                    <button key={t.id} onClick={() => { onSelect(activeTool === t.id ? null : t.id); onClose(); }}
+                        className={cn('w-full flex items-center gap-2.5 px-3 py-2 hover:bg-overlay/5 transition-colors text-left', activeTool === t.id && 'bg-primary-500/10')}>
+                        <span className="w-5 text-center text-sm text-gray-400">{t.icon}</span>
+                        <span className={cn('text-xs', activeTool === t.id ? 'text-primary-600 font-medium' : 'text-gray-400')}>{t.label}</span>
+                    </button>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function ActivePills({ active, onRemove }) {
+    if (active.size === 0) return null;
+    return (
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+            {[...active].map(id => {
+                const def = INDICATOR_DEFS[id];
+                if (!def) return null;
+                return (
+                    <span key={id} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border whitespace-nowrap"
+                        style={{ borderColor: def.color + '40', color: def.color, backgroundColor: def.color + '10' }}>
+                        {def.label}
+                        <button onClick={() => onRemove(id)} className="hover:opacity-60 leading-none">×</button>
+                    </span>
+                );
+            })}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── Canvas chart renderer class ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+class CanvasChartRenderer {
+    constructor(canvas, opts = {}) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.dpr = window.devicePixelRatio || 1;
+
+        this.candles = [];
+        this.overlays = [];
+        this.hLines = [];
+
+        this.scrollOffset = 0;
+        this.candleWidth = 8;
+        this.gapRatio = 0.3;
+
+        this.mouseX = -1;
+        this.mouseY = -1;
+        this.isDragging = false;
+        this.dragStartX = 0;
+        this.dragStartOffset = 0;
+
+        this.isDark = opts.isDark !== false;
+        this.livePriceValue = null;
+        this._period = '1D';
+        this._activeTool = null;
+        this._onHLineAdded = null;
+
+        this._w = 0;
+        this._h = 0;
+        this._chartTop = 8;
+        this._chartRight = 0;
+        this._chartBottom = 0;
+        this._chartW = 0;
+        this._chartH = 0;
+        this._bound = {};
+        this._rafId = null;
+    }
+
+    attach() {
+        this._recalcLayout();
+        this._bound.mouseMove = this._onMouseMove.bind(this);
+        this._bound.mouseDown = this._onMouseDown.bind(this);
+        this._bound.mouseUp = this._onMouseUp.bind(this);
+        this._bound.mouseLeave = this._onMouseLeave.bind(this);
+        this._bound.wheel = this._onWheel.bind(this);
+        this._bound.click = this._onClick.bind(this);
+        this._bound.touchStart = this._onTouchStart.bind(this);
+        this._bound.touchMove = this._onTouchMove.bind(this);
+        this._bound.touchEnd = this._onTouchEnd.bind(this);
+
+        this.canvas.addEventListener('mousemove', this._bound.mouseMove);
+        this.canvas.addEventListener('mousedown', this._bound.mouseDown);
+        this.canvas.addEventListener('mouseup', this._bound.mouseUp);
+        this.canvas.addEventListener('mouseleave', this._bound.mouseLeave);
+        this.canvas.addEventListener('wheel', this._bound.wheel, { passive: false });
+        this.canvas.addEventListener('click', this._bound.click);
+        this.canvas.addEventListener('touchstart', this._bound.touchStart, { passive: false });
+        this.canvas.addEventListener('touchmove', this._bound.touchMove, { passive: false });
+        this.canvas.addEventListener('touchend', this._bound.touchEnd);
+    }
+
+    detach() {
+        if (this._rafId) cancelAnimationFrame(this._rafId);
+        const c = this.canvas;
+        c.removeEventListener('mousemove', this._bound.mouseMove);
+        c.removeEventListener('mousedown', this._bound.mouseDown);
+        c.removeEventListener('mouseup', this._bound.mouseUp);
+        c.removeEventListener('mouseleave', this._bound.mouseLeave);
+        c.removeEventListener('wheel', this._bound.wheel);
+        c.removeEventListener('click', this._bound.click);
+        c.removeEventListener('touchstart', this._bound.touchStart);
+        c.removeEventListener('touchmove', this._bound.touchMove);
+        c.removeEventListener('touchend', this._bound.touchEnd);
+    }
+
+    resize(w, h) {
+        if (w <= 0 || h <= 0) return; // prevent degenerate canvas
+        this.canvas.width = Math.round(w * this.dpr);
+        this.canvas.height = Math.round(h * this.dpr);
+        this.canvas.style.width = w + 'px';
+        this.canvas.style.height = h + 'px';
+        this._recalcLayout();
+        this.render();
+    }
+
+    _recalcLayout() {
+        this._w = this.canvas.width / this.dpr;
+        this._h = this.canvas.height / this.dpr;
+        // On narrow viewports, reduce the price scale width to keep charts usable
+        const priceW = this._w < 200 ? 48 : PRICE_SCALE_W;
+        this._chartRight = Math.max(0, this._w - priceW);
+        this._chartBottom = Math.max(this._chartTop, this._h - TIME_SCALE_H);
+        this._chartW = this._chartRight;
+        this._chartH = this._chartBottom - this._chartTop;
+    }
+
+    // ── Data setters ───────────────────────────────────────────────
+
+    setCandles(c) { this.candles = c; this.render(); }
+    resetScroll() { this.scrollOffset = 0; }
+    setOverlays(o) { this.overlays = o; this.render(); }
+    setHLines(l) { this.hLines = l; this.render(); }
+    setLivePrice(p) { this.livePriceValue = p; this.render(); }
+    setPeriod(p) { this._period = p; }
+    setActiveTool(t) { this._activeTool = t; this.canvas.style.cursor = t === 'hline' ? 'crosshair' : 'default'; }
+    onHLineAdded(cb) { this._onHLineAdded = cb; }
+
+    // ── Core rendering ─────────────────────────────────────────────
+
+    render() {
+        if (this._rafId) cancelAnimationFrame(this._rafId);
+        this._rafId = requestAnimationFrame(() => this._draw());
+    }
+
+    _draw() {
+        const ctx = this.ctx;
+        const dpr = this.dpr;
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, this._w, this._h);
+
+        // Skip drawing if no data or canvas has no usable area
+        if (this.candles.length === 0 || this._chartW <= 0 || this._chartH <= 0) {
+            ctx.restore(); return;
+        }
+
+        const totalSlotW = this.candleWidth * (1 + this.gapRatio);
+        const visibleCount = Math.max(1, Math.floor(this._chartW / totalSlotW));
+        const endIdx = this.candles.length - 1 - this.scrollOffset;
+        const startIdx = Math.max(0, endIdx - visibleCount + 1);
+        const actualEnd = Math.min(endIdx, this.candles.length - 1);
+        if (startIdx > actualEnd) { ctx.restore(); return; }
+
+        const visible = this.candles.slice(startIdx, actualEnd + 1);
+
+        // ── Price & volume range ───────────────────────────────────
+        let minP = Infinity, maxP = -Infinity, maxVol = 0;
+        for (const c of visible) {
+            if (c.low < minP) minP = c.low;
+            if (c.high > maxP) maxP = c.high;
+            if ((c.volume || 0) > maxVol) maxVol = c.volume || 0;
+        }
+        for (const ov of this.overlays) {
+            for (let i = startIdx; i <= actualEnd && i < ov.values.length; i++) {
+                const v = ov.values[i];
+                if (!isNaN(v) && isFinite(v)) { if (v < minP) minP = v; if (v > maxP) maxP = v; }
+            }
+        }
+        if (this.livePriceValue != null) {
+            if (this.livePriceValue < minP) minP = this.livePriceValue;
+            if (this.livePriceValue > maxP) maxP = this.livePriceValue;
+        }
+        const pRange = maxP - minP || 1;
+        const pad = pRange * 0.08;
+        minP -= pad; maxP += pad;
+        const adjRange = maxP - minP;
+
+        const volAreaH = this._chartH * VOLUME_FRACTION;
+        const candleAreaH = this._chartH - volAreaH;
+
+        const priceToY = (price) => this._chartTop + ((maxP - price) / adjRange) * candleAreaH;
+        const idxToX = (gi) => (gi - startIdx) * totalSlotW + totalSlotW / 2;
+
+        // ── Grid ───────────────────────────────────────────────────
+        const gc = this.isDark ? GRID_COLOR_DARK : GRID_COLOR_LIGHT;
+        ctx.strokeStyle = gc;
+        ctx.lineWidth = 1;
+
+        const pStep = niceStep(adjRange, 6);
+        const firstP = Math.ceil(minP / pStep) * pStep;
+        ctx.font = '11px Inter, system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        for (let p = firstP; p <= maxP; p += pStep) {
+            const y = Math.round(priceToY(p)) + 0.5;
+            if (y < this._chartTop || y > this._chartBottom) continue;
+            ctx.strokeStyle = gc;
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this._chartRight, y); ctx.stroke();
+            ctx.fillStyle = TEXT_COLOR;
+            ctx.fillText(fmtPrice(p), this._chartRight + 6, y);
+        }
+
+        const isIntraday = CHART_PERIODS[this._period]?.group === 'intraday';
+        const tlEvery = Math.max(1, Math.floor(visible.length / 8));
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        for (let i = 0; i < visible.length; i++) {
+            if (i % tlEvery !== 0 && i !== visible.length - 1) continue;
+            const x = Math.round(idxToX(startIdx + i)) + 0.5;
+            ctx.strokeStyle = gc;
+            ctx.beginPath(); ctx.moveTo(x, this._chartTop); ctx.lineTo(x, this._chartBottom); ctx.stroke();
+            ctx.fillStyle = TEXT_COLOR;
+            ctx.fillText(fmtTimeLabel(visible[i].time, isIntraday), x, this._chartBottom + 6);
+        }
+
+        // ── Volume bars ────────────────────────────────────────────
+        if (maxVol > 0) {
+            for (let i = 0; i < visible.length; i++) {
+                const c = visible[i];
+                const vol = c.volume || 0;
+                if (vol <= 0) continue;
+                const barH = (vol / maxVol) * volAreaH;
+                const x = idxToX(startIdx + i) - this.candleWidth / 2;
+                ctx.fillStyle = c.close >= c.open ? UP_VOL_COLOR : DOWN_VOL_COLOR;
+                ctx.fillRect(x, this._chartBottom - barH, this.candleWidth, barH);
+            }
+        }
+
+        // ── Candlesticks ───────────────────────────────────────────
+        for (let i = 0; i < visible.length; i++) {
+            const c = visible[i];
+            const cx = idxToX(startIdx + i);
+            const isUp = c.close >= c.open;
+            const color = isUp ? UP_COLOR : DOWN_COLOR;
+
+            // Wick
+            const wickX = Math.round(cx) + 0.5;
+            ctx.strokeStyle = color; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(wickX, priceToY(c.high)); ctx.lineTo(wickX, priceToY(c.low)); ctx.stroke();
+
+            // Body
+            const bTop = priceToY(isUp ? c.close : c.open);
+            const bBot = priceToY(isUp ? c.open : c.close);
+            const bH = Math.max(1, bBot - bTop);
+            ctx.fillStyle = color;
+            ctx.fillRect(cx - this.candleWidth / 2, bTop, this.candleWidth, bH);
+        }
+
+        // ── Indicator overlay lines ────────────────────────────────
+        for (const ov of this.overlays) {
+            ctx.strokeStyle = ov.color;
+            ctx.lineWidth = ov.width || 1.5;
+            ctx.beginPath();
+            let started = false;
+            for (let i = startIdx; i <= actualEnd && i < ov.values.length; i++) {
+                const v = ov.values[i];
+                if (isNaN(v) || !isFinite(v)) { started = false; continue; }
+                const x = idxToX(i), y = priceToY(v);
+                if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // ── Horizontal user lines ──────────────────────────────────
+        for (const hl of this.hLines) {
+            const y = Math.round(priceToY(hl.price)) + 0.5;
+            if (y < this._chartTop || y > this._chartBottom) continue;
+            ctx.strokeStyle = hl.color || '#f59e0b';
+            ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this._chartRight, y); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = hl.color || '#f59e0b';
+            ctx.font = '10px Inter, system-ui, sans-serif';
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(fmtPrice(hl.price), this._chartRight + 4, y);
+        }
+
+        // ── Live price line ────────────────────────────────────────
+        if (this.livePriceValue != null) {
+            const ly = Math.round(priceToY(this.livePriceValue)) + 0.5;
+            if (ly >= this._chartTop && ly <= this._chartBottom) {
+                ctx.strokeStyle = LIVE_LINE_COLOR; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+                ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(this._chartRight, ly); ctx.stroke();
+                ctx.setLineDash([]);
+
+                const lbl = fmtPrice(this.livePriceValue);
+                ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+                const tw = ctx.measureText(lbl).width + 10;
+                ctx.fillStyle = LIVE_LINE_COLOR;
+                ctx.fillRect(this._chartRight, ly - 9, Math.max(tw, this._w - this._chartRight), 18);
+                ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                ctx.fillText(lbl, this._chartRight + 5, ly);
+            }
+        }
+
+        // ── Crosshair ─────────────────────────────────────────────
+        if (this.mouseX >= 0 && this.mouseX <= this._chartRight &&
+            this.mouseY >= this._chartTop && this.mouseY <= this._chartBottom) {
+            ctx.strokeStyle = CROSSHAIR_COLOR; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+            const mx = Math.round(this.mouseX) + 0.5;
+            const my = Math.round(this.mouseY) + 0.5;
+            ctx.beginPath(); ctx.moveTo(mx, this._chartTop); ctx.lineTo(mx, this._chartBottom); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, my); ctx.lineTo(this._chartRight, my); ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Price at cursor
+            const cursorP = maxP - ((this.mouseY - this._chartTop) / candleAreaH) * adjRange;
+            ctx.fillStyle = 'rgba(99,102,241,0.85)';
+            const plabel = fmtPrice(cursorP);
+            ctx.font = '11px Inter, system-ui, sans-serif';
+            const plw = ctx.measureText(plabel).width + 10;
+            ctx.fillRect(this._chartRight, my - 9, plw, 18);
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(plabel, this._chartRight + 5, my);
+
+            // Time label at cursor (account for half-slot offset in idxToX)
+            const nearIdx = Math.max(startIdx, Math.min(actualEnd,
+                Math.round((this.mouseX - totalSlotW / 2) / totalSlotW) + startIdx));
+            if (nearIdx >= 0 && nearIdx < this.candles.length) {
+                const tl = fmtTimeLabel(this.candles[nearIdx].time, isIntraday);
+                ctx.font = '10px Inter, system-ui, sans-serif';
+                const tlw = ctx.measureText(tl).width + 10;
+                ctx.fillStyle = 'rgba(99,102,241,0.85)';
+                ctx.fillRect(mx - tlw / 2, this._chartBottom, tlw, TIME_SCALE_H);
+                ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                ctx.fillText(tl, mx, this._chartBottom + 6);
+            }
+
+            // OHLCV bar
+            if (nearIdx >= startIdx && nearIdx <= actualEnd) {
+                const c = this.candles[nearIdx];
+                const isUp = c.close >= c.open;
+                ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+                ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+                const y0 = this._chartTop + 4;
+                const items = [
+                    { t: `O ${fmtPrice(c.open)}`, c: isUp ? UP_COLOR : DOWN_COLOR },
+                    { t: `H ${fmtPrice(c.high)}`, c: isUp ? UP_COLOR : DOWN_COLOR },
+                    { t: `L ${fmtPrice(c.low)}`, c: isUp ? UP_COLOR : DOWN_COLOR },
+                    { t: `C ${fmtPrice(c.close)}`, c: isUp ? UP_COLOR : DOWN_COLOR },
+                    { t: `V ${(c.volume || 0).toLocaleString()}`, c: TEXT_COLOR },
+                ];
+                let xp = 8;
+                for (const lb of items) {
+                    ctx.fillStyle = lb.c;
+                    ctx.fillText(lb.t, xp, y0);
+                    xp += ctx.measureText(lb.t).width + 12;
+                }
+            }
+        }
+
+        // ── Border lines ───────────────────────────────────────────
+        const bc = this.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)';
+        ctx.strokeStyle = bc; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(this._chartRight + 0.5, 0); ctx.lineTo(this._chartRight + 0.5, this._h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, this._chartBottom + 0.5); ctx.lineTo(this._w, this._chartBottom + 0.5); ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // ── Mouse ──────────────────────────────────────────────────────
+
+    _pos(e) {
+        const r = this.canvas.getBoundingClientRect();
+        return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+
+    _onMouseMove(e) {
+        const p = this._pos(e);
+        this.mouseX = p.x; this.mouseY = p.y;
+        if (this.isDragging) {
+            const dx = e.clientX - this.dragStartX;
+            const totalSlotW = this.candleWidth * (1 + this.gapRatio);
+            const shift = Math.round(dx / totalSlotW);
+            this.scrollOffset = Math.max(0, Math.min(this.candles.length - 5, this.dragStartOffset + shift));
+        }
+        this.render();
+    }
+
+    _onMouseDown(e) {
+        if (e.button !== 0 || this._activeTool === 'hline') return;
+        this.isDragging = true;
+        this.dragStartX = e.clientX;
+        this.dragStartOffset = this.scrollOffset;
+        this.canvas.style.cursor = 'grabbing';
+    }
+
+    _onMouseUp() {
+        this.isDragging = false;
+        this.canvas.style.cursor = this._activeTool === 'hline' ? 'crosshair' : 'default';
+    }
+
+    _onMouseLeave() { this.mouseX = -1; this.mouseY = -1; this.isDragging = false; this.canvas.style.cursor = 'default'; this.render(); }
+
+    _onWheel(e) {
+        e.preventDefault();
+        const d = e.deltaY > 0 ? -1 : 1;
+        this.candleWidth = Math.max(CANDLE_MIN_W, Math.min(CANDLE_MAX_W, this.candleWidth + d));
+        this.render();
+    }
+
+    _onClick(e) {
+        if (this._activeTool !== 'hline' || this.candles.length === 0) return;
+        const p = this._pos(e);
+        if (p.x > this._chartRight || p.y < this._chartTop || p.y > this._chartBottom) return;
+
+        // Recalc price range for click
+        const totalSlotW = this.candleWidth * (1 + this.gapRatio);
+        const vc = Math.max(1, Math.floor(this._chartW / totalSlotW));
+        const ei = this.candles.length - 1 - this.scrollOffset;
+        const si = Math.max(0, ei - vc + 1);
+        const ae = Math.min(ei, this.candles.length - 1);
+        const vis = this.candles.slice(si, ae + 1);
+        let lo = Infinity, hi = -Infinity;
+        for (const c of vis) { if (c.low < lo) lo = c.low; if (c.high > hi) hi = c.high; }
+        const rng = hi - lo || 1; const pd = rng * 0.08; lo -= pd; hi += pd;
+        const adj = hi - lo;
+        const caH = this._chartH - this._chartH * VOLUME_FRACTION;
+        const price = hi - ((p.y - this._chartTop) / caH) * adj;
+        if (this._onHLineAdded) this._onHLineAdded(price);
+    }
+
+    // ── Touch (mobile) ─────────────────────────────────────────────
+
+    _onTouchStart(e) {
+        if (e.touches.length === 1) {
+            e.preventDefault();
+            const t = e.touches[0];
+            this.isDragging = true;
+            this.dragStartX = t.clientX;
+            this.dragStartOffset = this.scrollOffset;
+        }
+    }
+
+    _onTouchMove(e) {
+        if (e.touches.length === 1 && this.isDragging) {
+            e.preventDefault();
+            const t = e.touches[0];
+            const dx = t.clientX - this.dragStartX;
+            const totalSlotW = this.candleWidth * (1 + this.gapRatio);
+            const shift = Math.round(dx / totalSlotW);
+            this.scrollOffset = Math.max(0, Math.min(this.candles.length - 5, this.dragStartOffset + shift));
+            this.render();
+        } else if (e.touches.length === 2) {
+            // Pinch zoom
+            e.preventDefault();
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            if (this._lastPinchDist) {
+                const delta = dist - this._lastPinchDist;
+                this.candleWidth = Math.max(CANDLE_MIN_W, Math.min(CANDLE_MAX_W, this.candleWidth + delta * 0.05));
+                this.render();
+            }
+            this._lastPinchDist = dist;
+        }
+    }
+
+    _onTouchEnd() { this.isDragging = false; this._lastPinchDist = null; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── ZebuLiveChart React component ─────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ZebuLiveChart = memo(function ZebuLiveChart({
+    candles = [],
+    isLoading = false,
+    trendData = null,
+    period = '1D',
+    onPeriodChange,
+    symbol = '',
+    zeroLossTrend = null,
+}) {
+    const { theme } = useTheme();
+    const containerRef = useRef(null);
+    const rendererRef = useRef(null);
+    const roRef = useRef(null);
+    const candlesRef = useRef([]);
+    const candlesPropRef = useRef(candles); // always-current candles for use in init effect
+    candlesPropRef.current = candles;
+
+    const liveQuote = useMarketStore((s) => s.symbols[symbol] ?? null);
+    const wsStatus = useMarketStore((s) => s.wsStatus);
+
+    const [activeIndicators, setActiveIndicators] = useState(new Set());
+    const [showIndicatorMenu, setShowIndicatorMenu] = useState(false);
+    const [showToolsMenu, setShowToolsMenu] = useState(false);
+    const [activeTool, setActiveTool] = useState(null);
+    const [hLines, setHLines] = useState([]);
+    const [livePrice, setLivePrice] = useState(null);
+
+    // Bumped when the renderer is (re)created — forces candles effect to re-run
+    const [rendererVersion, setRendererVersion] = useState(0);
+
+    const menuRef = useRef(null);
+    const indicatorMenuRef = useRef(null);
+    const toolsMenuRef = useRef(null);
+    useEffect(() => {
+        if (!showIndicatorMenu && !showToolsMenu) return;
+        const h = (e) => {
+            // Don't close if the click is inside the toolbar, indicator menu, or tools menu
+            if (menuRef.current && menuRef.current.contains(e.target)) return;
+            if (indicatorMenuRef.current && indicatorMenuRef.current.contains(e.target)) return;
+            if (toolsMenuRef.current && toolsMenuRef.current.contains(e.target)) return;
+            setShowIndicatorMenu(false);
+            setShowToolsMenu(false);
+        };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, [showIndicatorMenu, showToolsMenu]);
+
+    const toggleIndicator = useCallback((id) => {
+        setActiveIndicators(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+    }, []);
+
+    // ── Initialize Canvas renderer (once) ─────────────────────────────────────
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const container = containerRef.current;
+        const canvas = document.createElement('canvas');
+        canvas.style.display = 'block';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        container.appendChild(canvas);
+
+        const renderer = new CanvasChartRenderer(canvas, { isDark: theme === 'dark' });
+        renderer.attach();
+        renderer.setPeriod(period);
+        renderer.onHLineAdded((price) => setHLines(prev => [...prev, { price, color: '#f59e0b' }]));
+
+        // Initial size from container
+        const rect = container.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+            renderer.resize(rect.width, rect.height);
+        }
+
+        rendererRef.current = renderer;
+
+        // Feed candles immediately if already available (handles React 18
+        // StrictMode re-mounts and fast initial loads where candles arrive
+        // before or during mount)
+        const latestCandles = candlesPropRef.current;
+        if (latestCandles.length > 0) {
+            candlesRef.current = latestCandles.map(c => ({ ...c }));
+            renderer.resetScroll();
+            renderer.setCandles(candlesRef.current);
+        }
+
+        // Fallback resize — some browsers delay initial ResizeObserver callback,
+        // and CSS grid / flexbox may not have computed final layout yet at mount.
+        // Try again on the next animation frame to catch deferred layouts.
+        const fallbackRaf = requestAnimationFrame(() => {
+            const r = container.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+                renderer.resize(r.width, r.height);
+            }
+        });
+
+        const ro = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                if (width > 0 && height > 0) renderer.resize(width, height);
+            }
+        });
+        ro.observe(container);
+        roRef.current = ro;
+
+        // Signal that the renderer was created so candles effect re-runs
+        setRendererVersion(v => v + 1);
+
+        return () => {
+            cancelAnimationFrame(fallbackRaf);
+            ro.disconnect();
+            renderer.detach();
+            if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+            rendererRef.current = null;
+        };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Theme sync ────────────────────────────────────────────────────────────
+    useEffect(() => { if (rendererRef.current) { rendererRef.current.isDark = theme === 'dark'; rendererRef.current.render(); } }, [theme]);
+
+    // ── Period sync ───────────────────────────────────────────────────────────
+    useEffect(() => { if (rendererRef.current) rendererRef.current.setPeriod(period); }, [period]);
+
+    // ── Feed historical candles ───────────────────────────────────────────────
+    // Also re-runs when rendererVersion changes (i.e. renderer was recreated)
+    useEffect(() => {
+        if (!rendererRef.current || candles.length === 0) return;
+        candlesRef.current = candles.map(c => ({ ...c }));
+        rendererRef.current.resetScroll();
+        rendererRef.current.setCandles(candlesRef.current);
+    }, [candles, rendererVersion]);
+
+    // ── Live candle updates ───────────────────────────────────────────────────
+    useEffect(() => {
+        if (!liveQuote || !rendererRef.current || !liveQuote.price) return;
+        if (candlesRef.current.length === 0) return;
+
+        const price = liveQuote.price;
+        const nowEpoch = Math.floor(Date.now() / 1000);
+        const bucketTime = getCandleBucketTime(period, nowEpoch);
+        const last = candlesRef.current[candlesRef.current.length - 1];
+
+        if (last && last.time === bucketTime) {
+            // Keep historical interval volume — liveQuote.volume is cumulative
+            // daily volume from WebSocket ticks, NOT per-candle interval volume.
+            // Using it here would dwarf all other volume bars.
+            candlesRef.current[candlesRef.current.length - 1] = {
+                time: bucketTime,
+                open: last.open,
+                high: Math.max(last.high, price),
+                low: Math.min(last.low, price),
+                close: price,
+                volume: last.volume || 0,
+            };
+        } else if (!last || bucketTime > last.time) {
+            // New candle — no interval volume available from WebSocket
+            candlesRef.current.push({ time: bucketTime, open: price, high: price, low: price, close: price, volume: 0 });
+        }
+
+        rendererRef.current.setCandles(candlesRef.current);
+        rendererRef.current.setLivePrice(price);
+        setLivePrice(price);
+    }, [liveQuote, period]);
+
+    // ── Overlays ──────────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (!rendererRef.current || candles.length === 0) return;
+        const all = [];
+        activeIndicators.forEach(id => all.push(...computeOverlayLines(id, candles)));
+        rendererRef.current.setOverlays(all);
+    }, [activeIndicators, candles]);
+
+    // ── Sync hLines & tool ────────────────────────────────────────────────────
+    useEffect(() => { if (rendererRef.current) rendererRef.current.setHLines(hLines); }, [hLines]);
+    useEffect(() => { if (rendererRef.current) rendererRef.current.setActiveTool(activeTool); }, [activeTool]);
+
+    const clearDrawings = useCallback(() => { setHLines([]); if (rendererRef.current) rendererRef.current.setHLines([]); }, []);
+
+    // ── Fullscreen toggle ─────────────────────────────────────────────────────
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const chartWrapperRef = useRef(null);
+
+    const toggleFullscreen = useCallback(() => {
+        if (!chartWrapperRef.current) return;
+        if (!document.fullscreenElement) {
+            chartWrapperRef.current.requestFullscreen().catch(() => { });
+        } else {
+            document.exitFullscreen().catch(() => { });
+        }
+    }, []);
+
+    useEffect(() => {
+        const handler = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handler);
+        return () => document.removeEventListener('fullscreenchange', handler);
+    }, []);
+
+    const trend = trendData?.overall ? TREND_STYLE[trendData.overall] || TREND_STYLE.NEUTRAL : null;
+    const confidence = trendData?.confidence ?? 0;
+
+    function getZeroLossBadge(zl) {
+        if (!zl) return null;
+        const dir = zl.direction;
+        let color, icon, label;
+        if (dir === 'BULLISH') { color = 'bg-emerald-500/15 border-emerald-500/25 text-emerald-600'; icon = <HiTrendingUp className="w-3.5 h-3.5" />; label = 'BULLISH'; }
+        else if (dir === 'BEARISH') { color = 'bg-red-500/15 border-red-500/25 text-red-500'; icon = <HiTrendingDown className="w-3.5 h-3.5" />; label = 'BEARISH'; }
+        else { color = 'bg-amber-500/10 border-amber-500/20 text-amber-400'; icon = <HiMinusCircle className="w-3.5 h-3.5" />; label = 'NEUTRAL'; }
+        return (
+            <div className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold', color, 'backdrop-blur-md shadow-lg')} style={{ marginTop: 4 }}>
+                {icon}<span>ZeroLoss</span><span>{label}</span>
+                {typeof zl.score === 'number' && zl.score > 0 && <span className="opacity-60 font-medium ml-0.5">{Math.round(zl.score)}%</span>}
+            </div>
+        );
+    }
+
+    return (
+        <div ref={chartWrapperRef} className={cn('flex flex-col h-full', isFullscreen && 'bg-surface-900')}>
+            {/* ── Toolbar ──────────────────────────────────────────── */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5 border-b border-edge/5 bg-surface-900/30 flex-shrink-0" ref={menuRef}>
+                {onPeriodChange && (
+                    <>
+                        <div className="overflow-x-auto no-scrollbar flex-shrink min-w-0">
+                            <TimeframeBar period={period} onPeriodChange={onPeriodChange} />
+                        </div>
+                        <div className="w-px h-4 bg-edge/10 flex-shrink-0" />
+                    </>
+                )}
+
+                <div className={cn(
+                    'flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-semibold flex-shrink-0 border',
+                    wsStatus === 'connected'
+                        ? 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20'
+                        : wsStatus === 'connecting'
+                            ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                            : 'text-gray-500 bg-surface-800/60 border-edge/10'
+                )}>
+                    <span className={cn(
+                        'w-1.5 h-1.5 rounded-full',
+                        wsStatus === 'connected' ? 'bg-emerald-400 animate-pulse'
+                            : wsStatus === 'connecting' ? 'bg-amber-400 animate-pulse'
+                                : 'bg-gray-500'
+                    )} />
+                    {wsStatus === 'connected' ? 'ZEBU LIVE' : wsStatus === 'connecting' ? 'CONNECTING' : 'OFFLINE'}
+                </div>
+
+                <div className="relative flex-shrink-0">
+                    <button onClick={() => { setShowIndicatorMenu(v => !v); setShowToolsMenu(false); }}
+                        className={cn('flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-semibold transition-colors',
+                            activeIndicators.size > 0 ? 'bg-primary-500/15 text-primary-600 border border-primary-500/20' : 'text-gray-500 hover:text-gray-700 hover:bg-surface-800/60')}>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 3v18h18" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M7 16l4-8 4 5 5-9" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        Indicators
+                        {activeIndicators.size > 0 && <span className="ml-0.5 w-4 h-4 rounded-full bg-primary-500/30 text-[10px] flex items-center justify-center">{activeIndicators.size}</span>}
+                    </button>
+                    {showIndicatorMenu && <IndicatorMenu active={activeIndicators} onToggle={toggleIndicator} menuRef={indicatorMenuRef} />}
+                </div>
+
+                <div className="relative flex-shrink-0">
+                    <button onClick={() => { setShowToolsMenu(v => !v); setShowIndicatorMenu(false); }}
+                        className={cn('flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-semibold transition-colors',
+                            activeTool ? 'bg-primary-500/15 text-primary-600 border border-primary-500/20' : 'text-gray-500 hover:text-gray-700 hover:bg-surface-800/60')}>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M2 17l10-10M11.7 7.3l4-4a1.4 1.4 0 0 1 2 2l-4 4M15.7 11.3l4 4a1.4 1.4 0 0 1-2 2l-4-4" strokeLinecap="round" strokeLinejoin="round" />
+                            <path d="M18 22H4a2 2 0 0 1-2-2V4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        Tools
+                    </button>
+                    {showToolsMenu && <ToolsMenu activeTool={activeTool} onSelect={setActiveTool} onClose={() => setShowToolsMenu(false)} menuRef={toolsMenuRef} />}
+                </div>
+
+                {hLines.length > 0 && (
+                    <button onClick={clearDrawings} className="px-2 py-1 rounded text-[11px] font-semibold text-gray-600 hover:text-red-500 hover:bg-red-500/10 transition-colors flex-shrink-0">
+                        Clear drawings
+                    </button>
+                )}
+
+                <div className="flex-1 min-w-0 flex justify-end items-center gap-1">
+                    <ActivePills active={activeIndicators} onRemove={toggleIndicator} />
+                    <button onClick={toggleFullscreen} className="p-1 rounded text-gray-500 hover:text-gray-700 hover:bg-surface-800/60 transition-colors flex-shrink-0" title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                        {isFullscreen ? (
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                            </svg>
+                        ) : (
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                            </svg>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Chart area ───────────────────────────────────────── */}
+            <div className="flex-1 relative min-h-0">
+                {isLoading || candles.length === 0 ? (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <Skeleton variant="chart" className="absolute inset-0 rounded-none" />
+                        {!isLoading && candles.length === 0 && (
+                            <div className="relative z-10 text-gray-600 text-sm">No chart data — symbol may not be supported</div>
+                        )}
+                    </div>
+                ) : null}
+
+                {candles.length > 0 && !isLoading && (
+                    <div className="absolute top-3 right-20 z-10 pointer-events-none select-none flex flex-col items-end gap-1.5">
+                        {trend && (
+                            <div className={cn(trend.cls, 'text-xs font-bold backdrop-blur-md shadow-lg')}>
+                                <span className="text-sm leading-none">{trend.icon}</span>
+                                <span>Multi-Strategy</span>
+                                <span>{trend.label}</span>
+                                {confidence > 0 && <span className="opacity-60 font-price font-medium ml-0.5">{Math.round(confidence)}%</span>}
+                            </div>
+                        )}
+                        {getZeroLossBadge(zeroLossTrend)}
+                    </div>
+                )}
+
+                {activeTool && (
+                    <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-10 pointer-events-none select-none">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-800/90 border border-edge/10 text-xs text-gray-400 backdrop-blur-sm shadow-lg">
+                            {activeTool === 'hline' && 'Click on chart to place horizontal line'}
+                            {activeTool === 'crosshair' && 'Crosshair mode active'}
+                            <button onClick={() => setActiveTool(null)} className="ml-2 text-gray-600 hover:text-gray-700 pointer-events-auto">ESC</button>
+                        </div>
+                    </div>
+                )}
+
+                <div ref={containerRef} className="w-full h-full"
+                    style={{ visibility: candles.length > 0 && !isLoading ? 'visible' : 'hidden' }} />
+            </div>
+        </div>
+    );
+}, (prev, next) =>
+    prev.candles === next.candles &&
+    prev.isLoading === next.isLoading &&
+    prev.period === next.period &&
+    prev.symbol === next.symbol &&
+    prev.trendData?.overall === next.trendData?.overall &&
+    prev.trendData?.confidence === next.trendData?.confidence &&
+    prev.zeroLossTrend === next.zeroLossTrend
+);
+
+export default ZebuLiveChart;

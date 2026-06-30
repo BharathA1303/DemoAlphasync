@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"demo trade\\\\|demoTrade\\\\|demo_trade\\\\|paper.*trade\\\\|paperTrade\" \"C:\\\\AI\\\\new\\\\zebu\\\\alpha zebu\\\\alphasync-react/frontend/src\" --include=\"*.jsx\" --include=\"*.tsx\" --include=\"*.js\" -l 2>/dev/null | head -20)",
+      "Bash(grep -r \"websocket\\\\|WebSocket\\\\|ws://\" \"C:\\\\AI\\\\new\\\\zebu\\\\alpha zebu\\\\alphasync-react/frontend/src\" --include=\"*.jsx\" --include=\"*.tsx\" --include=\"*.js\" -l 2>/dev/null | head -20)",
+      "Bash(grep -r \"TODO\\\\|FIXME\\\\|BUG\\\\|HACK\" /c/AI/vianmax/alpha_zebu/backend --include=\"*.py\" 2>/dev/null | head -20)",
+      "Bash(python -m py_compile backend/main.py 2>&1 | head -20)",
+      "Bash(python -m py_compile backend/config/settings.py 2>&1)",
+      "Bash(cd /c/AI/vianmax/alpha_zebu/frontend && npm list 2>&1 | head -50)",
+      "Bash(cd /c/AI/vianmax/alpha_zebu/frontend/src && find . -name \"*.jsx\" -o -name \"*.js\" | xargs sed -i \\\\\n  -e 's/#F5A623/#0EA5E9/g' \\\\\n  -e 's/#D4891A/#0369A1/g' \\\\\n  -e 's/#D4911E/#0369A1/g' \\\\\n  -e 's/#FDF3E1/#E0F2FE/g' \\\\\n  -e 's/rgba\\(245,166,35,/rgba\\(14,165,233,/g' \\\\\n  -e 's/rgba\\(245, 166, 35,/rgba\\(14, 165, 233,/g' \\\\\n  -e 's/rgba\\(245,166, 35,/rgba\\(14, 165, 233,/g'\necho \"Done\")",
+      "Bash(cd /c/AI/vianmax/alpha_zebu/frontend/src && find . -name \"*.jsx\" -o -name \"*.js\" | xargs sed -i 's/#F5A623/#0EA5E9/g; s/#D4891A/#0369A1/g; s/#D4911E/#0369A1/g; s/#FDF3E1/#E0F2FE/g; s/rgba\\(245,166,35,/rgba\\(14,165,233,/g; s/rgba\\(245, 166, 35,/rgba\\(14, 165, 233,/g')",
+      "Bash(grep -r \"245\" /c/AI/vianmax/alpha_zebu/frontend/src --include=\"*.jsx\" --include=\"*.js\" -l 2>/dev/null | head -5)",
+      "Bash(gh run:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(curl -s \"https://api.github.com/repos/netguy001/demo.001/actions/runs?per_page=1\")",
+      "Bash(curl -s \"https://api.github.com/repos/netguy001/demo.001/actions/runs/23895474463/jobs\")",
+      "Bash(curl -s \"https://api.github.com/repos/netguy001/demo.001/actions/runs/23895474463/jobs?per_page=10\")",
+      "Bash(curl -s \"https://api.github.com/repos/netguy001/demo.001/actions/runs/23895474463\")",
+      "Bash(scp backend/routes/orders.py backend/engines/risk_engine.py backend/database/connection.py root@95.111.252.225:/tmp/)",
+      "Bash(flutter pub *)"
+    ]
+  }
+}

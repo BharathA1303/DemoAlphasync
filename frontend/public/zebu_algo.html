@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AlphaSync - Zebu MYNT Algo Trading Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050a0f;
+    --panel: #0b1520;
+    --border: #1a3a5c;
+    --accent: #00d4ff;
+    --accent2: #ff6b35;
+    --accent3: #39ff14;
+    --accent4: #ffd700;
+    --text: #c8e6f5;
+    --muted: #4a7a9b;
+    --glow: 0 0 20px rgba(0,212,255,0.3);
+    --glow2: 0 0 20px rgba(255,107,53,0.3);
+    --glow3: 0 0 20px rgba(57,255,20,0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image:
+      radial-gradient(ellipse at 10% 20%, rgba(0,60,100,0.15) 0%, transparent 50%),
+      radial-gradient(ellipse at 90% 80%, rgba(0,100,60,0.1) 0%, transparent 50%),
+      linear-gradient(rgba(0,212,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.02) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+  }
+
+  header {
+    padding: 40px 60px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+
+  .logo-area h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .logo-area p {
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .header-meta {
+    text-align: right;
+    font-size: 0.7rem;
+    color: var(--muted);
+    line-height: 1.8;
+  }
+
+  .header-meta span { color: var(--accent); }
+
+  .main {
+    padding: 40px 60px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* LAYER SECTIONS */
+  .arch-layer {
+    margin-bottom: 28px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .arch-layer:hover { border-color: var(--accent); }
+
+  .layer-header {
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .layer-num {
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
+  .layer-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .layer-desc {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin-left: auto;
+    letter-spacing: 1px;
+  }
+
+  .layer-body {
+    padding: 20px 24px 24px;
+    border-top: 1px solid var(--border);
+    background: rgba(11,21,32,0.8);
+  }
+
+  .cards-grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-5 { grid-template-columns: repeat(5, 1fr); }
+
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    transition: all 0.25s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+
+  .card:hover { transform: translateY(-2px); }
+  .card:hover::before { opacity: 1; }
+
+  .card-icon {
+    font-size: 1.4rem;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.85rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .card-sub {
+    font-size: 0.65rem;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 0.6rem;
+    padding: 2px 7px;
+    border-radius: 3px;
+    margin-top: 8px;
+    margin-right: 4px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* Color themes per layer */
+  .l1 .layer-header { background: linear-gradient(135deg, rgba(0,212,255,0.08), transparent); }
+  .l1 .layer-num { background: rgba(0,212,255,0.15); color: var(--accent); }
+  .l1 .layer-title { color: var(--accent); }
+  .l1 .card:hover { border-color: var(--accent); box-shadow: var(--glow); }
+  .l1 .card::before { background: var(--accent); }
+  .l1 .tag { background: rgba(0,212,255,0.12); color: var(--accent); }
+
+  .l2 .layer-header { background: linear-gradient(135deg, rgba(255,215,0,0.06), transparent); }
+  .l2 .layer-num { background: rgba(255,215,0,0.12); color: var(--accent4); }
+  .l2 .layer-title { color: var(--accent4); }
+  .l2 .card:hover { border-color: var(--accent4); box-shadow: 0 0 20px rgba(255,215,0,0.2); }
+  .l2 .card::before { background: var(--accent4); }
+  .l2 .tag { background: rgba(255,215,0,0.1); color: var(--accent4); }
+
+  .l3 .layer-header { background: linear-gradient(135deg, rgba(255,107,53,0.08), transparent); }
+  .l3 .layer-num { background: rgba(255,107,53,0.15); color: var(--accent2); }
+  .l3 .layer-title { color: var(--accent2); }
+  .l3 .card:hover { border-color: var(--accent2); box-shadow: var(--glow2); }
+  .l3 .card::before { background: var(--accent2); }
+  .l3 .tag { background: rgba(255,107,53,0.12); color: var(--accent2); }
+
+  .l4 .layer-header { background: linear-gradient(135deg, rgba(57,255,20,0.06), transparent); }
+  .l4 .layer-num { background: rgba(57,255,20,0.12); color: var(--accent3); }
+  .l4 .layer-title { color: var(--accent3); }
+  .l4 .card:hover { border-color: var(--accent3); box-shadow: var(--glow3); }
+  .l4 .card::before { background: var(--accent3); }
+  .l4 .tag { background: rgba(57,255,20,0.1); color: var(--accent3); }
+
+  .l5 .layer-header { background: linear-gradient(135deg, rgba(180,100,255,0.08), transparent); }
+  .l5 .layer-num { background: rgba(180,100,255,0.15); color: #b464ff; }
+  .l5 .layer-title { color: #b464ff; }
+  .l5 .card:hover { border-color: #b464ff; box-shadow: 0 0 20px rgba(180,100,255,0.3); }
+  .l5 .card::before { background: #b464ff; }
+  .l5 .tag { background: rgba(180,100,255,0.1); color: #b464ff; }
+
+  .l6 .layer-header { background: linear-gradient(135deg, rgba(255,50,100,0.08), transparent); }
+  .l6 .layer-num { background: rgba(255,50,100,0.15); color: #ff3264; }
+  .l6 .layer-title { color: #ff3264; }
+  .l6 .card:hover { border-color: #ff3264; box-shadow: 0 0 20px rgba(255,50,100,0.3); }
+  .l6 .card::before { background: #ff3264; }
+  .l6 .tag { background: rgba(255,50,100,0.1); color: #ff3264; }
+
+  /* FLOW ARROWS */
+  .flow-arrow {
+    text-align: center;
+    padding: 8px 0;
+    color: var(--muted);
+    font-size: 1.2rem;
+    letter-spacing: 4px;
+    opacity: 0.6;
+  }
+
+  /* BOTTOM TECH STACK */
+  .tech-stack {
+    margin-top: 32px;
+    padding: 24px;
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    background: rgba(0,212,255,0.02);
+  }
+
+  .tech-stack h3 {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--muted);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  .tech-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .pill {
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 1px;
+    border: 1px solid;
+    transition: all 0.2s;
+  }
+
+  .pill:hover { transform: scale(1.05); }
+
+  .pill-blue { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,0.05); }
+  .pill-orange { border-color: var(--accent2); color: var(--accent2); background: rgba(255,107,53,0.05); }
+  .pill-green { border-color: var(--accent3); color: var(--accent3); background: rgba(57,255,20,0.05); }
+  .pill-gold { border-color: var(--accent4); color: var(--accent4); background: rgba(255,215,0,0.05); }
+  .pill-purple { border-color: #b464ff; color: #b464ff; background: rgba(180,100,255,0.05); }
+
+  /* CLAUDE INTEGRATION BANNER */
+  .claude-banner {
+    margin-bottom: 28px;
+    padding: 20px 24px;
+    border: 1px solid rgba(180,100,255,0.4);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(180,100,255,0.06), rgba(0,212,255,0.04));
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .claude-badge {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #b464ff;
+    text-transform: uppercase;
+    white-space: nowrap;
+    padding: 8px 16px;
+    border: 1px solid rgba(180,100,255,0.5);
+    border-radius: 4px;
+    background: rgba(180,100,255,0.08);
+  }
+
+  .claude-uses {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex: 1;
+  }
+
+  .c-use {
+    font-size: 0.65rem;
+    padding: 4px 10px;
+    border-radius: 3px;
+    background: rgba(180,100,255,0.1);
+    color: #d09fff;
+    border: 1px solid rgba(180,100,255,0.2);
+    letter-spacing: 0.5px;
+  }
+
+  /* Data Flow Section */
+  .flow-diagram {
+    margin-top: 28px;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(0,212,255,0.02);
+  }
+
+  .flow-diagram h3 {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 0.85rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+
+  .flow-steps {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .flow-step {
+    flex: 1;
+    min-width: 110px;
+    text-align: center;
+    position: relative;
+  }
+
+  .flow-step-box {
+    padding: 10px 8px;
+    border-radius: 6px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    line-height: 1.5;
+    margin: 0 4px;
+  }
+
+  .flow-step-num {
+    font-size: 0.55rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+    letter-spacing: 2px;
+  }
+
+  .arrow-right {
+    color: var(--muted);
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  footer {
+    padding: 24px 60px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+
+  footer span { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .main, header, footer { padding: 24px 20px; }
+    .grid-3, .grid-4, .grid-5 { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .flow-steps { flex-direction: column; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .live-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent3);
+    animation: pulse 2s infinite;
+    margin-right: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-area">
+    <h1>ALPHASYNC ALGO SYSTEM</h1>
+    <p>F&O Day Trading Architecture — Indian Markets</p>
+  </div>
+  <div class="header-meta">
+    <div><span>Exchange</span> NSE / BSE / MCX</div>
+    <div><span>Segments</span> EQ · F&O · CD · COM</div>
+    <div><span>Broker</span> Zebu Share & Wealth Mgmt.</div>
+    <div><span>API</span> MYNT Connect (REST + WebSocket)</div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- Claude Integration Banner -->
+  <div class="claude-banner">
+    <div class="claude-badge">⚡ Claude AI Layer</div>
+    <div class="claude-uses">
+      <div class="c-use">Strategy Code Generation</div>
+      <div class="c-use">Bug Detection & Review</div>
+      <div class="c-use">Options Greeks Analysis</div>
+      <div class="c-use">Backtest Logic Audit</div>
+      <div class="c-use">Risk Rule Design</div>
+      <div class="c-use">Market Regime Classification</div>
+      <div class="c-use">Trade Journal Insights</div>
+      <div class="c-use">Architecture Refactoring</div>
+    </div>
+  </div>
+
+  <!-- LAYER 1: Data Ingestion -->
+  <div class="arch-layer l1">
+    <div class="layer-header">
+      <div class="layer-num">Layer 01</div>
+      <div class="layer-title">Data Ingestion & Feed Layer</div>
+      <div class="layer-desc">Real-time market data via MYNT API</div>
+    </div>
+    <div class="layer-body">
+      <div class="cards-grid grid-4">
+        <div class="card">
+          <span class="card-icon">🔌</span>
+          <div class="card-title">MYNT WebSocket</div>
+          <div class="card-sub">Live tick data subscription for Nifty, BankNifty, FinNifty options. Sub-second latency. Multi-symbol streaming.</div>
+          <span class="tag">ws://</span><span class="tag">Live</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">📊</span>
+          <div class="card-title">Option Chain Feed</div>
+          <div class="card-sub">Full option chain snapshot — all strikes, OI, IV, Greeks per expiry. Polled every 500ms via REST MarketQuotes API.</div>
+          <span class="tag">REST</span><span class="tag">F&O</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">📈</span>
+          <div class="card-title">Historical OHLC</div>
+          <div class="card-sub">EOD and intraday candlestick data for backtesting. 1m, 5m, 15m, 1H, 1D bars from MYNT historical endpoint.</div>
+          <span class="tag">REST</span><span class="tag">Backtest</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">🏦</span>
+          <div class="card-title">Index Futures Feed</div>
+          <div class="card-sub">Nifty/BankNifty futures basis, rollover cost, PCR ratio, Max Pain level — computed from live feed.</div>
+          <span class="tag">Derived</span><span class="tag">F&O</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ ↓ ↓</div>
+
+  <!-- LAYER 2: Signal Engine -->
+  <div class="arch-layer l2">
+    <div class="layer-header">
+      <div class="layer-num">Layer 02</div>
+      <div class="layer-title">Signal Generation Engine</div>
+      <div class="layer-desc">Strategy logic, indicators, ML models</div>
+    </div>
+    <div class="layer-body">
+      <div class="cards-grid grid-3">
+        <div class="card">
+          <span class="card-icon">🧮</span>
+          <div class="card-title">Technical Indicators</div>
+          <div class="card-sub">VWAP, SuperTrend, RSI, ATR, Bollinger Bands, OI Change, PCR, Delta-hedged IV. Real-time computation on tick data using Pandas/TA-Lib.</div>
+          <span class="tag">Python</span><span class="tag">TA-Lib</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">⚡</span>
+          <div class="card-title">Options Strategy Logic</div>
+          <div class="card-sub">Straddle/Strangle entry/exit rules. Iron Condor legs management. CE/PE selection by delta. Strike selection from option chain snapshot.</div>
+          <span class="tag">F&O</span><span class="tag">Greeks</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">🤖</span>
+          <div class="card-title">ML Signal Model</div>
+          <div class="card-sub">Optional: XGBoost/LSTM trained on IV surface, OI buildup, price action to predict directional bias. Feature engineering from tick data.</div>
+          <span class="tag">Scikit-learn</span><span class="tag">Optional</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ ↓ ↓</div>
+
+  <!-- LAYER 3: Risk Management -->
+  <div class="arch-layer l3">
+    <div class="layer-header">
+      <div class="layer-num">Layer 03</div>
+      <div class="layer-title">Risk Management Layer</div>
+      <div class="layer-desc">Pre-trade & real-time risk controls</div>
+    </div>
+    <div class="layer-body">
+      <div class="cards-grid grid-4">
+        <div class="card">
+          <span class="card-icon">🛡️</span>
+          <div class="card-title">Position Sizing</div>
+          <div class="card-sub">Max lots per signal. Capital allocation % per strategy. Kelly Criterion or fixed fractional sizing based on backtest Sharpe.</div>
+          <span class="tag">Pre-trade</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">🔴</span>
+          <div class="card-title">Stop-Loss Engine</div>
+          <div class="card-sub">Per-trade SL in ₹ and % terms. Trailing SL logic. Time-based exits (9:30 AM, 3:15 PM). MTM drawdown breaker.</div>
+          <span class="tag">Real-time</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">📉</span>
+          <div class="card-title">Max Loss Circuit</div>
+          <div class="card-sub">Daily max loss limit in ₹. Consecutive loss counter. Auto-halt trading if breach — sends alert and halts order flow.</div>
+          <span class="tag">Kill Switch</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">⚖️</span>
+          <div class="card-title">Greek Exposure Monitor</div>
+          <div class="card-sub">Portfolio-level Delta, Gamma, Vega, Theta tracking. Real-time P&L from Greeks. Alerts on delta breach thresholds.</div>
+          <span class="tag">F&O</span><span class="tag">Greeks</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ ↓ ↓</div>
+
+  <!-- LAYER 4: Order Execution -->
+  <div class="arch-layer l4">
+    <div class="layer-header">
+      <div class="layer-num">Layer 04</div>
+      <div class="layer-title">Order Execution Layer</div>
+      <div class="layer-desc">MYNT API order placement & management</div>
+    </div>
+    <div class="layer-body">
+      <div class="cards-grid grid-4">
+        <div class="card">
+          <span class="card-icon">🔑</span>
+          <div class="card-title">MYNT Auth Module</div>
+          <div class="card-sub">Session token management using Vendor Code + App Key. Auto-refresh login. Secure .env storage with python-dotenv.</div>
+          <span class="tag">API Key</span><span class="tag">OAuth</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">📨</span>
+          <div class="card-title">Order Router</div>
+          <div class="card-sub">MIS/NRML product type selection. Market/Limit/SL-M order types. Multi-leg F&O order co-ordination with sequencing logic.</div>
+          <span class="tag">REST POST</span><span class="tag">F&O</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">🔄</span>
+          <div class="card-title">Order State Machine</div>
+          <div class="card-sub">Tracks: PENDING → OPEN → COMPLETE → REJECTED. Auto-retry on partial fills. Cancel stale orders using MYNT Order API.</div>
+          <span class="tag">State Mgmt</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">💼</span>
+          <div class="card-title">Portfolio Sync</div>
+          <div class="card-sub">Real-time positions via MYNT Portfolio API. Holdings reconciliation. MTM computation. Square-off all positions at EOD.</div>
+          <span class="tag">Portfolio API</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ ↓ ↓</div>
+
+  <!-- LAYER 5: Monitoring & Ops -->
+  <div class="arch-layer l5">
+    <div class="layer-header">
+      <div class="layer-num">Layer 05</div>
+      <div class="layer-title">Monitoring, Logging & Alerting</div>
+      <div class="layer-desc">Ops visibility & real-time dashboard</div>
+    </div>
+    <div class="layer-body">
+      <div class="cards-grid grid-3">
+        <div class="card">
+          <span class="card-icon">📟</span>
+          <div class="card-title">Telegram Alerts Bot</div>
+          <div class="card-sub">Signal fired → Order placed → Fill confirmed alerts. P&L updates every 30 mins. Daily report at 3:30 PM with trade summary.</div>
+          <span class="tag">Telegram API</span><span class="tag">Alerts</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">📋</span>
+          <div class="card-title">Trade Logger</div>
+          <div class="card-sub">Every tick, signal, order, and fill logged to SQLite/PostgreSQL with timestamps. JSON-structured logs for Claude analysis and audit.</div>
+          <span class="tag">SQLite</span><span class="tag">CSV</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">🖥️</span>
+          <div class="card-title">Live Dashboard</div>
+          <div class="card-sub">Streamlit or Grafana dashboard. Real-time P&L chart, position ladder, Greeks heatmap, order book view. Accessible via browser.</div>
+          <span class="tag">Streamlit</span><span class="tag">Grafana</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ ↓ ↓</div>
+
+  <!-- LAYER 6: Backtesting & Research -->
+  <div class="arch-layer l6">
+    <div class="layer-header">
+      <div class="layer-num">Layer 06</div>
+      <div class="layer-title">Backtesting & Research Lab</div>
+      <div class="layer-desc">Strategy validation & performance analytics</div>
+    </div>
+    <div class="layer-body">
+      <div class="cards-grid grid-3">
+        <div class="card">
+          <span class="card-icon">🧪</span>
+          <div class="card-title">Backtest Engine</div>
+          <div class="card-sub">Event-driven backtester using historical MYNT data. Simulates realistic slippage, brokerage, STT for F&O. Walk-forward validation.</div>
+          <span class="tag">Backtrader</span><span class="tag">Custom</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">📐</span>
+          <div class="card-title">Performance Analytics</div>
+          <div class="card-sub">Sharpe, Sortino, Max Drawdown, Win Rate, Profit Factor, CAGR. Equity curve, monthly P&L heatmap, trade distribution charts.</div>
+          <span class="tag">QuantStats</span><span class="tag">Matplotlib</span>
+        </div>
+        <div class="card">
+          <span class="card-icon">🔬</span>
+          <div class="card-title">Parameter Optimizer</div>
+          <div class="card-sub">Grid search / Optuna-based hyperparameter tuning. Walk-forward optimization to avoid overfitting. Out-of-sample testing.</div>
+          <span class="tag">Optuna</span><span class="tag">WFO</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Flow Diagram -->
+  <div class="flow-diagram">
+    <h3><span class="live-dot"></span>Real-Time Data Flow — Trade Lifecycle</h3>
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 01</div>
+        <div class="flow-step-box" style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);color:#00d4ff;">
+          MYNT<br>WebSocket<br>Tick
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 02</div>
+        <div class="flow-step-box" style="background:rgba(255,215,0,0.08);border:1px solid rgba(255,215,0,0.3);color:#ffd700;">
+          Indicator<br>Compute<br>Signal
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 03</div>
+        <div class="flow-step-box" style="background:rgba(255,107,53,0.08);border:1px solid rgba(255,107,53,0.3);color:#ff6b35;">
+          Risk<br>Check<br>Pass/Fail
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 04</div>
+        <div class="flow-step-box" style="background:rgba(57,255,20,0.08);border:1px solid rgba(57,255,20,0.3);color:#39ff14;">
+          Strike<br>Selection<br>F&O
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 05</div>
+        <div class="flow-step-box" style="background:rgba(57,255,20,0.08);border:1px solid rgba(57,255,20,0.3);color:#39ff14;">
+          MYNT<br>Order<br>POST
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 06</div>
+        <div class="flow-step-box" style="background:rgba(180,100,255,0.08);border:1px solid rgba(180,100,255,0.3);color:#b464ff;">
+          Fill<br>Confirm<br>Log
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 07</div>
+        <div class="flow-step-box" style="background:rgba(180,100,255,0.08);border:1px solid rgba(180,100,255,0.3);color:#b464ff;">
+          Telegram<br>Alert<br>Sent
+        </div>
+      </div>
+      <div class="arrow-right">→</div>
+      <div class="flow-step">
+        <div class="flow-step-num">STEP 08</div>
+        <div class="flow-step-box" style="background:rgba(255,50,100,0.08);border:1px solid rgba(255,50,100,0.3);color:#ff3264;">
+          SL/Target<br>Monitor<br>Exit
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tech Stack -->
+  <div class="tech-stack">
+    <h3>Recommended Technology Stack</h3>
+    <div class="tech-pills">
+      <span class="pill pill-blue">Python 3.11+</span>
+      <span class="pill pill-blue">asyncio / aiohttp</span>
+      <span class="pill pill-blue">websockets</span>
+      <span class="pill pill-blue">requests</span>
+      <span class="pill pill-gold">Pandas / NumPy</span>
+      <span class="pill pill-gold">TA-Lib</span>
+      <span class="pill pill-gold">py_vollib (Greeks)</span>
+      <span class="pill pill-gold">Optuna</span>
+      <span class="pill pill-orange">SQLite / PostgreSQL</span>
+      <span class="pill pill-orange">Redis (tick cache)</span>
+      <span class="pill pill-orange">python-dotenv</span>
+      <span class="pill pill-green">Streamlit</span>
+      <span class="pill pill-green">Plotly</span>
+      <span class="pill pill-green">QuantStats</span>
+      <span class="pill pill-green">Telegram Bot API</span>
+      <span class="pill pill-purple">Claude AI (claude.ai)</span>
+      <span class="pill pill-purple">Claude Code (CLI)</span>
+      <span class="pill pill-purple">Anthropic SDK</span>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <div><span class="live-dot"></span>NSE Market Hours: 09:15 – 15:30 IST &nbsp;|&nbsp; <span>Zebu MYNT API</span> — SEBI Reg. INZ000174634</div>
+  <div>Designed for F&O Day Trading &nbsp;|&nbsp; <span>Claude AI</span> powered architecture review</div>
+</footer>
+
+</body>
+</html>

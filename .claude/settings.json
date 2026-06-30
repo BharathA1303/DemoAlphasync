@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//frontend/src/hooks/**)",
+      "Read(//frontend/src/components/layout/**)",
+      "Read(//frontend/src/stores/**)",
+      "Read(//frontend/src/services/**)",
+      "Read(//c/Users/megan/OneDrive/Desktop/**)",
+      "Bash(npx --no-install eslint src/hooks/useLivePortfolio.js src/pages/DashboardPage.jsx src/components/layout/AppShell.jsx src/store/usePortfolioStore.js src/pages/TradingTerminalPage.jsx)",
+      "Bash(npx -y vite build)",
+      "Bash(find 'c:\\\\AI\\\\new\\\\zebu\\\\alpha zebu\\\\zebu working\\\\alpha_zebu/frontend/src/components/ui' -name *.jsx -o -name *.tsx)",
+      "Bash(npx vite:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm install:*)",
+      "Bash(find '/c/AI/new/zebu/alpha zebu/alphasync-react/alpha_zebu' -name .env* -o -name *.env)",
+      "Bash(xargs cat:*)",
+      "Bash(grep -E \"^@router\\\\.|^app\\\\.\" backend/main.py backend/routes/*.py)",
+      "Bash(node -e \":*)",
+      "Bash(python -c \":*)",
+      "Bash(pip install:*)",
+      "Bash(python3:*)",
+      "Bash(python main.py)",
+      "Bash(npm run:*)",
+      "Bash(netstat -ano)",
+      "Bash(xargs grep:*)",
+      "Read(//d c:/Users/megan/OneDrive/Desktop/all files for vmax/**)",
+      "WebFetch(domain:github.com)",
+      "Bash(xxd index.css)",
+      "WebSearch",
+      "WebFetch(domain:www.nseindia.com)",
+      "WebFetch(domain:www.tradinghours.com)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''services/market_data.py''\\).read\\(\\)\\); print\\(''OK''\\)\")",
+      "Bash(grep -r -i \"zeroloss\\\\|zero.loss\" 'c:/Users/megan/OneDrive/Desktop/all files for vmax/Alphasync-demo/backend' --include=*.py)",
+      "Bash(grep -r -i \"zeroloss\\\\|zero.loss\" 'c:/Users/megan/OneDrive/Desktop/all files for vmax/Alphasync-demo/frontend' --include=*.jsx --include=*.js)",
+      "Bash(grep -r websocket 'c:/Users/megan/OneDrive/Desktop/all files for vmax/Alphasync-demo/backend' --include=*.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''strategies/zeroloss/controller.py''\\).read\\(\\)\\); print\\(''controller.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''routes/zeroloss.py''\\).read\\(\\)\\); print\\(''zeroloss route OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''main.py''\\).read\\(\\)\\); print\\(''main.py OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''strategies/zeroloss/controller.py''\\).read\\(\\)\\); print\\(''controller OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''routes/orders.py''\\).read\\(\\)\\); print\\(''orders route OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''services/market_data.py''\\).read\\(\\)\\); print\\(''market_data OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''routes/portfolio.py''\\).read\\(\\)\\); print\\(''portfolio route OK''\\)\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\megan\\OneDrive\\Desktop\\all files for vmax\\alpha_zebu\\alpha_zebu\\frontend\\public\\updated"
+    ]
+  }
+}

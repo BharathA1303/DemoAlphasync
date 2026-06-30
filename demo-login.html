@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>α·SIM Demo Trading — Login | AlphaSync</title>
+  <meta name="description" content="Start paper trading for free. ₹10L virtual capital, live NSE/BSE data, zero risk. No broker account needed." />
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Manrope:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+  <style>
+    /* ── Design tokens — light theme matching alphasync.app ── */
+    :root {
+      --bg-base: #f0f4f8;
+      --bg-card: #ffffff;
+      --bg-surface: #f8fafc;
+      --bg-elevated: #e8ecf1;
+      --text-primary: #0f172a;
+      --text-secondary: #334155;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --cyan: #059669;
+      --green: #10b981;
+      --green-light: #6ee7b7;
+      --primary-light: #047857;
+      --amber: #f59e0b;
+      --radius-full: 999px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --radius-lg: 16px;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-display: 'Manrope', 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --transition: all 0.2s ease;
+    }
+
+    /* ── Page shell ── */
+    html, body { height: 100%; }
+    body {
+      background: var(--bg-base);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Auth layout ── */
+    .auth-wrap {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: calc(100vh - 72px);
+    }
+
+    /* ────────────────────────────────────────────
+       LEFT PANEL — Branding
+    ──────────────────────────────────────────── */
+    .auth-left {
+      background: linear-gradient(145deg, #040d1e 0%, #071a38 60%, #052040 100%);
+      padding: 3rem 3.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      border-right: 1px solid rgba(255,255,255,0.08);
+      /* keep white text on dark left panel */
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255,255,255,0.75);
+      --text-muted: rgba(255,255,255,0.5);
+      --border: rgba(255,255,255,0.1);
+    }
+
+    /* animated orb decorations */
+    .auth-left::before {
+      content: '';
+      position: absolute;
+      width: 380px; height: 380px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(5,150,105,.18) 0%, transparent 70%);
+      top: -100px; right: -80px;
+      animation: pulse-orb 6s ease-in-out infinite;
+    }
+    .auth-left::after {
+      content: '';
+      position: absolute;
+      width: 300px; height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(16,185,129,.12) 0%, transparent 70%);
+      bottom: -80px; left: -60px;
+      animation: pulse-orb 8s ease-in-out infinite reverse;
+    }
+    @keyframes pulse-orb {
+      0%, 100% { transform: scale(1); opacity: .8; }
+      50%       { transform: scale(1.12); opacity: 1; }
+    }
+
+    .auth-left-inner { position: relative; z-index: 1; }
+
+    .demo-mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      background: rgba(5,150,105,.12);
+      border: 1px solid rgba(5,150,105,.35);
+      color: var(--cyan);
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      padding: .4rem 1rem;
+      border-radius: var(--radius-full);
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+    .demo-mode-badge .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--cyan);
+      animation: blink 1.5s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .auth-left h1 {
+      font-size: clamp(1.8rem, 3vw, 2.6rem);
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+    .auth-left p.sub {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      line-height: 1.7;
+      margin-bottom: 2rem;
+      max-width: 380px;
+    }
+
+    /* feature pills */
+    .demo-features { display: flex; flex-direction: column; gap: .75rem; margin-bottom: 2.5rem; }
+    .demo-feat {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: .75rem 1rem;
+      transition: var(--transition);
+    }
+    .demo-feat:hover { background: rgba(5,150,105,.07); border-color: rgba(5,150,105,.3); }
+    .demo-feat .icon {
+      width: 36px; height: 36px;
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .95rem;
+      flex-shrink: 0;
+    }
+    .demo-feat .icon.cyan  { background: rgba(5,150,105,.15); color: var(--cyan); }
+    .demo-feat .icon.green { background: rgba(16,185,129,.15); color: var(--green); }
+    .demo-feat .icon.indigo{ background: rgba(99,102,241,.15); color: var(--primary-light); }
+    .demo-feat span { font-size: .9rem; color: var(--text-secondary); line-height: 1.4; }
+    .demo-feat span strong { color: var(--text-primary); display: block; font-size: .95rem; }
+
+    /* virtual capital display */
+    .virtual-capital {
+      background: linear-gradient(135deg, rgba(5,150,105,.12), rgba(16,185,129,.08));
+      border: 1px solid rgba(5,150,105,.3);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .vc-label { font-size: .78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .2rem; }
+    .vc-amount { font-size: 1.6rem; font-weight: 800; color: var(--cyan); font-family: var(--font-display); }
+    .vc-tag {
+      font-size: .75rem; font-weight: 700;
+      background: rgba(16,185,129,.15);
+      color: var(--green);
+      border: 1px solid rgba(16,185,129,.3);
+      padding: .25rem .75rem;
+      border-radius: var(--radius-full);
+    }
+
+    /* ────────────────────────────────────────────
+       RIGHT PANEL — Auth Form
+    ──────────────────────────────────────────── */
+    .auth-right {
+      background: var(--bg-card);
+      padding: 3rem 3.5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      overflow-y: auto;
+    }
+
+    .auth-form-wrap { max-width: 420px; margin: 0 auto; width: 100%; }
+
+    /* Tab switcher */
+    .auth-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: var(--bg-surface);
+      border-radius: var(--radius-md);
+      padding: 4px;
+      margin-bottom: 2rem;
+    }
+    .auth-tab {
+      padding: .65rem 1rem;
+      text-align: center;
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: var(--transition);
+      border: none;
+      background: none;
+      font-family: var(--font-sans);
+    }
+    .auth-tab.active {
+      background: var(--bg-elevated);
+      color: var(--cyan);
+      box-shadow: 0 2px 10px rgba(0,0,0,.3);
+    }
+
+    /* form heading */
+    .form-heading { margin-bottom: 1.5rem; }
+    .form-heading h2 { font-size: 1.5rem; margin-bottom: .3rem; }
+    .form-heading p  { font-size: .875rem; color: var(--text-muted); }
+
+    /* input fields */
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-group label {
+      display: block;
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: .4rem;
+      letter-spacing: .02em;
+    }
+    .input-wrap { position: relative; }
+    .input-wrap .input-icon {
+      position: absolute;
+      left: .9rem; top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      font-size: .9rem;
+      pointer-events: none;
+    }
+    .input-wrap input {
+      width: 100%;
+      background: var(--bg-base);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: .75rem 1rem .75rem 2.6rem;
+      color: var(--text-primary);
+      font-size: .9rem;
+      font-family: var(--font-sans);
+      transition: var(--transition);
+      outline: none;
+    }
+    .input-wrap input::placeholder { color: var(--text-muted); }
+    .input-wrap input:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(5,150,105,.12);
+    }
+    .input-wrap .toggle-pass {
+      position: absolute;
+      right: .9rem; top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: .9rem;
+      transition: color .2s;
+    }
+    .input-wrap .toggle-pass:hover { color: var(--cyan); }
+
+    /* no broker notice */
+    .no-broker-notice {
+      display: flex;
+      align-items: flex-start;
+      gap: .6rem;
+      background: rgba(16,185,129,.08);
+      border: 1px solid rgba(16,185,129,.25);
+      border-radius: var(--radius-md);
+      padding: .75rem 1rem;
+      margin-bottom: 1rem;
+      font-size: .82rem;
+      color: var(--green-light);
+      line-height: 1.5;
+    }
+    .no-broker-notice i { margin-top: 2px; flex-shrink: 0; }
+
+    /* submit button */
+    .btn-demo-submit {
+      width: 100%;
+      padding: .875rem;
+      border-radius: var(--radius-md);
+      background: linear-gradient(135deg, #059669, #047857);
+      color: #fff;
+      font-weight: 700;
+      font-size: 1rem;
+      font-family: var(--font-sans);
+      border: none;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .5rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 20px rgba(5,150,105,.3);
+    }
+    .btn-demo-submit:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(5,150,105,.45);
+      filter: brightness(1.05);
+    }
+
+    /* divider */
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      margin: 1rem 0;
+      color: var(--text-muted);
+      font-size: .8rem;
+    }
+    .or-divider::before, .or-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* Google SSO */
+    .btn-google {
+      width: 100%;
+      padding: .8rem;
+      border-radius: var(--radius-md);
+      background: transparent;
+      border: 1.5px solid var(--border);
+      color: var(--text-primary);
+      font-size: .9rem;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .6rem;
+      margin-bottom: 1rem;
+    }
+    .btn-google:hover { background: rgba(0,0,0,.04); border-color: rgba(0,0,0,.18); }
+    .btn-google img { width: 18px; height: 18px; }
+
+    /* helper links */
+    .form-helper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .form-helper label { display: flex; align-items: center; gap: .4rem; font-size: .82rem; color: var(--text-muted); cursor: pointer; }
+    .form-helper a { font-size: .82rem; color: var(--cyan); text-decoration: none; }
+    .form-helper a:hover { text-decoration: underline; }
+
+    /* terms */
+    .terms-text {
+      font-size: .77rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.6;
+    }
+    .terms-text a { color: var(--cyan); }
+
+    /* switch mode */
+    .switch-subdomain {
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      text-align: center;
+      font-size: .85rem;
+      color: var(--text-muted);
+    }
+    .switch-subdomain a {
+      color: var(--primary-light);
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+    }
+    .switch-subdomain a:hover { color: var(--text-primary); }
+
+    /* form panels */
+    .form-panel { display: none; }
+    .form-panel.active { display: block; }
+
+    /* password strength */
+    .pwd-strength {
+      margin-top: .4rem;
+      display: flex;
+      gap: 4px;
+    }
+    .pwd-bar {
+      flex: 1;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+      transition: background .3s;
+    }
+    .pwd-bar.weak   { background: #ef4444; }
+    .pwd-bar.medium { background: var(--amber); }
+    .pwd-bar.strong { background: var(--green); }
+
+    /* Navbar for auth page */
+    .auth-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-base);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .auth-nav-logo { display: flex; align-items: center; gap: .5rem; }
+    .auth-nav-logo img { height: 38px; }
+    .auth-nav-badge {
+      font-size: .72rem; font-weight: 700;
+      background: rgba(5,150,105,.12);
+      color: var(--cyan);
+      border: 1px solid rgba(5,150,105,.3);
+      padding: .2rem .6rem;
+      border-radius: var(--radius-full);
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+    .auth-nav-links { display: flex; align-items: center; gap: 1rem; }
+    .auth-nav-links a { font-size: .85rem; color: var(--text-muted); transition: color .2s; }
+    .auth-nav-links a:hover { color: var(--text-primary); }
+
+    /* responsive */
+    @media (max-width: 900px) {
+      .auth-wrap { grid-template-columns: 1fr; }
+      .auth-left { display: none; }
+      .auth-right { padding: 2rem 1.5rem; min-height: calc(100vh - 64px); }
+      .form-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 480px) {
+      .auth-nav { padding: .75rem 1rem; }
+      .auth-right { padding: 1.5rem 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     NAV
+════════════════════════════════════════════ -->
+<nav class="auth-nav">
+  <div class="auth-nav-logo">
+    <img src="logo.svg" alt="AlphaSync" />
+    <span class="auth-nav-badge">α·SIM</span>
+  </div>
+  <div class="auth-nav-links">
+    <a href="index.html">← Back to home</a>
+    <a href="trade-login.html" style="color:var(--primary-light);">Live Trading →</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════
+     MAIN AUTH LAYOUT
+════════════════════════════════════════════ -->
+<div class="auth-wrap">
+
+  <!-- ── LEFT: Branding ── -->
+  <div class="auth-left">
+    <div class="auth-left-inner">
+
+      <div class="demo-mode-badge">
+        <span class="dot"></span>
+        α·SIM &nbsp;·&nbsp; Demo Trading
+      </div>
+
+      <h1>
+        Trade the market.<br />
+        <span class="text-gradient">Risk absolutely nothing.</span>
+      </h1>
+      <p class="sub">
+        Practice with ₹10 Lakh of virtual capital on live NSE &amp; BSE data. No real money, no broker account, no risk — just pure trading experience.
+      </p>
+
+      <div class="demo-features">
+        <div class="demo-feat">
+          <div class="icon cyan"><i class="fa fa-bolt"></i></div>
+          <span><strong>Live Market Data</strong>Real-time NSE &amp; BSE prices — same data as professional traders</span>
+        </div>
+        <div class="demo-feat">
+          <div class="icon green"><i class="fa fa-shield-halved"></i></div>
+          <span><strong>Zero Broker Setup</strong>No API keys, no brokerage account needed to get started</span>
+        </div>
+        <div class="demo-feat">
+          <div class="icon indigo"><i class="fa fa-chart-line"></i></div>
+          <span><strong>Full Analytics Dashboard</strong>P&amp;L tracking, position sizing, risk metrics &amp; strategy reports</span>
+        </div>
+      </div>
+
+      <div class="virtual-capital">
+        <div>
+          <div class="vc-label">Starting Virtual Capital</div>
+          <div class="vc-amount">₹10,00,000</div>
+        </div>
+        <div class="vc-tag">Reset anytime</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── RIGHT: Auth Form ── -->
+  <div class="auth-right">
+    <div class="auth-form-wrap">
+
+      <!-- Tabs -->
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab active" role="tab" data-tab="login" onclick="switchTab('login')">Login</button>
+        <button class="auth-tab" role="tab" data-tab="register" onclick="switchTab('register')">Create Account</button>
+      </div>
+
+      <!-- ── LOGIN PANEL ── -->
+      <div class="form-panel active" id="panel-login">
+        <div class="form-heading">
+          <h2>Welcome back 👋</h2>
+          <p>Login to your α·SIM demo account</p>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label for="login-email">Email Address</label>
+            <div class="input-wrap">
+              <i class="input-icon fa fa-envelope"></i>
+              <input type="email" id="login-email" placeholder="you@email.com" required autocomplete="email" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="login-pass">Password</label>
+            <div class="input-wrap">
+              <i class="input-icon fa fa-lock"></i>
+              <input type="password" id="login-pass" placeholder="••••••••" required autocomplete="current-password" />
+              <i class="toggle-pass fa fa-eye" onclick="togglePass('login-pass', this)"></i>
+            </div>
+          </div>
+
+          <div class="form-helper">
+            <label>
+              <input type="checkbox" />
+              Remember me
+            </label>
+            <a href="#">Forgot password?</a>
+          </div>
+
+          <button type="submit" class="btn-demo-submit">
+            <i class="fa fa-play-circle"></i>
+            Enter α·SIM Dashboard
+          </button>
+        </form>
+
+        <div class="or-divider">or continue with</div>
+
+        <button class="btn-google" onclick="handleGoogle()">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
+          Continue with Google
+        </button>
+
+        <p class="terms-text">
+          By logging in you agree to our <a href="terms.html">Terms</a> &amp; <a href="privacy.html">Privacy Policy</a>
+        </p>
+      </div>
+
+      <!-- ── REGISTER PANEL ── -->
+      <div class="form-panel" id="panel-register">
+        <div class="form-heading">
+          <h2>Start trading free 🚀</h2>
+          <p>Create your α·SIM account — takes 30 seconds</p>
+        </div>
+
+        <div class="no-broker-notice">
+          <i class="fa fa-circle-check" style="color:var(--green);"></i>
+          <span>No broker account or API keys needed. Start trading with ₹10L virtual capital instantly.</span>
+        </div>
+
+        <form id="registerForm" onsubmit="handleRegister(event)">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="reg-fname">First Name</label>
+              <div class="input-wrap">
+                <i class="input-icon fa fa-user"></i>
+                <input type="text" id="reg-fname" placeholder="First name" required autocomplete="given-name" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="reg-lname">Last Name</label>
+              <div class="input-wrap">
+                <i class="input-icon fa fa-user"></i>
+                <input type="text" id="reg-lname" placeholder="Last name" required autocomplete="family-name" />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-email">Email Address</label>
+            <div class="input-wrap">
+              <i class="input-icon fa fa-envelope"></i>
+              <input type="email" id="reg-email" placeholder="you@email.com" required autocomplete="email" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-pass">Create Password</label>
+            <div class="input-wrap">
+              <i class="input-icon fa fa-lock"></i>
+              <input type="password" id="reg-pass" placeholder="Min 8 characters" required autocomplete="new-password" oninput="checkPwdStrength(this.value)" />
+              <i class="toggle-pass fa fa-eye" onclick="togglePass('reg-pass', this)"></i>
+            </div>
+            <div class="pwd-strength">
+              <div class="pwd-bar" id="bar1"></div>
+              <div class="pwd-bar" id="bar2"></div>
+              <div class="pwd-bar" id="bar3"></div>
+              <div class="pwd-bar" id="bar4"></div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom:1.25rem;">
+            <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--text-muted);">
+              <input type="checkbox" required style="margin-top:2px;flex-shrink:0;" />
+              I agree to the <a href="terms.html" style="color:var(--cyan);margin:0 .2rem;">Terms of Service</a> and <a href="privacy.html" style="color:var(--cyan);margin:0 .2rem;">Privacy Policy</a>
+            </label>
+          </div>
+
+          <button type="submit" class="btn-demo-submit">
+            <i class="fa fa-rocket"></i>
+            Create Free Account &amp; Start Trading
+          </button>
+        </form>
+
+        <div class="or-divider">or sign up with</div>
+
+        <button class="btn-google" onclick="handleGoogle()">
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
+          Sign up with Google
+        </button>
+      </div>
+
+      <!-- Switch to real trading -->
+      <div class="switch-subdomain">
+        Ready for real trading?
+        <a href="trade-login.html">
+          Switch to α·AUTO / α·SCALP
+          <i class="fa fa-arrow-right" style="font-size:.75rem;"></i>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</div><!-- /auth-wrap -->
+
+<script>
+  /* ── Tab switching ── */
+  function switchTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.form-panel').forEach(p => p.classList.remove('active'));
+    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    document.getElementById(`panel-${tab}`).classList.add('active');
+  }
+
+  /* ── Password visibility toggle ── */
+  function togglePass(id, icon) {
+    const input = document.getElementById(id);
+    if (input.type === 'password') {
+      input.type = 'text';
+      icon.classList.replace('fa-eye', 'fa-eye-slash');
+    } else {
+      input.type = 'password';
+      icon.classList.replace('fa-eye-slash', 'fa-eye');
+    }
+  }
+
+  /* ── Password strength ── */
+  function checkPwdStrength(val) {
+    const bars = [document.getElementById('bar1'), document.getElementById('bar2'),
+                  document.getElementById('bar3'), document.getElementById('bar4')];
+    bars.forEach(b => { b.className = 'pwd-bar'; });
+    let score = 0;
+    if (val.length >= 8)  score++;
+    if (/[A-Z]/.test(val)) score++;
+    if (/[0-9]/.test(val)) score++;
+    if (/[^A-Za-z0-9]/.test(val)) score++;
+    const cls = score <= 1 ? 'weak' : score <= 2 ? 'medium' : 'strong';
+    for (let i = 0; i < score; i++) bars[i].classList.add(cls);
+  }
+
+  /* ── Form handlers (wire to your backend) ── */
+  function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const pass  = document.getElementById('login-pass').value;
+    // TODO: POST to https://api.alphasync.app/auth/login  { email, pass, context: 'demo' }
+    console.log('Demo login →', { email, context: 'demo' });
+    alert('Connecting to α·SIM dashboard…\n(Wire this to your backend API)');
+  }
+
+  function handleRegister(e) {
+    e.preventDefault();
+    const fname = document.getElementById('reg-fname').value;
+    const lname = document.getElementById('reg-lname').value;
+    const email = document.getElementById('reg-email').value;
+    const pass  = document.getElementById('reg-pass').value;
+    // TODO: POST to https://api.alphasync.app/auth/register  { fname, lname, email, pass, context: 'demo' }
+    console.log('Demo register →', { fname, lname, email, context: 'demo' });
+    alert('Account created! Redirecting to α·SIM dashboard…\n(Wire this to your backend API)');
+  }
+
+  function handleGoogle() {
+    // TODO: Redirect to https://api.alphasync.app/auth/google?context=demo
+    console.log('Google OAuth → context: demo');
+    alert('Google OAuth flow\n(Wire this to your backend)');
+  }
+</script>
+</body>
+</html>

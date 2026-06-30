@@ -1,0 +1,36 @@
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+sqlalchemy==2.0.25
+alembic==1.13.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+python-multipart==0.0.9
+aiohttp==3.9.3
+websockets>=13.1,<16.0
+httpx>=0.25.0,<1.0
+python-dotenv==1.0.1
+email-validator==2.1.0.post1
+asyncpg==0.29.0
+aiosqlite>=0.20.0,<1.0
+
+# ── Firebase Authentication ────────────────────────────────────
+firebase-admin>=6.4.0,<7.0
+
+# ── Market Provider & Cache ─────────────────────────────────────
+redis[asyncio]>=5.0.0,<6.0
+
+# ── Real Market Data Fallback (no Zebu credentials required) ───
+yfinance>=0.2.40
+
+# ── Broker Token Encryption ────────────────────────────────────
+cryptography>=42.0.0,<44.0
+
+# ── Admin Panel ──────────────────────────────────────────────────
+pyotp>=2.9.0,<3.0
+aiosmtplib>=2.0.0,<4.0
+qrcode[pil]>=7.4,<8.0
+Jinja2>=3.1.0,<4.0
+openpyxl>=3.1.0,<4.0
+
+# ── Production WSGI/ASGI server ────────────────────────────────
+gunicorn>=21.2.0,<23.0

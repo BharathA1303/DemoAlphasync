@@ -1,0 +1,233 @@
+/**
+ * Mobile-only layout fixes (desktop lg+ unchanged).
+ * Loaded by ResponsiveHardeningRoot — does not modify ResponsiveUtilities.css.
+ */
+
+@media (max-width: 1023px) {
+  /* Remove bottom nav chrome + dead padding */
+  html.responsive-hardening-active .responsive-bottom-nav {
+    display: none !important;
+  }
+
+  html.responsive-hardening-active .responsive-layout-manager,
+  html.responsive-hardening-active .responsive-layout-fullviewport,
+  html.responsive-hardening-active .hard-mobile-shell {
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  }
+
+  /* Main shell fills viewport under navbar + ticker */
+  html.responsive-hardening-active .hard-responsive-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  html.responsive-hardening-active .responsive-layout-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  html.responsive-hardening-active .responsive-page {
+    min-height: 0;
+    overflow-x: hidden;
+  }
+
+  /* Full-height trading body */
+  html.responsive-hardening-active .responsive-trading-layout {
+    flex: 1;
+    min-height: 0;
+  }
+
+  html.responsive-hardening-active .responsive-trading-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  html.responsive-hardening-active .responsive-trading-body .terminal-grid {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100%;
+    flex: 1;
+  }
+
+  /* Chart tab — chart fills space */
+  html.responsive-hardening-active .responsive-trading-view--chart .terminal-area-chart {
+    min-height: 200px;
+    flex: 1;
+  }
+
+  /* Watchlist tab — hide chart/bottom dead space */
+  html.responsive-hardening-active .responsive-trading-view--watchlist .terminal-area-chart,
+  html.responsive-hardening-active .responsive-trading-view--watchlist .terminal-area-header,
+  html.responsive-hardening-active .responsive-trading-view--watchlist .terminal-area-bottom,
+  html.responsive-hardening-active .responsive-trading-view--watchlist .terminal-area-tradebar {
+    display: none !important;
+  }
+
+  html.responsive-hardening-active .responsive-trading-view--watchlist .hard-mobile-watchlist-panel {
+    display: flex !important;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: var(--bg-base, #0f0f1e);
+  }
+
+  html.responsive-hardening-active .responsive-trading-view--watchlist .terminal-grid {
+    position: relative;
+  }
+
+  /* Trade tab — hide chart chrome, order drawer is primary */
+  html.responsive-hardening-active .responsive-trading-view--order .terminal-area-chart,
+  html.responsive-hardening-active .responsive-trading-view--order .terminal-area-bottom {
+    display: none !important;
+  }
+
+  html.responsive-hardening-active .responsive-trading-view--order .terminal-area-header {
+    flex-shrink: 0;
+  }
+
+  html.responsive-hardening-active .responsive-trading-view--order .terminal-area-tradebar {
+    flex-shrink: 0;
+  }
+
+  /* FAB — sit above trade bar (no bottom nav) */
+  html.responsive-hardening-active .responsive-fab-group {
+    bottom: calc(4.25rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  html.responsive-hardening-active .responsive-trading-view--order .responsive-fab-group {
+    display: none !important;
+  }
+
+  /* Mobile sidebar drawer — full menu like desktop */
+  html.responsive-hardening-active aside.fixed.left-0 {
+    z-index: 50 !important;
+    width: min(280px, 88vw) !important;
+    max-width: 280px;
+  }
+
+  html.responsive-hardening-active aside .max-lg\:w-\[240px\] {
+    width: min(280px, 88vw) !important;
+  }
+
+  /* Orders — fix overlapping filter chips (override nowrap rule) */
+  html.responsive-hardening-active .responsive-page--orders .glass-card .flex.flex-wrap {
+    flex-wrap: wrap !important;
+    overflow-x: visible !important;
+  }
+
+  html.responsive-hardening-active .responsive-page--orders .glass-card .ml-auto {
+    margin-left: 0 !important;
+    width: 100%;
+  }
+
+  html.responsive-hardening-active .responsive-page--orders .glass-card > .flex.flex-wrap:first-of-type {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  html.responsive-hardening-active .responsive-page--orders .glass-card button {
+    flex-shrink: 0;
+  }
+
+  /* Settings — tab strip + content stack */
+  html.responsive-hardening-active .responsive-page--settings .flex.flex-col.sm\:flex-row {
+    flex-direction: column;
+  }
+
+  html.responsive-hardening-active .responsive-page--settings .flex.sm\:flex-col.gap-1 {
+    flex-direction: row;
+    flex-wrap: wrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    padding-bottom: 0.25rem;
+  }
+
+  html.responsive-hardening-active .responsive-page--settings .grid.grid-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* Summary cards — tighter on phone */
+  html.responsive-hardening-active .responsive-page--orders .grid.grid-cols-1.sm\:grid-cols-2 {
+    gap: 0.5rem;
+  }
+
+  html.responsive-hardening-active .responsive-page--orders .glass-card.p-4 {
+    padding: 0.75rem !important;
+  }
+
+  /* Modals / drawers — fit viewport */
+  html.responsive-hardening-active .hard-order-surface,
+  html.responsive-hardening-active [class*='fixed'][class*='z-50'].flex.flex-col {
+    max-height: calc(var(--visual-viewport-h, 100dvh) - 3rem) !important;
+  }
+
+  /* Prevent panels hiding off-screen */
+  html.responsive-hardening-active main {
+    overflow-x: hidden;
+  }
+
+  /* AI Mentor — full-width chat shell */
+  html.responsive-hardening-active .mentor-page,
+  html.responsive-hardening-active .responsive-page--mentor {
+    width: 100%;
+    max-width: 100vw;
+    min-height: 0;
+  }
+
+  html.responsive-hardening-active .responsive-layout-fullviewport .mentor-page {
+    height: 100%;
+    min-height: 0;
+  }
+
+  html.responsive-hardening-active .mentor-page > section {
+    width: 100%;
+  }
+
+  html.responsive-hardening-active .mentor-page textarea {
+    font-size: 16px; /* prevent iOS zoom on focus */
+  }
+
+  html.responsive-hardening-active .mentor-page .group .opacity-0 {
+    opacity: 1; /* conversation row actions visible on touch */
+  }
+}
+
+/* Desktop mentor — rail + history side-by-side (lg+) */
+@media (min-width: 1024px) {
+  .mentor-layout--desktop > section > div.flex-1 {
+    flex-direction: row !important;
+  }
+
+  .mentor-layout--desktop aside {
+    position: relative !important;
+    transform: none !important;
+    pointer-events: auto !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    width: 300px !important;
+    max-width: 300px !important;
+  }
+
+  .mentor-layout--desktop.mentor-history-collapsed aside {
+    width: 52px !important;
+    max-width: 52px !important;
+    min-width: 52px !important;
+  }
+
+  .mentor-layout--mobile aside.fixed {
+    /* never apply mobile drawer positioning at lg+ */
+    position: relative !important;
+    transform: none !important;
+    width: 300px !important;
+  }
+}

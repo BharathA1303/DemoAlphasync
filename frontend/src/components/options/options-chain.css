@@ -1,0 +1,168 @@
+/* Broker-style options chain — site theme, scoped to .option-chain-broker */
+
+/*
+ * NOTE: AlphaSync applies the `.dark` class to the AppShell wrapper <div>,
+ * NOT to <html>. So `html:not(.dark)` always matches, which would force dark
+ * text (#0f172a) on every element — invisible on dark backgrounds.
+ *
+ * Architecture:
+ *  - Dark mode:  `.dark .oc-value` wins (specificity 30 > 21 for html:not(.dark))
+ *  - Light mode: `.light .oc-value` wins (no .dark ancestor → falls through to html:not(.dark))
+ */
+
+.option-chain-broker {
+  --oc-row-h: 52px;
+  --oc-spot-h: 30px;
+  font-family: inherit;
+}
+
+.option-chain-broker .oc-value {
+  color: var(--oc-text, #e2e8f0);
+  font-weight: 500;
+  font-size: 0.765rem;
+  line-height: 1.25;
+}
+
+.option-chain-broker .oc-sub {
+  font-size: 0.64rem;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.option-chain-broker .oc-label {
+  color: #94a3b8;
+  font-size: 0.595rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ── Dark mode (AppShell wrapper has .dark class) ── */
+.dark .option-chain-broker .oc-value {
+  --oc-text: #e2e8f0;
+  color: #e2e8f0;
+}
+
+.dark .option-chain-broker .oc-label {
+  color: #94a3b8;
+}
+
+.dark .option-chain-broker .oc-strike {
+  color: #e2e8f0;
+}
+
+.dark .option-chain-broker .oc-bull,
+html.dark .option-chain-broker .oc-bull {
+  color: #22c55e;
+}
+
+.dark .option-chain-broker .oc-bear,
+html.dark .option-chain-broker .oc-bear {
+  color: #f43f5e;
+}
+
+/* ── Light mode (.light class or html without .dark) ── */
+.light .option-chain-broker .oc-value,
+html:not(.dark) .option-chain-broker:not(.dark *) .oc-value {
+  --oc-text: #0f172a;
+  color: #0f172a;
+}
+
+.light .option-chain-broker .oc-label {
+  color: #64748b;
+}
+
+.light .option-chain-broker .oc-bull {
+  color: #16a34a;
+}
+
+.light .option-chain-broker .oc-bear {
+  color: #dc2626;
+}
+
+.option-chain-broker .oc-strike {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.light .option-chain-broker .oc-strike {
+  color: #0f172a;
+}
+
+.option-chain-broker .oc-spot-line {
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    #2563eb 8%,
+    #2563eb 92%,
+    transparent 100%
+  );
+  height: 2px;
+}
+
+.option-chain-broker .oc-spot-pill {
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 9999px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 4px rgba(29, 78, 216, 0.45);
+}
+
+.option-chain-broker .oc-itm-call {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html:not(.dark) .option-chain-broker .oc-itm-call,
+.light .option-chain-broker .oc-itm-call {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.option-chain-broker .oc-itm-put {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html:not(.dark) .option-chain-broker .oc-itm-put,
+.light .option-chain-broker .oc-itm-put {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.option-chain-broker .oc-row-selected {
+  background: rgba(37, 99, 235, 0.18) !important;
+}
+
+html:not(.dark) .option-chain-broker .oc-row-selected,
+.light .option-chain-broker .oc-row-selected {
+  background: rgba(37, 99, 235, 0.12) !important;
+}
+
+.option-chain-broker .oc-scroll {
+  scrollbar-width: thin;
+}
+
+.option-chain-broker .oc-metric-btn {
+  min-height: var(--oc-row-h);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.option-chain-broker .oc-metric-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html:not(.dark) .option-chain-broker .oc-metric-btn:hover,
+.light .option-chain-broker .oc-metric-btn:hover {
+  background: rgba(15, 23, 42, 0.05);
+}

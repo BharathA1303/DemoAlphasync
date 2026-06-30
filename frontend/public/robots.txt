@@ -1,0 +1,16 @@
+# AlphaSync Robots.txt
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /terminal
+Disallow: /portfolio
+Disallow: /orders
+Disallow: /algo
+Disallow: /zeroloss
+Disallow: /settings
+Disallow: /select-mode
+Disallow: /select-broker
+Disallow: /broker/callback
+
+# Sitemap
+Sitemap: https://alphasync.in/sitemap.xml

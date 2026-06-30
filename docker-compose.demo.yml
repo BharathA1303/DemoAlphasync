@@ -1,0 +1,128 @@
+# ============================================================
+#  AlphaSync DEMO — Docker Compose (Contabo VPS)
+#  Domain: demo.alphasync.app
+#  Ports: frontend=3001, backend=8001
+#  Fully isolated — no shared networks/volumes/names with alpha_zebu
+# ============================================================
+#  Usage:
+#    docker compose -p alphasync-demo -f docker-compose.demo.yml up -d --build
+# ============================================================
+
+name: alphasync-demo
+
+services:
+  # ── Backend API (FastAPI + PostgreSQL) ───────────────────────
+  demo-backend:
+    image: alphasync-demo-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.demo
+    container_name: alphasync-demo-backend
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - alphasync-demo-uploads:/app/uploads
+      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
+    environment:
+      - APP_NAME=AlphaSync-Demo
+      - DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://${DEMO_POSTGRES_USER:-alphasync_demo}:${DEMO_POSTGRES_PASSWORD:-alphasync_demo}@demo-pg:5432/${DEMO_POSTGRES_DB:-alphasync_demo}
+      - REDIS_URL=redis://demo-redis:6379/0
+      - CORS_ORIGINS=["https://demo.alphasync.app","http://localhost:3001"]
+      - CORS_ORIGIN_REGEX=https?://(localhost|127\.0\.0\.1):\d+
+      - BROKER_ENCRYPTION_KEY=${BROKER_ENCRYPTION_KEY:?BROKER_ENCRYPTION_KEY must be set via GitHub Actions secret}
+      - SIMULATION_MODE=true
+      - STRICT_ZEBU_MARKET_DATA=${STRICT_ZEBU_MARKET_DATA:-false}
+      - ZEBU_WS_URL=${ZEBU_WS_URL:-wss://go.mynt.in/NorenWSTP/}
+      - ZEBU_API_URL=${ZEBU_API_URL:-https://go.mynt.in/NorenWClientTP}
+      - ZEBU_API_SECRET=${ZEBU_API_SECRET:-}
+      - ZEBU_VENDOR_CODE=${ZEBU_VENDOR_CODE:-}
+      - ZEBU_REDIRECT_URI=${ZEBU_REDIRECT_URI:-https://demo.alphasync.app/broker/callback}
+      - ZEBU_OAUTH_CLIENT_ID=${ZEBU_OAUTH_CLIENT_ID:-}
+      - ALICE_BLUE_REDIRECT_URI=${ALICE_BLUE_REDIRECT_URI:-https://demo.alphasync.app/broker/callback}
+      - ZEBU_MASTER_USER_ID=${ZEBU_MASTER_USER_ID:-}
+      - ZEBU_MASTER_PASSWORD=${ZEBU_MASTER_PASSWORD:-}
+      - ZEBU_MASTER_DOB=${ZEBU_MASTER_DOB:-}
+      - FIREBASE_CREDENTIALS_JSON=${FIREBASE_CREDENTIALS_JSON:-}
+      - FIREBASE_CREDENTIALS_PATH=/app/firebase-credentials.json
+      - ADMIN_EMAIL_ALLOWLIST=${ADMIN_EMAIL_ALLOWLIST:-["ashok.j2346@gmail.com"]}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-}
+      - GROK_API_KEY=${GROK_API_KEY:-}
+      - GROK_API=${GROK_API:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - XAI_API_KEY=${XAI_API_KEY:-}
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "-s", "http://localhost:8000/api/health" ]
+      interval: 10s
+      timeout: 8s
+      retries: 15
+      start_period: 120s
+    depends_on:
+      demo-pg:
+        condition: service_healthy
+      demo-redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - alphasync-demo-net
+
+  # ── PostgreSQL (demo-only, isolated) ───────────────────────
+  demo-pg:
+    image: postgres:16-alpine
+    container_name: alphasync-demo-pg
+    environment:
+      POSTGRES_DB: ${DEMO_POSTGRES_DB:-alphasync_demo}
+      POSTGRES_USER: ${DEMO_POSTGRES_USER:-alphasync_demo}
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-alphasync_demo}
+    volumes:
+      - alphasync-demo-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DEMO_POSTGRES_USER:-alphasync_demo} -d ${DEMO_POSTGRES_DB:-alphasync_demo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks:
+      - alphasync-demo-net
+
+  # ── Redis (shared price cache — all users read from here) ──
+  demo-redis:
+    image: redis:7-alpine
+    container_name: alphasync-demo-redis
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --save ""
+    volumes:
+      - alphasync-demo-redis:/data
+    restart: unless-stopped
+    networks:
+      - alphasync-demo-net
+
+  # ── Frontend (React → Nginx → proxies /api to backend) ─────
+  # Uses the pre-built dist/ from CI — no npm install on server.
+  demo-frontend:
+    image: alphasync-demo-frontend:latest
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.demo.prebuilt
+    container_name: alphasync-demo-frontend
+    ports:
+      - "127.0.0.1:3001:80"
+    depends_on:
+      demo-backend:
+        condition: service_started
+      demo-redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - alphasync-demo-net
+
+volumes:
+  alphasync-demo-uploads:
+  alphasync-demo-pgdata:
+  alphasync-demo-redis:
+
+
+networks:
+  alphasync-demo-net:
+    driver: bridge

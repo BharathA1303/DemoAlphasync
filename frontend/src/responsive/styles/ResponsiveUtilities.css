@@ -1,0 +1,246 @@
+/**
+ * AlphaSync Responsive Utilities
+ * Desktop (lg+): NO layout overrides — pixel-safe pass-through.
+ * Mobile/tablet: adaptive shells only.
+ */
+
+@import './ResponsiveSafeArea.css';
+@import './ResponsiveSpacingSystem.css';
+@import './ResponsiveTypographySystem.css';
+
+/* ── Global overflow guard (mobile/tablet only) ─────────────────────────── */
+@media (max-width: 1023px) {
+  html.responsive-active,
+  html.responsive-active body,
+  #root {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  .responsive-layout-manager {
+    padding-bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .responsive-layout-fullviewport {
+    padding-bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Desktop: zero padding from responsive chrome */
+@media (min-width: 1024px) {
+  .responsive-layout-manager {
+    padding-bottom: 0;
+  }
+
+  .responsive-bottom-nav,
+  .responsive-fab-group,
+  .responsive-trading-tabs,
+  .responsive-sidebar-backdrop {
+    display: none !important;
+  }
+}
+
+/* ── Ticker bar — mobile horizontal scroll ────────────────────────────────── */
+@media (max-width: 1023px) {
+  [class*='MarketTicker'],
+  .market-ticker-bar,
+  nav + div:has(> .animate-marquee) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+  }
+}
+
+/* ── Terminal / Futures / Options — mobile panel visibility ─────────────── */
+@media (max-width: 1023px) {
+  .responsive-trading-view--chart .terminal-area-watchlist,
+  .responsive-trading-view--chart .terminal-grid > .hidden.lg\:flex {
+    display: none !important;
+  }
+
+  .responsive-trading-view--watchlist .terminal-area-chart,
+  .responsive-trading-view--watchlist .terminal-area-header + .terminal-area-chart {
+    display: none !important;
+  }
+
+  .responsive-trading-view--order .terminal-area-chart {
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  /* Futures page — stack panels */
+  .responsive-page--futures .flex.h-full.min-h-0 > div:first-child {
+    display: none;
+  }
+
+  .responsive-trading-view--watchlist .responsive-page--futures .flex.h-full.min-h-0 > div:first-child {
+    display: flex !important;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgb(var(--surface-900));
+  }
+
+  .responsive-trading-view--chart .responsive-page--futures > div > div:last-child {
+    display: none;
+  }
+
+  /* Futures intelligence sidebar — stack on mobile trading tabs */
+  .futures-intelligence-sidebar {
+    max-height: 40vh;
+  }
+
+  .responsive-trading-view--watchlist .futures-intelligence-sidebar,
+  .responsive-trading-view--order .futures-intelligence-sidebar {
+    display: flex;
+    max-height: none;
+    flex: 1;
+  }
+
+  /* Options — horizontal scroll chain */
+  .responsive-page--options [class*='overflow'] {
+    max-width: 100vw;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Market — stack cards */
+  .responsive-page--market .grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Portfolio — card stack */
+  .responsive-page--portfolio .grid.lg\:grid-cols-2,
+  .responsive-page--portfolio .grid.xl\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Orders — filter chips scroll */
+  .responsive-page--orders .flex.flex-wrap {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 0.5rem;
+    padding-bottom: 0.25rem;
+  }
+
+  /* Leaderboard — compact */
+  .responsive-page--leaderboard table {
+    font-size: 0.75rem;
+  }
+
+  /* Settings — full width forms */
+  .responsive-page--settings form,
+  .responsive-page--settings .max-w-xl {
+    max-width: 100% !important;
+  }
+
+  /* Bug report — sticky submit */
+  .responsive-page--bug-report form button[type='submit'] {
+    position: sticky;
+    bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+    z-index: 10;
+  }
+
+  /* Tables → horizontal scroll fallback */
+  .responsive-page table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Login / auth — mobile stack ────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html[data-route='auth'] .auth-split,
+  html[data-route='auth'] [class*='grid-cols-2'] {
+    grid-template-columns: 1fr !important;
+  }
+
+  html[data-route='auth'] .auth-hero,
+  html[data-route='auth'] [class*='hidden'][class*='lg\:'] {
+    display: none !important;
+  }
+}
+
+/* ── Order sheet (mobile) ───────────────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .responsive-order-sheet--open {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+    z-index: 46;
+    max-height: 85vh;
+    border-radius: 1rem 1rem 0 0;
+    transform: translateY(0);
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+  }
+
+  .responsive-order-sheet-handle {
+    width: 2.5rem;
+    height: 4px;
+    margin: 0.5rem auto;
+    border-radius: 999px;
+    background: rgb(var(--gray-600) / 0.6);
+  }
+
+  .responsive-order-sheet--closed {
+    transform: translateY(110%);
+    pointer-events: none;
+  }
+
+  .responsive-panel-hidden {
+    display: none !important;
+  }
+
+  .responsive-panel-visible {
+    display: flex !important;
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+/* ── Touch targets ──────────────────────────────────────────────────────── */
+@media (max-width: 1023px) and (pointer: coarse) {
+  .responsive-bottom-nav a,
+  .responsive-trading-tabs button,
+  .responsive-fab {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+.responsive-touch-active {
+  opacity: 0.85;
+  transform: scale(0.98);
+}
+
+/* ── GPU-friendly transitions ───────────────────────────────────────────── */
+.responsive-sidebar-backdrop,
+.responsive-bottom-nav-inner,
+.responsive-order-mobile,
+.responsive-modal-sheet {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .responsive-order-mobile,
+  .responsive-modal-panel,
+  .responsive-sidebar-backdrop {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── Foldable hinge margin ──────────────────────────────────────────────── */
+@media (spanning: single-fold-vertical) {
+  .responsive-layout-manager {
+    padding-left: env(fold-left, 0px);
+    padding-right: env(fold-right, 0px);
+  }
+}
