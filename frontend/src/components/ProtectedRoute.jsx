@@ -76,9 +76,12 @@ export default function ProtectedRoute({ children, requireOnboarding = false }) 
             return <AppLoader />;
         }
 
-        if (!anyConnected) {
-            return <Navigate to="/select-broker" replace />;
-        }
+        // SIMULATION MODE: No broker connection required.
+        // The master ReplayProvider feeds all market data — skip broker gate entirely.
+        // if (!anyConnected) {
+        //     return <Navigate to="/select-broker" replace />;
+        // }
+
     }
 
     return children;

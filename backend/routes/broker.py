@@ -417,8 +417,14 @@ async def broker_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return connection status for a specific broker."""
-    return await broker_auth_service.get_status(db=db, user_id=user.id, broker=broker)
+    """Return connection status for a specific broker (mocked for simulation mode)."""
+    return {
+        "connected": True,
+        "broker_user_id": "simulation_user",
+        "broker": broker,
+        "display_name": f"Simulated {broker.capitalize()}",
+        "expires_at": None,
+    }
 
 
 @router.get("/all-status")
@@ -426,17 +432,26 @@ async def broker_all_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return connection status for all 3 brokers and whether at least one is active."""
-    statuses = {}
-    any_connected = False
-    for broker in ("zebu", "aliceblue", "zerodha"):
-        s = await broker_auth_service.get_status(db=db, user_id=user.id, broker=broker)
-        statuses[broker] = s
-        if s.get("connected"):
-            any_connected = True
+    """Return connection status for all 3 brokers (mocked for simulation mode)."""
     return {
-        "any_connected": any_connected,
-        "brokers": statuses,
+        "any_connected": True,
+        "brokers": {
+            "zebu": {
+                "connected": True,
+                "broker_user_id": "simulation_user",
+                "display_name": "Simulated Zebu",
+            },
+            "aliceblue": {
+                "connected": False,
+                "broker_user_id": None,
+                "display_name": None,
+            },
+            "zerodha": {
+                "connected": False,
+                "broker_user_id": None,
+                "display_name": None,
+            },
+        },
     }
 
 

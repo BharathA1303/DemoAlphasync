@@ -539,27 +539,19 @@ export default function Navbar({ onMenuToggle }) {
                     </div>
                 </div>
 
-                {/* Broker Badge */}
+                {/* Broker Badge (Static in Simulation Mode) */}
                 <div
-                    onClick={() => navigate('/brokers')}
                     className={cn(
-                        "hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-800/40 hover:bg-surface-800/80 cursor-pointer border border-edge/5 transition-all select-none mr-1",
-                        connectedInfo?.status === 'expired' && "border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10"
+                        "hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-800/40 border border-edge/5 transition-all select-none mr-1"
                     )}
-                    title={connectedBroker ? `${connectedMeta?.name}: ${connectedInfo?.status === 'connected' ? 'Active' : 'Session Expired'}. Click to manage.` : "No broker connected. Click to connect."}
+                    title="Simulated Replay Data Feed (Active)"
                 >
                     <div className={cn(
-                        "w-2 h-2 rounded-full",
-                        connectedInfo?.status === 'connected' ? "bg-emerald-400 animate-pulse" : connectedInfo?.status === 'expired' ? "bg-amber-400" : "bg-red-400"
+                        "w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
                     )} />
                     <span className="text-xs font-medium text-heading">
-                        {connectedBroker ? connectedMeta?.name : "No Broker"}
+                        {connectedBroker ? connectedMeta?.name : "Simulated Zebu"}
                     </span>
-                    {connectedInfo?.status === 'expired' && (
-                        <span className="text-[9px] bg-amber-500/20 text-amber-500 px-1 py-0.5 rounded font-semibold uppercase tracking-wider scale-90">
-                            Expired
-                        </span>
-                    )}
                 </div>
 
                 {/* Market status */}

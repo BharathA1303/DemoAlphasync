@@ -128,10 +128,10 @@ export default function TradingModeSelectPage() {
     }, []);
 
     const handleSelect = (modeId) => {
-        // Both demo and live require a real broker connection for live market data
+        // SIMULATION MODE: No broker required — go straight to dashboard.
         localStorage.setItem('alphasync_trading_mode', modeId);
-        localStorage.removeItem('alphasync_onboarded');
-        navigate('/select-broker');
+        localStorage.setItem('alphasync_onboarded', '1'); // Mark as onboarded so ProtectedRoute passes
+        navigate('/dashboard');
     };
 
     const firstName = user?.full_name?.split(' ')[0] || user?.username || 'Trader';
