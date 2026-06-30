@@ -281,12 +281,20 @@ jobs:
             retry 4 8 bash -c 'echo "${GH_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin'
 
             echo "=== Pulling prebuilt images (only changed layers transferred) ==="
-            retry 4 10 docker pull "${BACKEND_IMAGE}:latest"
-            retry 4 10 docker pull "${FRONTEND_IMAGE}:latest"
 
-            # Retag to local names expected by docker-compose.demo.yml
-            docker tag "${BACKEND_IMAGE}:latest" alphasync-demo-backend:latest
-            docker tag "${FRONTEND_IMAGE}:latest" alphasync-demo-frontend:latest
+            pull_or_build() {
+              local IMAGE="$1" LOCAL_TAG="$2" CONTEXT="$3" DOCKERFILE="$4"
+              if retry 3 10 docker pull "${IMAGE}:latest" 2>&1; then
+                echo "Pulled ${IMAGE}:latest from GHCR"
+                docker tag "${IMAGE}:latest" "${LOCAL_TAG}"
+              else
+                echo "WARNING: ${IMAGE}:latest not in GHCR — building locally as fallback"
+                docker build -t "${LOCAL_TAG}" -f "${CONTEXT}/${DOCKERFILE}" "${CONTEXT}"
+              fi
+            }
+
+            pull_or_build "${BACKEND_IMAGE}"  "alphasync-demo-backend:latest"  "backend"  "Dockerfile.demo"
+            pull_or_build "${FRONTEND_IMAGE}" "alphasync-demo-frontend:latest" "frontend" "Dockerfile.demo.prebuilt"
 
             echo "=== Verifying uploaded files ==="
             ls -la docker-compose.demo.yml deploy/nginx/demo.alphasync.app.conf || true
