@@ -1,10 +1,8 @@
 """
-AlphaSync Market Data Providers — Pluggable market data architecture.
+AlphaSync Market Data Providers — Simulation-only data layer.
 
-Per-user provider model: each authenticated user gets their own
-ZebuProvider instance, managed by BrokerSessionManager.
-
-No global singleton.
+DemoAlphasync uses a single ReplayProvider for all market data.
+No live broker connections are made.
 
 Usage:
     from services.broker_session import broker_session_manager
@@ -15,6 +13,6 @@ Usage:
 """
 
 from providers.base import MarketProvider
-from providers.factory import create_zebu_provider
+from providers.factory import create_provider
 
-__all__ = ["MarketProvider", "create_zebu_provider"]
+__all__ = ["MarketProvider", "create_provider"]
