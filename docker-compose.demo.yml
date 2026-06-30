@@ -19,7 +19,7 @@ services:
       dockerfile: Dockerfile.demo
     container_name: simalpha-backend
     ports:
-      - "127.0.0.1:8001:8000"
+      - "0.0.0.0:8001:8000"
     volumes:
       - simalpha-uploads:/app/uploads
       - ./firebase-credentials.json:/app/firebase-credentials.json:ro
@@ -28,7 +28,7 @@ services:
       - DEBUG=true
       - DATABASE_URL=postgresql+asyncpg://${DEMO_POSTGRES_USER:-alphasync_demo}:${DEMO_POSTGRES_PASSWORD:-alphasync_demo}@demo-pg:5432/${DEMO_POSTGRES_DB:-alphasync_demo}
       - REDIS_URL=redis://demo-redis:6379/0
-      - CORS_ORIGINS=["https://demo.alphasync.app","http://localhost:3001"]
+      - CORS_ORIGINS=["https://demo.alphasync.app","http://localhost:3001","http://147.93.168.157:3001","http://147.93.168.157"]
       - CORS_ORIGIN_REGEX=https?://(localhost|127\.0\.0\.1):\d+
       - BROKER_ENCRYPTION_KEY=${BROKER_ENCRYPTION_KEY:-alphasync-default-broker-key-change-in-production-1234}
       - SIMULATION_MODE=true
@@ -96,7 +96,7 @@ services:
       dockerfile: Dockerfile.demo.prebuilt
     container_name: simalpha-frontend
     ports:
-      - "127.0.0.1:3001:80"
+      - "0.0.0.0:3001:80"
     depends_on:
       demo-backend:
         condition: service_started
