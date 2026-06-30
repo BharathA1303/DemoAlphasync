@@ -60,6 +60,10 @@ class ReplayProvider(MarketProvider):
             self._subscribed_symbols.discard(s)
         replay_engine.unsubscribe(clean_symbols)
 
+    def get_subscribed_symbols(self) -> set:
+        """Return the set of currently subscribed symbols."""
+        return set(self._subscribed_symbols)
+
     async def get_quote(self, symbol: str) -> Optional[dict]:
         """Get the latest quote for a symbol from the local cache."""
         sym = str(symbol).strip().upper()
@@ -75,7 +79,7 @@ class ReplayProvider(MarketProvider):
                 results[clean_sym] = quote
         return results
 
-    def health(self) -> ProviderHealth:
+    async def health(self) -> ProviderHealth:
         """Get the health status of the provider."""
         uptime = (time.time() - self._started_at) if self._started_at else 0.0
         return ProviderHealth(
