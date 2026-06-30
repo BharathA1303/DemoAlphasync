@@ -563,14 +563,6 @@ async def _subscribe_near_expiry_futures() -> None:
 def get_contracts(symbol: str, limit: Optional[int] = None) -> list[dict]:
     """
     Get all futures contracts for a given symbol (canonical or trading format).
-
-    Args:
-        symbol: Canonical symbol (e.g., "RELIANCE") or Zebu trading symbol
-        limit: Optional max number of contracts to return (by expiry, nearest first)
-
-    Returns:
-        List of contract dicts with keys: contract_symbol, expiry_date, lot_size, etc.
-        Empty list if symbol not found or no contracts exist.
     """
     symbol = symbol.upper().strip().replace(".NS", "").replace(".BO", "")
     contracts = _futures_contracts.get(symbol, [])
@@ -578,6 +570,69 @@ def get_contracts(symbol: str, limit: Optional[int] = None) -> list[dict]:
     # Do not surface synthetic fallback entries with missing tokens because
     # they can resolve to wrong instruments at quote time.
     contracts = [c for c in contracts if str(c.get("token") or "").strip()]
+
+    if not contracts:
+        # Generate simulated contracts (Near, Mid, Far)
+        import calendar
+        from datetime import datetime, timedelta
+        from market_data.replay.simulation_clock import simulation_clock
+
+        now = simulation_clock.now()
+        sim_contracts = []
+        
+        # Determine lot size
+        lot_size = 250
+        if symbol == "NIFTY":
+            lot_size = 50
+        elif symbol == "BANKNIFTY":
+            lot_size = 15
+        elif symbol == "FINNIFTY":
+            lot_size = 40
+        elif symbol == "SENSEX":
+            lot_size = 10
+        elif symbol in ("GOLD", "SILVER"):
+            lot_size = 1
+
+        # Determine instrument type
+        inst_type = "FUTIDX" if symbol in ("NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX", "BANKEX") else "FUTSTK"
+
+        # Generate expiries for current month, next month, and month after
+        months_labels = ["Near", "Mid", "Far"]
+        for idx, offset in enumerate(range(3)):
+            # Calculate target month and year
+            target_month = now.month + offset
+            target_year = now.year
+            while target_month > 12:
+                target_month -= 12
+                target_year += 1
+            
+            # Find the last Thursday of the target month
+            c = calendar.monthcalendar(target_year, target_month)
+            # Thursday is index 3 in monthcalendar (Mon=0, Tue=1, Wed=2, Thu=3, Fri=4, Sat=5, Sun=6)
+            thursdays = []
+            for week in c:
+                if week[3] != 0:
+                    thursdays.append(week[3])
+            last_thursday = thursdays[-1]
+            expiry_dt = datetime(target_year, target_month, last_thursday)
+            
+            # Form contract symbol: e.g. NIFTY26JUNFUT
+            month_abbr = expiry_dt.strftime("%b").upper() # e.g. JUN
+            year_abbr = expiry_dt.strftime("%y") # e.g. 26
+            contract_symbol = f"{symbol}{year_abbr}{month_abbr}FUT"
+
+            sim_contracts.append({
+                "contract_symbol": contract_symbol,
+                "token": contract_symbol,
+                "expiry_date": expiry_dt.strftime("%Y-%m-%d"),
+                "expiry_label": months_labels[idx],
+                "lot_size": lot_size,
+                "tick_size": 0.05,
+                "instrument_type": inst_type,
+                "exchange": "NFO" if inst_type in ("FUTIDX", "FUTSTK") else "MCX",
+            })
+
+        contracts = sim_contracts
 
     if limit:
         contracts = contracts[:limit]

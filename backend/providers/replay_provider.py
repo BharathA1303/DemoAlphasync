@@ -84,6 +84,118 @@ class ReplayProvider(MarketProvider):
                 results[clean_sym] = quote
         return results
 
+    async def get_historical_data(
+        self, symbol: str, period: str = "1mo", interval: str = "1d"
+    ) -> list:
+        """
+        Generates realistic simulated historical OHLCV candles using a random walk.
+        This ensures that when a user clicks a symbol, the chart immediately loads.
+        """
+        import random
+        from datetime import datetime, timedelta, timezone
+
+        # Determine base price based on symbol name
+        base_price = 100.0
+        sym = symbol.upper().strip()
+        if sym == "^NSEI" or "NIFTY" in sym:
+            base_price = 22000.0
+        elif sym == "^NSEBANK" or "BANKNIFTY" in sym:
+            base_price = 47000.0
+        elif sym == "^BSESN" or "SENSEX" in sym:
+            base_price = 72000.0
+        elif "RELIANCE" in sym:
+            base_price = 2500.0
+        elif "TCS" in sym:
+            base_price = 3800.0
+        elif "HDFCBANK" in sym:
+            base_price = 1450.0
+        elif "INFY" in sym:
+            base_price = 1500.0
+        elif "SBIN" in sym:
+            base_price = 750.0
+        elif sym in ("GOLD", "SILVER", "CRUDEOIL"):
+            if sym == "GOLD":
+                base_price = 65000.0
+            elif sym == "SILVER":
+                base_price = 72000.0
+            else:
+                base_price = 6500.0
+        else:
+            random.seed(sym)
+            base_price = random.uniform(100.0, 2000.0)
+            random.seed()
+
+        # Determine number of candles and time delta based on interval and period
+        num_candles = 300
+        delta = timedelta(days=1)
+        
+        intraday_intervals = {
+            "1m": timedelta(minutes=1),
+            "2m": timedelta(minutes=2),
+            "3m": timedelta(minutes=3),
+            "5m": timedelta(minutes=5),
+            "10m": timedelta(minutes=10),
+            "15m": timedelta(minutes=15),
+            "30m": timedelta(minutes=30),
+            "1h": timedelta(hours=1),
+            "2h": timedelta(hours=2),
+            "4h": timedelta(hours=4),
+        }
+
+        if interval in intraday_intervals:
+            delta = intraday_intervals[interval]
+            # Match reasonable counts for intraday
+            if interval == "1m":
+                num_candles = 375  # ~1 trading day of minutes
+            elif interval == "5m":
+                num_candles = 300  # ~4 trading days
+            else:
+                num_candles = 200
+        else:
+            delta = timedelta(days=1)
+            num_candles = 250  # ~1 year of daily trading candles
+
+        # Generate candles going backwards from current simulation clock time
+        now = simulation_clock.now()
+        candles = []
+        current_price = base_price
+        volatility = 0.005 if interval == "1d" else 0.001
+
+        for i in range(num_candles):
+            t = now - (num_candles - i) * delta
+            # Skip weekends for daily candles
+            if interval == "1d" and t.weekday() >= 5:
+                continue
+                
+            # Random walk
+            change = current_price * random.normalvariate(0, volatility)
+            open_price = current_price
+            close_price = current_price + change
+            high_price = max(open_price, close_price) + (current_price * abs(random.normalvariate(0, volatility * 0.5)))
+            low_price = min(open_price, close_price) - (current_price * abs(random.normalvariate(0, volatility * 0.5)))
+            
+            # Keep prices positive
+            if low_price <= 0:
+                low_price = 0.05
+            if open_price <= 0:
+                open_price = 0.05
+            if close_price <= 0:
+                close_price = 0.05
+            if high_price <= 0:
+                high_price = 0.05
+
+            candles.append({
+                "time": int(t.timestamp()),
+                "open": round(open_price, 2),
+                "high": round(high_price, 2),
+                "low": round(low_price, 2),
+                "close": round(close_price, 2),
+                "volume": random.randint(1000, 500000),
+            })
+            current_price = close_price
+
+        return candles
+
     async def health(self) -> ProviderHealth:
         """Get the health status of the provider."""
         uptime = (time.time() - self._started_at) if self._started_at else 0.0

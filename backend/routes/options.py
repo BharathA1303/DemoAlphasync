@@ -1121,6 +1121,163 @@ async def _zebu_expiry_dates(symbol: str) -> list[str]:
     return sorted(expiry_dates)
 
 
+async def _generate_simulated_option_chain(symbol: str, expiry: Optional[str], strikes: int) -> dict:
+    """
+    Generates a realistic simulated option chain with weekly expiries and strikes.
+    """
+    import random
+    from datetime import datetime, timedelta, timezone
+    from market_data.replay.simulation_clock import simulation_clock
+
+    sym = symbol.upper().strip()
+    
+    # 1. Determine Spot Price
+    spot_price = 100.0
+    if sym == "NIFTY":
+        spot_price = 22000.0
+    elif sym == "BANKNIFTY":
+        spot_price = 47000.0
+    elif sym == "SENSEX":
+        spot_price = 72000.0
+    elif sym == "FINNIFTY":
+        spot_price = 21000.0
+    elif sym == "RELIANCE":
+        spot_price = 2500.0
+    elif sym == "TCS":
+        spot_price = 3800.0
+    else:
+        random.seed(sym)
+        spot_price = random.uniform(100.0, 2000.0)
+        random.seed()
+
+    # Try to get live quote from QuoteCoordinator if available
+    try:
+        from market.quote_coordinator import quote_coordinator
+        quote = await quote_coordinator.get_quote(sym)
+        if quote:
+            spot_price = float(quote.get("price") or quote.get("ltp") or spot_price)
+    except Exception:
+        pass
+
+    # 2. Determine Expiry Dates (next 4 Thursdays)
+    now = simulation_clock.now()
+    expiry_dates = []
+    
+    # Find next Thursdays
+    current = now
+    while len(expiry_dates) < 4:
+        current += timedelta(days=1)
+        if current.weekday() == 3:  # Thursday
+            # Format as DD-MMM-YYYY (e.g. 02-Jul-2026)
+            expiry_dates.append(current.strftime("%d-%b-%Y"))
+
+    selected_expiry = expiry if expiry else expiry_dates[0]
+
+    # 3. Determine Strike Price Parameters
+    strike_step = 50
+    if sym == "BANKNIFTY" or sym == "SENSEX":
+        strike_step = 100
+    elif sym == "NIFTY" or sym == "FINNIFTY":
+        strike_step = 50
+    elif spot_price > 5000:
+        strike_step = 100
+    elif spot_price > 1000:
+        strike_step = 50
+    elif spot_price > 500:
+        strike_step = 10
+    else:
+        strike_step = 5
+
+    center_strike = int(round(spot_price / strike_step) * strike_step)
+    
+    # Generate strikes around ATM
+    chain = []
+    stream_symbols = []
+    
+    # Render option contracts
+    # E.g. NIFTY26JUL22000CE
+    # Format expiry for contract symbol (e.g. 26JUL)
+    try:
+        exp_dt = datetime.strptime(selected_expiry, "%d-%b-%Y")
+        expiry_sym_str = exp_dt.strftime("%y%b").upper() # e.g. 26JUL
+        # Zebu options symbol format: NIFTY26JUL22000CE
+    except Exception:
+        expiry_sym_str = "26JUL"
+
+    for i in range(-strikes, strikes + 1):
+        strike = center_strike + (i * strike_step)
+        if strike <= 0:
+            continue
+
+        ce_symbol = f"{sym}{expiry_sym_str}{strike}CE"
+        pe_symbol = f"{sym}{expiry_sym_str}{strike}PE"
+        
+        # Calculate theoretical prices (simple intrinsic + time value)
+        dist_from_atm = abs(spot_price - strike)
+        time_value = max(5.0, 150.0 - (dist_from_atm * 0.8)) if sym in ("NIFTY", "BANKNIFTY", "SENSEX") else max(1.0, 25.0 - (dist_from_atm * 0.8))
+        
+        ce_intrinsic = max(0.0, spot_price - strike)
+        pe_intrinsic = max(0.0, strike - spot_price)
+        
+        ce_ltp = round(ce_intrinsic + time_value, 2)
+        pe_ltp = round(pe_intrinsic + time_value, 2)
+        
+        # Bid/Ask spreads
+        ce_bid = round(ce_ltp - 0.15, 2)
+        ce_ask = round(ce_ltp + 0.15, 2)
+        pe_bid = round(pe_ltp - 0.15, 2)
+        pe_ask = round(pe_ltp + 0.15, 2)
+
+        # Build row
+        row = {
+            "strike": strike,
+            "CE": {
+                "symbol": ce_symbol,
+                "token": ce_symbol,
+                "ltp": ce_ltp,
+                "price": ce_ltp,
+                "change": round(random.uniform(-5, 5), 2),
+                "change_percent": round(random.uniform(-3, 3), 2),
+                "oi": random.randint(10000, 2500000),
+                "volume": random.randint(5000, 1000000),
+                "bid_price": ce_bid,
+                "ask_price": ce_ask,
+                "bid_qty": random.randint(100, 5000),
+                "ask_qty": random.randint(100, 5000),
+                "exchange": "NFO",
+            },
+            "PE": {
+                "symbol": pe_symbol,
+                "token": pe_symbol,
+                "ltp": pe_ltp,
+                "price": pe_ltp,
+                "change": round(random.uniform(-5, 5), 2),
+                "change_percent": round(random.uniform(-3, 3), 2),
+                "oi": random.randint(10000, 2500000),
+                "volume": random.randint(5000, 1000000),
+                "bid_price": pe_bid,
+                "ask_price": pe_ask,
+                "bid_qty": random.randint(100, 5000),
+                "ask_qty": random.randint(100, 5000),
+                "exchange": "NFO",
+            }
+        }
+        
+        chain.append(row)
+        stream_symbols.extend([ce_symbol, pe_symbol])
+
+    return {
+        "symbol": sym,
+        "underlying_price": spot_price,
+        "expiry_dates": expiry_dates,
+        "selected_expiry": selected_expiry,
+        "chain": chain,
+        "stream_symbols": stream_symbols,
+        "timestamp": now.isoformat() + "Z",
+        "source": "simulated",
+    }
+
+
 @router.get("/chain/{symbol}")
 async def option_chain(
     symbol: str,
@@ -1190,6 +1347,11 @@ async def option_chain(
         )
     except Exception as e:
         logger.debug(f"Zebu option chain fetch failed for {sym}: {e}")
+
+    # Fallback to simulated option chain in simulation mode or if live fetch failed
+    if not result:
+        logger.info(f"Generating simulated option chain for {sym}")
+        result = await _generate_simulated_option_chain(sym, expiry, strikes)
 
     if result and not result.get("source"):
         result["source"] = "zebu"
