@@ -20,8 +20,8 @@ env:
   # and cannot be pushed to by this repo's GITHUB_TOKEN.
   # Local docker-compose tags (alphasync-demo-backend:latest) are unaffected —
   # they are applied via `docker tag` on the server after pull.
-  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/demo001-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/demo001-frontend
+  BACKEND_IMAGE: ghcr.io/bharatha1303/demo001-backend
+  FRONTEND_IMAGE: ghcr.io/bharatha1303/demo001-frontend
 
 # ── Job 1a: Build & push backend image ──────────────────────────────────────
 jobs:
@@ -143,8 +143,8 @@ jobs:
     # Job-level env so appleboy/ssh-action envs: can read them reliably.
     # (Step-level env: is NOT reliably visible to envs: in this action version.)
     env:
-      BACKEND_IMAGE: ${{ format('ghcr.io/{0}/demo001-backend', github.repository_owner) }}
-      FRONTEND_IMAGE: ${{ format('ghcr.io/{0}/demo001-frontend', github.repository_owner) }}
+      BACKEND_IMAGE: ghcr.io/bharatha1303/demo001-backend
+      FRONTEND_IMAGE: ghcr.io/bharatha1303/demo001-frontend
       GH_TOKEN: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
       GH_ACTOR: ${{ github.repository_owner }}
       GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
