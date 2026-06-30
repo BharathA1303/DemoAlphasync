@@ -550,7 +550,7 @@ export default function Navbar({ onMenuToggle }) {
                         "w-2 h-2 rounded-full bg-emerald-400 animate-pulse"
                     )} />
                     <span className="text-xs font-medium text-heading">
-                        {connectedBroker ? connectedMeta?.name : "Simulated Zebu"}
+                        Simulated Feed
                     </span>
                 </div>
 

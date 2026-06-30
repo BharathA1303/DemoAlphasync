@@ -241,7 +241,7 @@ function OptionChainCompact({
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [expiryOpen, setExpiryOpen] = useState(false);
   const expiryRef = useRef(null);
-  const zebuLive = isZebuChainSource(source);
+  const zebuLive = true;
 
   const virtualItems = useMemo(() => buildVirtualItems(chain, spotPrice), [chain, spotPrice]);
 
@@ -306,7 +306,7 @@ function OptionChainCompact({
   if (!zebuLive) {
     return (
       <div className="h-full flex items-center justify-center text-center p-4 text-xs text-gray-500">
-        Connect Zebu for live option chain
+        Option chain not available for this underlying
       </div>
     );
   }

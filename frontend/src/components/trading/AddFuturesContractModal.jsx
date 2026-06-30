@@ -81,7 +81,7 @@ export default function AddFuturesContractModal({
                 const list = (res.data?.contracts || []).filter((c) => c?.contract_symbol && c?.token);
                 setContracts(list);
                 if (list.length === 0) {
-                    setError(`No Zebu futures contracts returned for ${selectedUnderlying}`);
+                    setError(`No futures contracts returned for ${selectedUnderlying}`);
                     setQuotes({});
                     return;
                 }
@@ -105,7 +105,7 @@ export default function AddFuturesContractModal({
                 if (!cancelled) {
                     setContracts([]);
                     setQuotes({});
-                    setError(err?.response?.data?.detail || `Could not fetch Zebu contracts for ${selectedUnderlying}`);
+                    setError(err?.response?.data?.detail || `Could not fetch contracts for ${selectedUnderlying}`);
                 }
             } finally {
                 if (!cancelled) setLoading(false);
@@ -169,10 +169,10 @@ export default function AddFuturesContractModal({
                 <div className="space-y-1 max-h-80 overflow-y-auto">
                     {loading ? (
                         <div className="flex items-center justify-center py-10 text-gray-500 text-sm">
-                            <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Fetching Zebu contracts...
+                            <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Fetching contracts...
                         </div>
                     ) : contracts.length === 0 ? (
-                        <div className="text-center py-10 text-gray-500 text-sm">Select an underlying with active Zebu futures contracts.</div>
+                        <div className="text-center py-10 text-gray-500 text-sm">Select an underlying with active futures contracts.</div>
                     ) : contracts.map((contract) => {
                         const quote = quotes[contract.contract_symbol] || {};
                         const ltp = quote.ltp ?? quote.price ?? null;
