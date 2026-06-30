@@ -254,6 +254,33 @@ jobs:
             mkdir -p "${DEPLOY_DIR}"
             cd "${DEPLOY_DIR}"
 
+            ensure_dockerhub_dns() {
+              local failed=0
+              for host in auth.docker.io registry-1.docker.io ghcr.io; do
+                if ! getent hosts "${host}" >/dev/null 2>&1; then
+                  failed=1
+                fi
+              done
+
+              if [ "${failed}" -eq 0 ]; then
+                echo "DNS lookup OK"
+                return 0
+              fi
+
+              echo "DNS lookup failed. Applying resolver fallback..."
+              cp /etc/resolv.conf /etc/resolv.conf.alphasync.bak 2>/dev/null || true
+              cat > /etc/resolv.conf <<'EOF'
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+options timeout:2 attempts:3 rotate
+EOF
+
+              systemctl restart systemd-resolved 2>/dev/null || true
+              systemctl restart docker 2>/dev/null || true
+            }
+
+            ensure_dockerhub_dns
+
             echo "=== Logging in to GHCR ==="
             retry 4 8 bash -c 'echo "${GH_TOKEN}" | docker login ghcr.io -u "${GH_ACTOR}" --password-stdin'
 

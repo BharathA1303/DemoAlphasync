@@ -115,7 +115,7 @@ retry() {
 
 ensure_dockerhub_dns() {
     local failed=0
-    for host in auth.docker.io registry-1.docker.io; do
+    for host in auth.docker.io registry-1.docker.io ghcr.io; do
         if ! getent hosts "${host}" >/dev/null 2>&1; then
             failed=1
         fi
