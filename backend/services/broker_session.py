@@ -132,9 +132,41 @@ class BrokerSessionManager:
 
         self.register_session(MASTER_SESSION_ID, provider)
 
+        # ── Set simulation clock to 9:15 AM IST on the last trading day ──
+        try:
+            from market_data.replay.simulation_clock import simulation_clock
+            from datetime import datetime, timezone, timedelta, date
+            from zoneinfo import ZoneInfo
+
+            IST = ZoneInfo("Asia/Kolkata")
+            today = datetime.now(IST)
+
+            # Roll back to last weekday if today is weekend
+            session_date = today.date()
+            while session_date.weekday() >= 5:  # 5=Sat, 6=Sun
+                session_date -= timedelta(days=1)
+
+            # Start simulation at 09:15 AM IST on the chosen date
+            sim_start = datetime(
+                session_date.year, session_date.month, session_date.day,
+                9, 15, 0,
+                tzinfo=IST,
+            )
+
+            simulation_clock.set_clock(
+                sim_start_time=sim_start.astimezone(timezone.utc),
+                speed=1.0,  # real-time (1 second = 1 second)
+            )
+            logger.info(
+                f"Simulation clock set: {sim_start.strftime('%Y-%m-%d %H:%M IST')} at 1x speed"
+            )
+        except Exception as e:
+            logger.warning(f"Simulation clock init failed: {e}")
+
         # Auto-subscribe popular symbols so the simulation is active immediately
         await self._auto_subscribe(provider)
         logger.info("Global ReplayProvider initialized as Master Session (simulation mode)")
+
 
     async def restore_sessions(self) -> int:
         """

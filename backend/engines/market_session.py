@@ -106,6 +106,26 @@ class MarketSessionEngine:
 
     def get_current_state(self) -> MarketState:
         """Determine the current NSE market state."""
+        # ── Simulation mode: use the simulation clock so market is always OPEN ──
+        if self.simulation_mode:
+            try:
+                from market_data.replay.simulation_clock import simulation_clock
+                sim_now = simulation_clock.now()
+                # Convert to IST
+                from zoneinfo import ZoneInfo as _ZI
+                ist = _ZI("Asia/Kolkata")
+                sim_ist = sim_now.astimezone(ist)
+                sim_time = sim_ist.time()
+                for state, (start, end) in self.SESSIONS.items():
+                    if start <= sim_time < end:
+                        return state
+                # If simulation clock is outside 9:00-16:00, still return OPEN
+                # so the worker keeps running and data keeps flowing
+                return MarketState.OPEN
+            except Exception:
+                # If simulation clock isn't initialized yet, fall through to real clock
+                pass
+
         now = datetime.now(IST)
 
         # Weekend check (Saturday=5, Sunday=6)
@@ -123,6 +143,7 @@ class MarketSessionEngine:
                 return state
 
         return MarketState.CLOSED
+
 
     def is_trading_hours(self) -> bool:
         """Can orders be executed right now?"""

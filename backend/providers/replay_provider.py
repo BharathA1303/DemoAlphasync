@@ -37,13 +37,20 @@ class ReplayProvider(MarketProvider):
         self._running = True
         self._started_at = time.time()
         self._status = ProviderStatus.CONNECTED
-        
+
         # Set redis client on the publisher
         market_publisher.set_redis(self._redis)
-        
+
+        # ── Share price cache with MarketPublisher ──────────────────────
+        # MarketPublisher.publish_tick() stores every tick in its own
+        # _price_cache.  Point our _price_cache at the same dict so that
+        # MarketDataWorker.get_batch_quotes() sees live data immediately.
+        self._price_cache = market_publisher._price_cache
+
         # Start the global replay engine
         await replay_engine.start()
         logger.info("ReplayProvider started and ReplayEngine initialized")
+
 
     async def stop(self) -> None:
         """Stop the provider."""
