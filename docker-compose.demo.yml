@@ -93,7 +93,7 @@ services:
     image: alphasync-demo-frontend:latest
     build:
       context: ./frontend
-      dockerfile: Dockerfile.demo.prebuilt
+      dockerfile: Dockerfile.demo
     container_name: simalpha-frontend
     ports:
       - "0.0.0.0:3001:80"
