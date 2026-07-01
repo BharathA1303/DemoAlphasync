@@ -82,6 +82,14 @@ const adminApi = {
         return api.post('/admin/settings/auto-approval', { enabled: Boolean(enabled) }, withAdminSession());
     },
 
+    getDataFeedConfig() {
+        return api.get('/admin/settings/data-feed', withAdminSession());
+    },
+
+    updateDataFeedConfig(payload) {
+        return api.post('/admin/settings/data-feed', payload, withAdminSession());
+    },
+
     // ── User Management ─────────────────────────────────────────────
     listUsers(params = {}) {
         return api.get('/admin/users', withAdminSession({ params }));

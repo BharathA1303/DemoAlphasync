@@ -119,53 +119,246 @@ class BrokerSessionManager:
 
     async def initialize_master_session(self) -> None:
         """
-        Create and start the global ReplayProvider as the master session.
+        Create and start the master session (AMDPProvider or ReplayProvider).
         Called once at app startup.
         """
-        from providers.replay_provider import ReplayProvider
+        from database.connection import async_session
+        from sqlalchemy import select
+        from models.data_feed_config import DataFeedConfig
         from cache.redis_client import get_redis
         from config.settings import settings
+        from providers.replay_provider import ReplayProvider
+        from providers.amdp_provider import AMDPProvider
+        from providers.base import ProviderStatus
 
         redis_cache = await get_redis(settings.REDIS_URL)
-        provider = ReplayProvider(redis_client=redis_cache)
-        await provider.start()
 
-        self.register_session(MASTER_SESSION_ID, provider)
-
-        # ── Set simulation clock to 9:15 AM IST on the last trading day ──
+        # Check if AMDP is configured and enabled in DB
+        db_config = None
         try:
-            from market_data.replay.simulation_clock import simulation_clock
-            from datetime import datetime, timezone, timedelta, date
-            from zoneinfo import ZoneInfo
-
-            IST = ZoneInfo("Asia/Kolkata")
-            today = datetime.now(IST)
-
-            # Roll back to last weekday if today is weekend
-            session_date = today.date()
-            while session_date.weekday() >= 5:  # 5=Sat, 6=Sun
-                session_date -= timedelta(days=1)
-
-            # Start simulation at 09:15 AM IST on the chosen date
-            sim_start = datetime(
-                session_date.year, session_date.month, session_date.day,
-                9, 15, 0,
-                tzinfo=IST,
-            )
-
-            simulation_clock.set_clock(
-                sim_start_time=sim_start.astimezone(timezone.utc),
-                speed=1.0,  # real-time (1 second = 1 second)
-            )
-            logger.info(
-                f"Simulation clock set: {sim_start.strftime('%Y-%m-%d %H:%M IST')} at 1x speed"
-            )
+            async with async_session() as session:
+                stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+                res = await session.execute(stmt)
+                db_config = res.scalar_one_or_none()
         except Exception as e:
-            logger.warning(f"Simulation clock init failed: {e}")
+            logger.warning(f"Failed to query DataFeedConfig at startup (will fallback to Replay): {e}")
 
-        # Auto-subscribe popular symbols so the simulation is active immediately
+        provider = None
+        if db_config and db_config.is_enabled and db_config.api_key and db_config.api_secret:
+            logger.info("Initializing live AMDPProvider from database configuration...")
+            provider = AMDPProvider(
+                api_key=db_config.api_key,
+                api_secret=db_config.api_secret,
+                base_url=db_config.base_url,
+                redis_client=redis_cache
+            )
+            try:
+                await provider.start()
+                # Update status
+                async with async_session() as session:
+                    stmt = select(DataFeedConfig).filter(DataFeedConfig.id == db_config.id)
+                    res = await session.execute(stmt)
+                    conf = res.scalar_one()
+                    conf.connection_status = "connected"
+                    conf.error_message = None
+                    await session.commit()
+                logger.info("AMDPProvider started successfully at startup")
+            except Exception as e:
+                logger.error(f"Failed to start AMDPProvider at startup: {e}. Falling back to Replay.")
+                # Update status to error
+                try:
+                    async with async_session() as session:
+                        stmt = select(DataFeedConfig).filter(DataFeedConfig.id == db_config.id)
+                        res = await session.execute(stmt)
+                        conf = res.scalar_one()
+                        conf.connection_status = "error"
+                        conf.error_message = str(e)
+                        await session.commit()
+                except Exception as db_err:
+                    logger.debug(f"Failed to write error status: {db_err}")
+                provider = None
+
+        if provider is None:
+            logger.info("Initializing master session using ReplayProvider...")
+            provider = ReplayProvider(redis_client=redis_cache)
+            await provider.start()
+
+            # ── Set simulation clock to 9:15 AM IST on the last trading day ──
+            try:
+                from market_data.replay.simulation_clock import simulation_clock
+                from datetime import datetime, timezone, timedelta, date
+                from zoneinfo import ZoneInfo
+
+                IST = ZoneInfo("Asia/Kolkata")
+                today = datetime.now(IST)
+
+                # Roll back to last weekday if today is weekend
+                session_date = today.date()
+                while session_date.weekday() >= 5:  # 5=Sat, 6=Sun
+                    session_date -= timedelta(days=1)
+
+                # Start simulation at 09:15 AM IST on the chosen date
+                sim_start = datetime(
+                    session_date.year, session_date.month, session_date.day,
+                    9, 15, 0,
+                    tzinfo=IST,
+                )
+
+                simulation_clock.set_clock(
+                    sim_start_time=sim_start.astimezone(timezone.utc),
+                    speed=1.0,  # real-time (1 second = 1 second)
+                )
+                logger.info(
+                    f"Simulation clock set: {sim_start.strftime('%Y-%m-%d %H:%M IST')} at 1x speed"
+                )
+            except Exception as e:
+                logger.warning(f"Simulation clock init failed: {e}")
+
+            # ── Download real NSE prices and update replay engine catalogue ──
+            try:
+                from market_data.downloader.nse_downloader import nse_downloader
+                from market_data.replay.replay_engine import replay_engine, SYMBOL_CATALOGUE
+
+                logger.info("Fetching real NSE Bhavcopy prices (this may take a few seconds)...")
+                real_prices = await nse_downloader.fetch_and_seed(seed_db=True)
+
+                if real_prices:
+                    # Patch the SYMBOL_CATALOGUE with real price levels
+                    # so the dynamic generator starts from real market prices
+                    updated = 0
+                    for canonical, real_px in real_prices.items():
+                        if canonical in SYMBOL_CATALOGUE and real_px > 0:
+                            SYMBOL_CATALOGUE[canonical]["price"] = real_px
+                            # Also update symbol_states if already initialized
+                            if canonical in replay_engine._symbol_states:
+                                state = replay_engine._symbol_states[canonical]
+                                state["price"] = real_px
+                                state["open"]  = real_px
+                                state["high"]  = real_px
+                                state["low"]   = real_px
+                            updated += 1
+
+                    logger.info(
+                        f"✓ Updated {updated}/{len(SYMBOL_CATALOGUE)} symbols with real NSE prices"
+                    )
+                else:
+                    logger.warning("NSE data unavailable — using default simulation prices")
+            except Exception as e:
+                logger.warning(f"NSE price update failed (using defaults): {e}")
+
+        # Auto-subscribe popular symbols so the session is active immediately
         await self._auto_subscribe(provider)
-        logger.info("Global ReplayProvider initialized as Master Session (simulation mode)")
+        logger.info(f"Master Session initialized with {provider.__class__.__name__}")
+
+    async def reload_data_feed(self, db_session) -> tuple[bool, Optional[str]]:
+        """
+        Dynamically reload the master provider based on latest DataFeedConfig.
+        Returns (success, error_message).
+        """
+        from sqlalchemy import select
+        from models.data_feed_config import DataFeedConfig
+        from cache.redis_client import get_redis
+        from config.settings import settings
+        from providers.replay_provider import ReplayProvider
+        from providers.amdp_provider import AMDPProvider
+        from providers.base import ProviderStatus
+
+        stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+        res = await db_session.execute(stmt)
+        db_config = res.scalar_one_or_none()
+
+        if not db_config:
+            return False, "No data feed configuration found"
+
+        # Get existing master provider
+        old_provider = self._sessions.get(MASTER_SESSION_ID)
+        subscribed_symbols = list(old_provider.get_subscribed_symbols()) if old_provider else []
+
+        redis_cache = await get_redis(settings.REDIS_URL)
+
+        success = True
+        err_msg = None
+
+        if db_config.is_enabled:
+            if not db_config.api_key or not db_config.api_secret:
+                db_config.connection_status = "error"
+                db_config.error_message = "API Key and Secret are required when enabled"
+                await db_session.commit()
+                return False, db_config.error_message
+
+            logger.info("Dynamically starting new AMDPProvider...")
+            new_provider = AMDPProvider(
+                api_key=db_config.api_key,
+                api_secret=db_config.api_secret,
+                base_url=db_config.base_url,
+                redis_client=redis_cache
+            )
+            try:
+                db_config.connection_status = "connecting"
+                db_config.error_message = None
+                await db_session.commit()
+
+                await new_provider.start()
+                
+                # Wait briefly for WebSocket listener to try starting
+                await asyncio.sleep(1.0)
+                
+                if new_provider._status == ProviderStatus.ERROR:
+                    raise Exception("WebSocket connection failed to establish. Please check API Key/Secret and URL.")
+
+                # Stop the old provider
+                if old_provider:
+                    await old_provider.stop()
+
+                # Register new provider
+                self.register_session(MASTER_SESSION_ID, new_provider)
+                
+                # Re-subscribe symbols
+                if subscribed_symbols:
+                    await new_provider.subscribe(subscribed_symbols)
+
+                db_config.connection_status = "connected"
+                db_config.error_message = None
+                logger.info("Dynamically switched master provider to AMDPProvider")
+            except Exception as e:
+                success = False
+                err_msg = str(e)
+                logger.error(f"Failed to dynamically switch to AMDPProvider: {e}")
+                
+                db_config.connection_status = "error"
+                db_config.error_message = err_msg
+                await db_session.commit()
+                
+                # Stop the failed provider if running
+                await new_provider.stop()
+                
+                # Ensure we fall back to ReplayProvider if no provider is currently active
+                if not old_provider or not getattr(old_provider, "_running", False):
+                    fallback = ReplayProvider(redis_client=redis_cache)
+                    await fallback.start()
+                    self.register_session(MASTER_SESSION_ID, fallback)
+                    if subscribed_symbols:
+                        await fallback.subscribe(subscribed_symbols)
+                return False, err_msg
+        else:
+            logger.info("Live feed disabled. Dynamically switching to ReplayProvider...")
+            if old_provider and isinstance(old_provider, AMDPProvider):
+                await old_provider.stop()
+                
+                fallback = ReplayProvider(redis_client=redis_cache)
+                await fallback.start()
+                self.register_session(MASTER_SESSION_ID, fallback)
+                if subscribed_symbols:
+                    await fallback.subscribe(subscribed_symbols)
+            
+            db_config.connection_status = "disconnected"
+            db_config.error_message = None
+            logger.info("Dynamically switched master provider to ReplayProvider")
+
+        await db_session.commit()
+        return success, err_msg
+
+
 
 
     async def restore_sessions(self) -> int:

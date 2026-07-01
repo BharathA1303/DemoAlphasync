@@ -896,6 +896,120 @@ function AdminAuthVerify({ verifyLoading, authCode, setAuthCode, onVerify }) {
     );
 }
 
+/* ── Data Feed Configuration Modal (Root Only) ────────────────────────── */
+function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClose }) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+            <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl animate-slide-up admin-card"
+                style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+                onClick={(e) => e.stopPropagation()}>
+                {/* Header */}
+                <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.12)' }}>
+                            <Activity size={20} style={{ color: '#10b981' }} />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Data Feed Configuration</h2>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Configure the live market data feed integration</p>
+                        </div>
+                    </div>
+                    <button className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-white/5"
+                        style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={18} /></button>
+                </div>
+
+                <div className="p-5 flex flex-col gap-4">
+                    {/* Status panel */}
+                    <div className="p-4 rounded-xl flex flex-col gap-1.5" 
+                         style={{ 
+                             background: 'rgba(255,255,255,0.02)', 
+                             border: '1px solid var(--border)' 
+                         }}>
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Connection Status</span>
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                                  style={{
+                                      background: config.connection_status === 'connected' ? 'rgba(16,185,129,0.12)' :
+                                                  config.connection_status === 'connecting' ? 'rgba(245,158,11,0.12)' :
+                                                  config.connection_status === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)',
+                                      color: config.connection_status === 'connected' ? '#10b981' :
+                                             config.connection_status === 'connecting' ? '#f59e0b' :
+                                             config.connection_status === 'error' ? '#ef4444' : 'var(--text-muted)',
+                                      border: config.connection_status === 'connected' ? '1px solid rgba(16,185,129,0.22)' :
+                                              config.connection_status === 'connecting' ? '1px solid rgba(245,158,11,0.22)' :
+                                              config.connection_status === 'error' ? '1px solid rgba(239,68,68,0.22)' : '1px solid var(--border)'
+                                  }}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${config.connection_status === 'connected' ? 'bg-[#10b981] animate-pulse' : config.connection_status === 'connecting' ? 'bg-[#f59e0b] animate-bounce' : config.connection_status === 'error' ? 'bg-[#ef4444]' : 'bg-[var(--text-muted)]'}`}></span>
+                                {config.connection_status ? config.connection_status.toUpperCase() : 'DISCONNECTED'}
+                            </span>
+                        </div>
+                        {config.error_message && (
+                            <div className="text-xs p-2.5 rounded-lg font-mono break-all mt-1" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
+                                {config.error_message}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Form fields */}
+                    <div className="flex flex-col gap-3">
+                        <div className="flex items-center justify-between p-3.5 rounded-xl transition-all" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
+                            <div>
+                                <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Enable Live Feed</label>
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Toggle between live AMDP feed and local simulation clock.</span>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" className="sr-only peer" checked={draft.is_enabled}
+                                       onChange={(e) => setDraft(prev => ({ ...prev, is_enabled: e.target.checked }))} />
+                                <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
+                            </label>
+                        </div>
+
+                        <div>
+                            <label className="label-text">API Base URL</label>
+                            <input className="input-field" value={draft.base_url} placeholder="http://localhost:3000/api/v1"
+                                   onChange={(e) => setDraft(prev => ({ ...prev, base_url: e.target.value }))} />
+                        </div>
+
+                        <div>
+                            <label className="label-text">API Key</label>
+                            <input className="input-field font-mono" value={draft.api_key} placeholder="AK_..."
+                                   onChange={(e) => setDraft(prev => ({ ...prev, api_key: e.target.value }))} />
+                        </div>
+
+                        <div>
+                            <label className="label-text">API Secret</label>
+                            <input className="input-field font-mono" type="password" value={draft.api_secret} placeholder={config.api_secret ? "••••••••••••••••" : "sk_..."}
+                                   onChange={(e) => setDraft(prev => ({ ...prev, api_secret: e.target.value }))} />
+                            {config.api_secret && (
+                                <span className="text-[11px] mt-1 block" style={{ color: 'var(--text-muted)' }}>
+                                    API Secret is configured and encrypted. Leave blank to keep existing.
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-2 p-5" style={{ borderTop: '1px solid var(--border)' }}>
+                    <button className="admin-action-btn admin-action-btn--secondary" onClick={onClose} disabled={saving}>
+                        Cancel
+                    </button>
+                    <button className="admin-action-btn admin-action-btn--primary" onClick={onSave} disabled={saving || loading}>
+                        {saving ? (
+                            <>
+                                <Loader2 size={14} className="animate-spin" /> Saving & Connect...
+                            </>
+                        ) : (
+                            'Save & Connect'
+                        )}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /* ══════════════════════════════════════════════════════════════════════
    Main Admin Panel
    ══════════════════════════════════════════════════════════════════════ */
@@ -934,6 +1048,79 @@ export default function AdminPanelPage() {
     const [selectedUserDetail, setSelectedUserDetail] = useState(null);
     const [detailLoading, setDetailLoading] = useState(false);
     const [actionState, setActionState] = useState(DEFAULT_ACTION_STATE);
+
+    // Data feed configuration state (root only)
+    const [showDataFeedModal, setShowDataFeedModal] = useState(false);
+    const [dataFeedConfig, setDataFeedConfig] = useState({
+        api_key: '',
+        api_secret: '',
+        base_url: 'http://localhost:3000/api/v1',
+        is_enabled: false,
+        connection_status: 'disconnected',
+        error_message: null
+    });
+    const [dataFeedDraft, setDataFeedDraft] = useState({
+        api_key: '',
+        api_secret: '',
+        base_url: 'http://localhost:3000/api/v1',
+        is_enabled: false
+    });
+    const [dataFeedLoading, setDataFeedLoading] = useState(false);
+    const [dataFeedSaving, setDataFeedSaving] = useState(false);
+
+    const loadDataFeedConfig = useCallback(async () => {
+        setDataFeedLoading(true);
+        try {
+            const { data } = await adminApi.getDataFeedConfig();
+            if (data) {
+                setDataFeedConfig(data);
+                setDataFeedDraft({
+                    api_key: data.api_key || '',
+                    api_secret: data.api_secret || '',
+                    base_url: data.base_url || 'http://localhost:3000/api/v1',
+                    is_enabled: Boolean(data.is_enabled)
+                });
+            }
+        } catch (err) {
+            toast.error(parseApiError(err, 'Failed to load data feed configuration'));
+        } finally {
+            setDataFeedLoading(false);
+        }
+    }, []);
+
+    const openDataFeedModal = useCallback(() => {
+        setShowDataFeedModal(true);
+        loadDataFeedConfig();
+    }, [loadDataFeedConfig]);
+
+    const handleSaveDataFeed = useCallback(async () => {
+        setDataFeedSaving(true);
+        try {
+            const { data } = await adminApi.updateDataFeedConfig(dataFeedDraft);
+            if (data?.success) {
+                toast.success('Data feed configuration saved and connected!');
+            } else if (data?.error) {
+                toast.error(`Connected with error: ${data.error}`);
+            } else {
+                toast.success('Data feed configuration saved');
+            }
+            if (data?.config) {
+                setDataFeedConfig(data.config);
+                setDataFeedDraft({
+                    api_key: data.config.api_key || '',
+                    api_secret: data.config.api_secret || '',
+                    base_url: data.config.base_url || 'http://localhost:3000/api/v1',
+                    is_enabled: Boolean(data.config.is_enabled)
+                });
+            }
+            setShowDataFeedModal(false);
+            await refreshDashboard();
+        } catch (err) {
+            toast.error(parseApiError(err, 'Failed to save data feed configuration'));
+        } finally {
+            setDataFeedSaving(false);
+        }
+    }, [dataFeedDraft, refreshDashboard]);
 
     // Admin management state (root only)
     const [showAdminModal, setShowAdminModal] = useState(false);
@@ -1651,6 +1838,11 @@ export default function AdminPanelPage() {
                                     </button>
                                 )}
                                 {authStage === 'dashboard' && isRoot && (
+                                    <button className="admin-action-btn" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981', borderColor: 'rgba(16,185,129,0.24)' }} onClick={openDataFeedModal}>
+                                        <Activity size={14} /> Data Feed
+                                    </button>
+                                )}
+                                {authStage === 'dashboard' && isRoot && (
                                     <button className="admin-action-btn" style={{ background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', borderColor: 'rgba(14,165,233,0.24)' }} onClick={() => openRootControlPage()}>
                                         <Settings2 size={14} /> Root Center
                                     </button>
@@ -2185,6 +2377,12 @@ export default function AdminPanelPage() {
                 <AdminManagementModal admins={adminsList} adminsLoading={adminsLoading}
                     onClose={() => setShowAdminModal(false)} onPromote={handlePromoteAdmin}
                     onUpdateLevel={handleUpdateAdminLevel} onRevoke={handleRevokeAdmin} />
+            )}
+
+            {/* Data Feed Modal (root only) */}
+            {showDataFeedModal && (
+                <DataFeedModal config={dataFeedConfig} draft={dataFeedDraft} setDraft={setDataFeedDraft}
+                    loading={dataFeedLoading} saving={dataFeedSaving} onSave={handleSaveDataFeed} onClose={() => setShowDataFeedModal(false)} />
             )}
         </div>
     );

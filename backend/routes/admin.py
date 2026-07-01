@@ -168,6 +168,13 @@ class AutoApprovalUpdateRequest(BaseModel):
     enabled: bool
 
 
+class DataFeedSettingsUpdateRequest(BaseModel):
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+    base_url: Optional[str] = "http://localhost:3000/api/v1"
+    is_enabled: bool = False
+
+
 # ── 2FA Auth Endpoints (require admin role, NOT 2FA session) ─────────
 
 
@@ -296,6 +303,109 @@ async def update_auto_approval_setting(
         ip,
     )
     return {"enabled": enabled}
+
+
+@router.get("/settings/data-feed")
+async def get_data_feed_settings(
+    admin: User = Depends(require_2fa_session),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read current data feed settings (root / manage can view)."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        return {
+            "api_key": "",
+            "api_secret": "",
+            "base_url": "http://localhost:3000/api/v1",
+            "is_enabled": False,
+            "connection_status": "disconnected",
+            "error_message": None,
+        }
+
+    # Mask secret if set
+    masked_secret = ""
+    if config.api_secret:
+        masked_secret = config.api_secret[:5] + "*" * 15 if len(config.api_secret) > 5 else "********"
+
+    return {
+        "api_key": config.api_key or "",
+        "api_secret": masked_secret,
+        "base_url": config.base_url or "http://localhost:3000/api/v1",
+        "is_enabled": config.is_enabled,
+        "connection_status": config.connection_status,
+        "error_message": config.error_message,
+    }
+
+
+@router.post("/settings/data-feed")
+async def update_data_feed_settings(
+    req: DataFeedSettingsUpdateRequest,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Root-only edit for live data feed settings. Triggers reload of master session."""
+    from models.data_feed_config import DataFeedConfig
+    from services.broker_session import broker_session_manager
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        config = DataFeedConfig()
+        db.add(config)
+
+    config.is_enabled = req.is_enabled
+    if req.base_url:
+        config.base_url = req.base_url.strip()
+    if req.api_key:
+        config.api_key = req.api_key.strip()
+        
+    # Only update secret if a new, non-masked one is provided
+    if req.api_secret and not req.api_secret.endswith("********") and "*" not in req.api_secret:
+        config.api_secret = req.api_secret.strip()
+
+    await db.commit()
+    await db.refresh(config)
+
+    # Dynamic reload
+    success, error_msg = await broker_session_manager.reload_data_feed(db)
+
+    ip = request.client.host if request.client else None
+    logger.info(
+        "Admin %s updated data-feed config (enabled=%s, status=%s, error=%s, ip=%s)",
+        admin.email,
+        config.is_enabled,
+        config.connection_status,
+        error_msg,
+        ip,
+    )
+
+    # Return refreshed config (with masked secret)
+    masked_secret = ""
+    if config.api_secret:
+        masked_secret = config.api_secret[:5] + "*" * 15 if len(config.api_secret) > 5 else "********"
+
+    return {
+        "success": success,
+        "error": error_msg,
+        "config": {
+            "api_key": config.api_key or "",
+            "api_secret": masked_secret,
+            "base_url": config.base_url or "http://localhost:3000/api/v1",
+            "is_enabled": config.is_enabled,
+            "connection_status": config.connection_status,
+            "error_message": config.error_message,
+        }
+    }
 
 
 # ── User Management (require at least 'manage' for writes) ──────────

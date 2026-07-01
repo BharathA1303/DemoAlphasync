@@ -127,6 +127,7 @@ async def init_db():
             AdminAuditLog,
             EmailNotificationLog,
         )  # noqa
+        from models.data_feed_config import DataFeedConfig  # noqa
 
         await conn.run_sync(Base.metadata.create_all)
 
