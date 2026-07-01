@@ -347,7 +347,7 @@ async def get_data_feed_settings(
 async def update_data_feed_settings(
     req: DataFeedSettingsUpdateRequest,
     request: Request,
-    admin: User = Depends(require_root_admin),
+    admin: User = Depends(require_manage_level),
     db: AsyncSession = Depends(get_db),
 ):
     """Root-only edit for live data feed settings. Triggers reload of master session."""

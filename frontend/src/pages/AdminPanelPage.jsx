@@ -1837,7 +1837,7 @@ export default function AdminPanelPage() {
                                         <Crown size={14} /> Manage Admins
                                     </button>
                                 )}
-                                {authStage === 'dashboard' && isRoot && (
+                                {authStage === 'dashboard' && canManage && (
                                     <button className="admin-action-btn" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981', borderColor: 'rgba(16,185,129,0.24)' }} onClick={openDataFeedModal}>
                                         <Activity size={14} /> Data Feed
                                     </button>
@@ -2379,8 +2379,8 @@ export default function AdminPanelPage() {
                     onUpdateLevel={handleUpdateAdminLevel} onRevoke={handleRevokeAdmin} />
             )}
 
-            {/* Data Feed Modal (root only) */}
-            {showDataFeedModal && (
+            {/* Data Feed Modal (manage/root admins) */}
+            {showDataFeedModal && canManage && (
                 <DataFeedModal config={dataFeedConfig} draft={dataFeedDraft} setDraft={setDataFeedDraft}
                     loading={dataFeedLoading} saving={dataFeedSaving} onSave={handleSaveDataFeed} onClose={() => setShowDataFeedModal(false)} />
             )}
