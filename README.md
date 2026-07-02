@@ -8,7 +8,7 @@
 
 ## 📖 What is AlphaSync?
 
-AlphaSync is a **virtual (paper) trading platform** for the Indian stock market — a flight simulator for trading stocks, futures, and options.
+AlphaSync is a **virtual (paper) tradinplatform** for the Indian stock market — a flight simulator for trading stocks, futures, and options.
 
 - **₹10,00,000 virtual capital** when you sign up — completely free
 - **Buy and sell real Indian stocks** (NIFTY 50, SENSEX, etc.) using **real-time market prices** streamed from broker WebSocket feeds
