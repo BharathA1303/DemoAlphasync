@@ -25,15 +25,35 @@ jobs:
     name: SSH deploy → /opt/apps/alphasync-academic
     runs-on: ubuntu-latest
     steps:
+      - name: Encode firebase credentials
+        id: fb_creds
+        env:
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+        run: |
+          if [ -z "${FIREBASE_CREDENTIALS_JSON}" ]; then
+            echo "ERROR: FIREBASE_CREDENTIALS_JSON secret is not set."
+            exit 1
+          fi
+          # Base64-encode here so the JSON's embedded quotes/newlines (the
+          # private_key field especially) survive the ssh-action `envs:`
+          # export + SSH hop intact instead of risking shell-quoting
+          # corruption when written directly.
+          echo "b64=$(printf '%s' "${FIREBASE_CREDENTIALS_JSON}" | base64 -w0)" >> "$GITHUB_OUTPUT"
+
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          # `envs:` below only forwards a var that already exists in *this*
+          # step's environment — it does not read secrets.* itself, so the
+          # value must be set here.
+          FIREBASE_CREDENTIALS_JSON_B64: ${{ steps.fb_creds.outputs.b64 }}
         with:
           host: ${{ secrets.SERVER_HOST }}      # 147.93.168.157
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
           script_stop: true
-          envs: FIREBASE_CREDENTIALS_JSON
+          envs: FIREBASE_CREDENTIALS_JSON_B64
           script: |
             set -euo pipefail
 
@@ -61,11 +81,18 @@ jobs:
               echo "    found a stale auto-created directory at firebase-credentials.json - removing it"
               rmdir firebase-credentials.json
             fi
-            if [ -z "${FIREBASE_CREDENTIALS_JSON:-}" ]; then
-              echo "ERROR: FIREBASE_CREDENTIALS_JSON secret is empty. Aborting before a broken deploy overwrites a working one."
+            if [ -z "${FIREBASE_CREDENTIALS_JSON_B64:-}" ]; then
+              echo "ERROR: FIREBASE_CREDENTIALS_JSON_B64 is empty. Aborting before a broken deploy overwrites a working one."
               exit 1
             fi
-            printf '%s' "${FIREBASE_CREDENTIALS_JSON}" > firebase-credentials.json
+            echo "${FIREBASE_CREDENTIALS_JSON_B64}" | base64 -d > firebase-credentials.json
+            # Sanity check without assuming a host-level JSON parser is
+            # installed: a valid service-account file must at minimum start
+            # with '{' and contain "type": "service_account".
+            if ! head -c1 firebase-credentials.json | grep -q '{' || ! grep -q '"type"[[:space:]]*:[[:space:]]*"service_account"' firebase-credentials.json; then
+              echo "ERROR: decoded firebase-credentials.json doesn't look like a valid service-account JSON. Aborting."
+              exit 1
+            fi
             # 644 (not 600): the backend container runs as a non-root "app" user
             # reading this via a read-only bind mount, so it must stay
             # world-readable or Firebase Admin init fails with EACCES.
