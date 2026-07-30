@@ -822,7 +822,8 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
 
 /* ── Data Feed Configuration Modal (Root Only) ────────────────────────── */
 function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClose,
-    zebuStatus, zebuDraft, setZebuDraft, zebuSaving, zebuImporting, onSaveZebu, onImportZebu }) {
+    zebuStatus, zebuDraft, setZebuDraft, zebuSaving, zebuImporting, onSaveZebu, onImportZebu,
+    simStatus, simStatusLoading, onRefreshSimStatus, seeding, onSeedFreeHistory }) {
     const inputStyle = {
         width: '100%', padding: '8px 10px', borderRadius: '8px',
         background: 'var(--bg-muted)', border: '1px solid var(--border)',
@@ -894,6 +895,69 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                                 <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
                             </label>
                         </div>
+                    </div>
+
+                    {/* Live tick status */}
+                    <div className="pt-2 flex flex-col gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                        <div className="pt-3 flex items-center justify-between">
+                            <div>
+                                <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Live Tick Status</label>
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    Proves ticks are actually streaming right now, not just that the engine started.
+                                </span>
+                            </div>
+                            <button className="admin-action-btn admin-action-btn--secondary" onClick={onRefreshSimStatus} disabled={simStatusLoading}>
+                                {simStatusLoading ? <Loader2 size={14} className="animate-spin" /> : 'Refresh'}
+                            </button>
+                        </div>
+
+                        {simStatus?.master_provider ? (
+                            <div className="p-3 rounded-xl text-xs flex flex-col gap-1"
+                                style={{
+                                    background: simStatus.master_provider.is_ticking ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
+                                    border: simStatus.master_provider.is_ticking ? '1px solid rgba(16,185,129,0.18)' : '1px solid rgba(239,68,68,0.18)',
+                                    color: 'var(--text-muted)',
+                                }}>
+                                <span className="flex items-center gap-1.5">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${simStatus.master_provider.is_ticking ? 'bg-[#10b981] animate-pulse' : 'bg-[#ef4444]'}`}></span>
+                                    <strong style={{ color: simStatus.master_provider.is_ticking ? '#10b981' : '#ef4444' }}>
+                                        {simStatus.master_provider.is_ticking ? 'Ticking now' : 'Not ticking'}
+                                    </strong>
+                                </span>
+                                <span>Last tick: {simStatus.master_provider.last_tick_age_seconds != null
+                                    ? `${simStatus.master_provider.last_tick_age_seconds.toFixed(1)}s ago`
+                                    : 'never'}</span>
+                                <span>Subscribed symbols: {simStatus.master_provider.subscribed_symbols}</span>
+                                <span>Simulated clock active: {simStatus.simulation_clock_active ? 'yes' : 'no (falls back to real market hours)'}</span>
+                                {simStatus.master_provider.error && (
+                                    <span style={{ color: '#ef4444' }}>{simStatus.master_provider.error}</span>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="p-3 rounded-xl text-xs" style={{ background: 'rgba(148,163,184,0.06)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                                {simStatusLoading ? 'Loading…' : 'No status loaded yet — click Refresh.'}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Free real historical data (no broker account needed) */}
+                    <div className="pt-2 flex flex-col gap-3" style={{ borderTop: '1px solid var(--border)' }}>
+                        <div className="pt-3">
+                            <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Free Historical Data (NSE/BSE Bhavcopy)</label>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Downloads real, free, no-login NSE/BSE end-of-day archives to seed the simulator.
+                                Falls back to mock data automatically for any day the exchange blocks the request.
+                            </span>
+                        </div>
+                        <button className="admin-action-btn admin-action-btn--primary" onClick={onSeedFreeHistory} disabled={seeding}>
+                            {seeding ? (
+                                <>
+                                    <Loader2 size={14} className="animate-spin" /> Seeding…
+                                </>
+                            ) : (
+                                'Seed Real Historical Data (45 days)'
+                            )}
+                        </button>
                     </div>
 
                     {/* Zebu real historical-data import (optional) */}
@@ -1019,6 +1083,11 @@ export default function AdminPanelPage() {
     const [dataFeedLoading, setDataFeedLoading] = useState(false);
     const [dataFeedSaving, setDataFeedSaving] = useState(false);
 
+    // Live tick engine status + free (no-broker) historical-data seeding
+    const [simStatus, setSimStatus] = useState(null);
+    const [simStatusLoading, setSimStatusLoading] = useState(false);
+    const [seedingFreeHistory, setSeedingFreeHistory] = useState(false);
+
     // Zebu (MYNT API) historical-import credentials — real broker EOD data
     // seeds the same internal simulator; never a live feed or order path.
     const [zebuStatus, setZebuStatus] = useState({ configured: false });
@@ -1056,11 +1125,36 @@ export default function AdminPanelPage() {
         }
     }, []);
 
+    const loadSimStatus = useCallback(async () => {
+        setSimStatusLoading(true);
+        try {
+            const { data } = await adminApi.getSimulationStatus();
+            if (data) setSimStatus(data);
+        } catch (err) {
+            toast.error(parseApiError(err, 'Failed to load simulation status'));
+        } finally {
+            setSimStatusLoading(false);
+        }
+    }, []);
+
     const openDataFeedModal = useCallback(() => {
         setShowDataFeedModal(true);
         loadDataFeedConfig();
         loadZebuStatus();
-    }, [loadDataFeedConfig, loadZebuStatus]);
+        loadSimStatus();
+    }, [loadDataFeedConfig, loadZebuStatus, loadSimStatus]);
+
+    const handleSeedFreeHistory = useCallback(async () => {
+        setSeedingFreeHistory(true);
+        try {
+            const { data } = await adminApi.seedSimulation({ days: 45, useMock: false, tryRealFirst: true });
+            toast.success(data?.message || 'Real historical data backfill started');
+        } catch (err) {
+            toast.error(parseApiError(err, 'Failed to start historical data seed'));
+        } finally {
+            setSeedingFreeHistory(false);
+        }
+    }, []);
 
     const handleSaveZebuCredentials = useCallback(async () => {
         setZebuSaving(true);
@@ -2305,7 +2399,9 @@ export default function AdminPanelPage() {
                     loading={dataFeedLoading} saving={dataFeedSaving} onSave={handleSaveDataFeed} onClose={() => setShowDataFeedModal(false)}
                     zebuStatus={zebuStatus} zebuDraft={zebuDraft} setZebuDraft={setZebuDraft}
                     zebuSaving={zebuSaving} zebuImporting={zebuImporting}
-                    onSaveZebu={handleSaveZebuCredentials} onImportZebu={handleImportZebuHistory} />
+                    onSaveZebu={handleSaveZebuCredentials} onImportZebu={handleImportZebuHistory}
+                    simStatus={simStatus} simStatusLoading={simStatusLoading} onRefreshSimStatus={loadSimStatus}
+                    seeding={seedingFreeHistory} onSeedFreeHistory={handleSeedFreeHistory} />
             )}
         </div>
     );

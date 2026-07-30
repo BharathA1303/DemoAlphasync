@@ -166,11 +166,29 @@ async def save_records_to_db(db, records: List[Dict[str, Any]]) -> int:
 
     return written_count
 
-async def ingest_date_for_exchange(db, target_date: date, exchange: str, use_mock: bool) -> int:
-    """Downloads/generates and saves records for a specific exchange and date."""
+async def ingest_date_for_exchange(
+    db, target_date: date, exchange: str, use_mock: bool, try_real_first: bool = False
+) -> int:
+    """Downloads/generates and saves records for a specific exchange and date.
+
+    When `try_real_first` is set, attempts the real free NSE/BSE bhavcopy
+    download first and only falls back to mock generation for this
+    exchange/date if the real source returns zero rows (blocked,
+    unreachable, or genuinely no data) - so the platform uses real
+    open-source historical data whenever the exchange is reachable, while
+    keeping the "always works" guarantee of mock data as a fallback.
+    """
     exchange = exchange.upper()
+
+    if try_real_first and exchange != "NSE_INDEX":
+        real_rows = await ingest_date_for_exchange(db, target_date, exchange, use_mock=False)
+        if real_rows > 0:
+            return real_rows
+        logger.info(f"Real {exchange} bhavcopy unavailable for {target_date}; falling back to mock data.")
+        use_mock = True
+
     logger.info(f"Starting ingestion for {exchange} on {target_date} (Mock: {use_mock})")
-    
+
     try:
         # Mock ingestion bypasses downloads and archives mock CSV string
         if use_mock:
@@ -295,7 +313,7 @@ async def ingest_date_for_exchange(db, target_date: date, exchange: str, use_moc
         db.add(log_entry)
         return 0
 
-async def ingest_date(target_date: date, use_mock: bool) -> Dict[str, int]:
+async def ingest_date(target_date: date, use_mock: bool, try_real_first: bool = False) -> Dict[str, int]:
     """Ingests NSE/BSE cash equities and NSE F&O bhavcopies for a given date."""
     if not is_trading_day(target_date):
         logger.info(f"Skipping {target_date} - it is a weekend.")
@@ -303,10 +321,10 @@ async def ingest_date(target_date: date, use_mock: bool) -> Dict[str, int]:
 
     async with AsyncSessionLocal() as db:
         try:
-            nse_rows = await ingest_date_for_exchange(db, target_date, "NSE", use_mock)
-            bse_rows = await ingest_date_for_exchange(db, target_date, "BSE", use_mock)
-            nse_fo_rows = await ingest_date_for_exchange(db, target_date, "NSE_FO", use_mock)
-            index_rows = await ingest_date_for_exchange(db, target_date, "NSE_INDEX", use_mock)
+            nse_rows = await ingest_date_for_exchange(db, target_date, "NSE", use_mock, try_real_first)
+            bse_rows = await ingest_date_for_exchange(db, target_date, "BSE", use_mock, try_real_first)
+            nse_fo_rows = await ingest_date_for_exchange(db, target_date, "NSE_FO", use_mock, try_real_first)
+            index_rows = await ingest_date_for_exchange(db, target_date, "NSE_INDEX", use_mock, try_real_first)
             await db.commit()
 
             # A trading day that yields zero rows from BOTH cash-equity
@@ -335,8 +353,15 @@ async def ingest_date(target_date: date, use_mock: bool) -> Dict[str, int]:
             await db.rollback()
             return {"NSE": 0, "BSE": 0, "NSE_FO": 0, "NSE_INDEX": 0}
 
-async def run_backfill(days_to_backfill: int, use_mock: bool):
-    """Backfills the database with historical data for the last N calendar days."""
+async def run_backfill(days_to_backfill: int, use_mock: bool, try_real_first: bool = False):
+    """Backfills the database with historical data for the last N calendar days.
+
+    When `try_real_first` is True, each day attempts the real free NSE/BSE
+    bhavcopy archives first (genuine historical open/high/low/close/volume)
+    and only falls back to synthetic mock data per-exchange/day if the real
+    source is unreachable, so the platform seeds with real historical data
+    whenever possible while still guaranteeing it always has *some* data.
+    """
     today_date = date.today()
     logger.info(f"Running backfill for the last {days_to_backfill} days starting from yesterday...")
 
@@ -352,13 +377,13 @@ async def run_backfill(days_to_backfill: int, use_mock: bool):
             continue
 
         logger.info(f"Backfilling day {i}/{days_to_backfill}: {target_date}")
-        counts = await ingest_date(target_date, use_mock)
+        counts = await ingest_date(target_date, use_mock, try_real_first)
         total_nse += counts["NSE"]
         total_bse += counts["BSE"]
         total_nse_fo += counts.get("NSE_FO", 0)
         total_index += counts.get("NSE_INDEX", 0)
 
-        if not use_mock:
+        if not use_mock or try_real_first:
             await asyncio.sleep(1.0)
 
     logger.info(

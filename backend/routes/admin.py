@@ -719,6 +719,14 @@ class SeedSimulationRequest(BaseModel):
         default=False,
         description="Generate deterministic mock EOD data instead of downloading real NSE/BSE/NSE_FO bhavcopy files (index EOD data is always simulated regardless)",
     )
+    try_real_first: bool = Field(
+        default=True,
+        description=(
+            "When use_mock=False, fall back to mock data per-exchange/day if the real "
+            "free NSE/BSE bhavcopy archive is unreachable or blocked for that day, "
+            "instead of silently ingesting zero rows for it."
+        ),
+    )
 
 
 @router.post("/simulation/seed")
@@ -736,13 +744,17 @@ async def seed_simulation_ticks(
     import asyncio
     from data_layer.ingestion.run_ingestion import run_backfill
 
+    # try_real_first only applies when attempting real data at all; if the
+    # admin explicitly asked for mock-only, honor that with no fallback logic.
+    effective_try_real_first = req.try_real_first and not req.use_mock
+
     async def _run_seed():
         try:
             logger.info(
                 f"Admin {admin.email}: background EOD backfill starting "
-                f"(days={req.days}, use_mock={req.use_mock})..."
+                f"(days={req.days}, use_mock={req.use_mock}, try_real_first={effective_try_real_first})..."
             )
-            await run_backfill(req.days, req.use_mock)
+            await run_backfill(req.days, req.use_mock, try_real_first=effective_try_real_first)
             logger.info(f"Admin {admin.email}: background EOD backfill completed successfully.")
         except Exception as e:
             logger.error(f"Admin EOD backfill task failed: {e}", exc_info=True)
@@ -946,11 +958,42 @@ async def simulation_status(
         except Exception:
             pass
 
+    # Master provider (InternalSimProvider) health — proves ticks are
+    # actually flowing right now, not just that the background loop exists.
+    provider_health = None
+    try:
+        from services.data_feed_session import data_feed_session_manager
+        master_provider = data_feed_session_manager.get_any_session()
+        if master_provider is not None:
+            health = await master_provider.health()
+            last_tick_age_seconds = None
+            if health.last_tick_at:
+                from datetime import datetime as _dt, timezone as _tz
+                last_tick_dt = _dt.fromisoformat(health.last_tick_at)
+                last_tick_age_seconds = (_dt.now(_tz.utc) - last_tick_dt).total_seconds()
+            provider_health = {
+                "provider_name": health.provider_name,
+                "status": health.status.value if hasattr(health.status, "value") else str(health.status),
+                "subscribed_symbols": health.subscribed_symbols,
+                "last_tick_at": health.last_tick_at,
+                "last_tick_age_seconds": last_tick_age_seconds,
+                # Ticks are expected roughly once per second; anything older
+                # than a few seconds means the stream has stalled.
+                "is_ticking": last_tick_age_seconds is not None and last_tick_age_seconds < 10,
+                "uptime_seconds": health.uptime_seconds,
+                "reconnect_count": health.reconnect_count,
+                "error": health.error,
+            }
+    except Exception as e:
+        logger.warning(f"Failed to read master provider health: {e}")
+
     return {
         "engine_running": data_layer_simulator.is_running,
         "subscribed_symbols": active_subs,
         "queue_size": len(data_layer_simulator.listeners),
         "simulation_time": simulation_clock.now().isoformat(),
+        "simulation_clock_active": simulation_clock.is_simulated,
+        "master_provider": provider_health,
         "db_symbols_with_ticks": total_symbols_count,
         "db_symbol_list": symbols,
     }

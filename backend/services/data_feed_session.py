@@ -167,7 +167,20 @@ class DataFeedSessionManager:
         )
         try:
             from data_layer.ingestion.run_ingestion import run_backfill
-            await run_backfill(days_to_backfill=45, use_mock=True)
+            from config.settings import settings as _app_settings
+
+            try:
+                await run_backfill(
+                    days_to_backfill=45,
+                    use_mock=True,
+                    try_real_first=_app_settings.BACKFILL_TRY_REAL_DATA_FIRST,
+                )
+            except Exception as e:
+                # Real-data attempt raised instead of gracefully returning
+                # zero rows (unexpected) - guarantee the demo still has data
+                # by falling back to a pure-mock backfill.
+                logger.warning(f"try_real_first backfill failed ({e}); retrying with mock-only data...")
+                await run_backfill(days_to_backfill=45, use_mock=True)
 
             if not generation_current:
                 # The generator's symbol coverage/anchors changed - any

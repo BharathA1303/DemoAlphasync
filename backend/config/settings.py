@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     # restrictions.
     SIMULATION_MODE: bool = True
 
+    # When True, the EOD auto-backfill (see services/data_feed_session.py)
+    # tries the real free NSE/BSE bhavcopy archives first for each day and
+    # only falls back to synthetic mock data if the real source is
+    # unreachable/blocked, so charts replay genuine historical prices
+    # whenever the exchange is reachable. Set False to always use mock data
+    # (e.g. offline dev, or to avoid NSE's anti-bot rate limiting).
+    BACKFILL_TRY_REAL_DATA_FIRST: bool = True
+
     # ── Progressive hydration feature flags (Phase 1A) ─────────────
     # Keep disabled by default; enables snapshot-first responses per page.
     ENABLE_PROGRESSIVE_OPTIONS: bool = False

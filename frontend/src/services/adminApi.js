@@ -42,6 +42,18 @@ const adminApi = {
         return api.post('/admin/simulation/zebu-import', { days });
     },
 
+    getSimulationStatus() {
+        return api.get('/admin/simulation/status');
+    },
+
+    seedSimulation({ days = 45, useMock = false, tryRealFirst = true } = {}) {
+        return api.post('/admin/simulation/seed', {
+            days,
+            use_mock: useMock,
+            try_real_first: tryRealFirst,
+        });
+    },
+
     // ── User Management ─────────────────────────────────────────────
     listUsers(params = {}) {
         return api.get('/admin/users', { params });
