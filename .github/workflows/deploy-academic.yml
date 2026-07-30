@@ -33,6 +33,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: 22
           script_stop: true
+          envs: FIREBASE_CREDENTIALS_JSON
           script: |
             set -euo pipefail
 
@@ -49,12 +50,26 @@ jobs:
             echo ">>> git reset --hard origin/main"
             git reset --hard origin/main
 
-            # firebase-credentials.json is committed directly to the repo and is
-            # restored by the reset above — no secret materialization needed.
+            # firebase-credentials.json is NOT committed to the repo (secret,
+            # correctly gitignored) - it's written here from the
+            # FIREBASE_CREDENTIALS_JSON repo secret on every deploy. Without
+            # this step, `git reset --hard` leaves the bind-mount source path
+            # missing, Docker silently auto-creates it as an empty directory,
+            # and Firebase Admin SDK init fails on every request (breaks login).
+            echo ">>> writing firebase-credentials.json from secret"
+            if [ -d firebase-credentials.json ]; then
+              echo "    found a stale auto-created directory at firebase-credentials.json - removing it"
+              rmdir firebase-credentials.json
+            fi
+            if [ -z "${FIREBASE_CREDENTIALS_JSON:-}" ]; then
+              echo "ERROR: FIREBASE_CREDENTIALS_JSON secret is empty. Aborting before a broken deploy overwrites a working one."
+              exit 1
+            fi
+            printf '%s' "${FIREBASE_CREDENTIALS_JSON}" > firebase-credentials.json
             # 644 (not 600): the backend container runs as a non-root "app" user
             # reading this via a read-only bind mount, so it must stay
             # world-readable or Firebase Admin init fails with EACCES.
-            chmod 644 firebase-credentials.json 2>/dev/null || true
+            chmod 644 firebase-credentials.json
 
             # ── Mandatory pre-deploy port validation (abort, never kill) ──────
             echo ">>> validating ports ${FRONTEND_PORT}/${BACKEND_PORT}"
