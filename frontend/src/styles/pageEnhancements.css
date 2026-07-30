@@ -1,0 +1,260 @@
+/* ─── Page Enhancement Styles — Multi-Color Decorations & Better Text Contrast ─── */
+
+/* ─── KPI Cards — Multi-color gradient on hover ─── */
+.kpi-card {
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 215, 0, 0.05) 0%,
+    rgba(100, 200, 255, 0.05) 50%,
+    rgba(139, 69, 255, 0.05) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  pointer-events: none;
+}
+
+.kpi-card:hover::before {
+  opacity: 1;
+}
+
+/* ─── Section Cards — Rainbow glow on hover ─── */
+.section-card,
+.dashboard-card {
+  position: relative;
+  transition: all 0.3s ease-out;
+  overflow: hidden;
+}
+
+.section-card::after,
+.dashboard-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgba(255, 215, 0, 0.08),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  pointer-events: none;
+}
+
+.section-card:hover::after,
+.dashboard-card:hover::after {
+  opacity: 1;
+}
+
+/* ─── Table Rows — Subtle gradient row highlight ─── */
+.table-row-hover {
+  transition: background-color 0.2s ease-out;
+  position: relative;
+}
+
+.table-row-hover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 179, 63, 0.04),
+    transparent 50%,
+    rgba(100, 200, 255, 0.04)
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
+  pointer-events: none;
+}
+
+.table-row-hover:hover::before {
+  opacity: 1;
+}
+
+/* ─── Navigation Links — Color shift on hover ─── */
+.nav-link-enhanced {
+  position: relative;
+  transition: color 0.3s ease-out;
+  overflow: hidden;
+}
+
+.nav-link-enhanced::before {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    #FF6B6B 0%,
+    #FFA500 25%,
+    #FFD700 50%,
+    #00D9FF 75%,
+    #8B5FBF 100%
+  );
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease-out;
+}
+
+.nav-link-enhanced:hover::before {
+  transform: scaleX(1);
+}
+
+/* ─── Light Mode Text Color Improvements ─── */
+
+/* Enhanced section headings in light mode */
+@media (prefers-color-scheme: light) {
+  .section-title,
+  .kpi-label {
+    color: #0d1421 !important;
+  }
+
+  /* Primary text better visibility */
+  .text-heading {
+    color: #0d1421 !important;
+  }
+
+  /* Secondary text readable but lighter */
+  .text-gray-600 {
+    color: #374151 !important;
+  }
+
+  .text-gray-700 {
+    color: #1f2937 !important;
+  }
+
+  /* Muted text still readable */
+  .text-gray-500,
+  .text-gray-600 {
+    color: #4b5563 !important;
+  }
+}
+
+/* ─── Button Hover Effects ─── */
+.btn-hover-lift {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.btn-hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 188, 212, 0.15);
+}
+
+/* ─── Stat Card Borders — Dynamic color on hover ─── */
+.stat-card-border {
+  position: relative;
+  border: 1px solid rgba(100, 150, 200, 0.2);
+  transition: all 0.3s ease-out;
+}
+
+.stat-card-border::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 215, 0, 0.3),
+    rgba(100, 200, 255, 0.3)
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.stat-card-border:hover::after {
+  opacity: 1;
+}
+
+/* ─── Text Emphasis on Hover ─── */
+.text-hover-emphasize {
+  transition: text-shadow 0.3s ease-out;
+}
+
+.text-hover-emphasize:hover {
+  text-shadow: 0 0 12px rgba(100, 188, 255, 0.4),
+               0 0 24px rgba(255, 215, 0, 0.2);
+}
+
+/* ─── Light Mode Text Visibility for Specific Components ─── */
+@media (prefers-color-scheme: light) {
+  /* Holding names and symbols */
+  .symbol-text {
+    color: #0d1421 !important;
+  }
+
+  /* Market price labels */
+  .price-label {
+    color: #4b5563 !important;
+  }
+
+  /* Status badges */
+  .status-badge {
+    color: #0d1421 !important;
+  }
+
+  /* Form labels */
+  label,
+  .form-label {
+    color: #1f2937 !important;
+  }
+
+  /* Placeholder text */
+  ::placeholder {
+    color: #9ca3af !important;
+  }
+}
+
+/* ─── Container Hover Effects ─── */
+.card-hover-glow {
+  position: relative;
+  transition: all 0.3s ease-out;
+}
+
+.card-hover-glow:hover {
+  border-color: rgba(100, 188, 255, 0.4);
+}
+
+.card-hover-glow::after {
+  content: '';
+  position: absolute;
+  inset: -0.5px;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at 50% 0%,
+    rgba(100, 188, 255, 0.2),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.card-hover-glow:hover::after {
+  opacity: 1;
+}
+
+/* ─── Responsive adjustments ─── */
+@media (max-width: 768px) {
+  .kpi-card::before,
+  .section-card::after,
+  .card-hover-glow::after {
+    opacity: 0.5;
+  }
+
+  .text-hover-emphasize:hover {
+    text-shadow: 0 0 8px rgba(100, 188, 255, 0.3);
+  }
+}

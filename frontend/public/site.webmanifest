@@ -1,0 +1,21 @@
+{
+    "name": "AlphaSync — Paper Trading Platform",
+    "short_name": "AlphaSync",
+    "description": "India's most comprehensive paper trading platform. Practice stock trading strategies on NSE & BSE markets — free forever.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0f0f1e",
+    "theme_color": "#00bcd4",
+    "icons": [
+        {
+            "src": "/favicon.png",
+            "sizes": "32x32",
+            "type": "image/png"
+        },
+        {
+            "src": "/logo.png",
+            "sizes": "any",
+            "type": "image/png"
+        }
+    ]
+}

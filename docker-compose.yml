@@ -1,0 +1,153 @@
+# ==============================================================================
+#  AlphaSync Academic — Production Docker Compose
+#  Domain: ac.alphasync.app        Server dir: /opt/apps/alphasync-academic
+#
+#  COMPLETELY ISOLATED. Never interacts with:
+#    - AlphaSync Real Broker  (brokerdemo-*, ports 3002/8002)
+#    - TickAlpha              (alphasync-api/postgres/redis, port 8003)
+#
+#  Isolation contract (verified collision-free):
+#    project        : acalphasync
+#    containers     : acalphasync-frontend / -backend / -pg / -redis
+#    network        : acalphasync_acalphasync-net
+#    volumes        : acalphasync_acalphasync-pgdata / -redis / -uploads
+#    host ports     : 127.0.0.1:3004 (fe)  127.0.0.1:8004 (be)
+#                     postgres & redis have NO host port.
+#
+#  The compose project MUST be "acalphasync" (set via .env COMPOSE_PROJECT_NAME
+#  or `-p acalphasync`). Resource names are left unpinned so Compose produces the
+#  exact `acalphasync_<name>` form required by the spec.
+# ==============================================================================
+
+services:
+  # ── Frontend (React build served by Nginx) ─────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.demo
+    image: acalphasync-frontend:latest
+    container_name: acalphasync-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3004:80"
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - acalphasync-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Backend (FastAPI, internally simulated tick data) ──────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.demo
+    image: acalphasync-backend:latest
+    container_name: acalphasync-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8004:8000"
+    env_file:
+      - .env
+    environment:
+      APP_NAME: "AlphaSync-Academic"
+      SIMULATION_MODE: "true"
+      DEBUG: "false"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@pg:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://redis:6379/0"
+      CORS_ORIGINS: '["https://ac.alphasync.app"]'
+      CORS_ORIGIN_REGEX: 'https?://(localhost|127\.0\.0\.1):\d+'
+      # Encrypts the admin-configured TickAlpha client secret at rest
+      # (see backend/services/crypto.py). Set a real unique value via .env —
+      # generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      DATA_FEED_ENCRYPTION_KEY: "${DATA_FEED_ENCRYPTION_KEY:-CHANGE_ME_strong_unique_data_feed_key}"
+      FIREBASE_CREDENTIALS_PATH: "/app/firebase-credentials.json"
+    volumes:
+      - acalphasync-uploads:/app/uploads
+      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
+      - ./logs:/app/logs
+    depends_on:
+      pg:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 8s
+      retries: 12
+      start_period: 90s
+    networks:
+      - acalphasync-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── PostgreSQL (NO host port — internal only) ──────────────────────────────
+  pg:
+    image: postgres:16-alpine
+    container_name: acalphasync-pg
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - acalphasync-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - acalphasync-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Redis (NO host port — internal only) ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: acalphasync-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+      --save ""
+    volumes:
+      - acalphasync-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - acalphasync-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# Names left unpinned → Compose creates them as `acalphasync_<name>` under the
+# `acalphasync` project, exactly as the spec requires. No anonymous volumes.
+volumes:
+  acalphasync-pgdata:
+  acalphasync-redis:
+  acalphasync-uploads:
+
+networks:
+  acalphasync-net:
+    driver: bridge

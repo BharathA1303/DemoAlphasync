@@ -1,0 +1,29 @@
+/* Adaptive spacing — scales with viewport, desktop density preserved */
+
+:root {
+  --space-xs: clamp(0.25rem, 0.5vw, 0.375rem);
+  --space-sm: clamp(0.5rem, 0.8vw, 0.625rem);
+  --space-md: clamp(0.75rem, 1.2vw, 1rem);
+  --space-lg: clamp(1rem, 1.6vw, 1.5rem);
+  --space-xl: clamp(1.25rem, 2vw, 2rem);
+  --responsive-gutter: clamp(0.75rem, 2vw, 1.5rem);
+  --responsive-panel-gap: 2px;
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --responsive-gutter: 1rem;
+    --space-md: 0.75rem;
+    --space-lg: 1rem;
+    --space-xl: 1.25rem;
+  }
+}
+
+.responsive-page {
+  --page-pad-x: var(--responsive-gutter);
+  --page-pad-y: var(--space-md);
+}
+
+.responsive-shell-mobile .responsive-page {
+  --page-pad-x: var(--space-sm);
+}

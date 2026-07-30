@@ -1,0 +1,19 @@
+/* Safe area — notch, Dynamic Island, foldables, Android cutouts */
+
+.safe-area-top-pad {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-area-bottom-pad {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-fab-offset {
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+@supports (padding: max(0px)) {
+  .safe-area-bottom-pad {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+  }
+}

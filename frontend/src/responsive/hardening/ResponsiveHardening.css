@@ -1,0 +1,230 @@
+/* Phase 2 — Responsive hardening (additive global rules) */
+
+html.responsive-hardening-active {
+  overflow-x: clip;
+  max-width: 100vw;
+}
+
+html.responsive-hardening-active body {
+  overflow-x: clip;
+  min-height: var(--viewport-min-height, 100vh);
+  min-height: var(--viewport-min-height, 100dvh);
+}
+
+.hard-hydration-root[data-hydration-ready='false'] {
+  min-height: var(--viewport-height, 100vh);
+}
+
+/* Dynamic viewport shell */
+.hard-responsive-shell,
+.responsive-layout-manager {
+  min-height: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 1023px) {
+  html.responsive-hardening-active .h-screen {
+    height: var(--viewport-height, 100vh) !important;
+    height: var(--viewport-height, 100dvh) !important;
+  }
+
+  html.responsive-hardening-active .responsive-provider-root,
+  html.responsive-hardening-active .responsive-layout-manager {
+    max-height: var(--viewport-height, 100dvh);
+  }
+}
+
+/* Chart gesture lock */
+html.hard-chart-gesture-lock body {
+  overflow: hidden;
+  touch-action: none;
+}
+
+html.hard-chart-gesture-lock .terminal-area-chart,
+html.hard-chart-gesture-lock .hard-chart-shell {
+  touch-action: pan-x pan-y pinch-zoom;
+  overscroll-behavior: contain;
+}
+
+.hard-chart-shell {
+  isolation: isolate;
+}
+
+/* Scroll containment */
+.hard-scroll-contained {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Keyboard open */
+html.hard-keyboard-open .terminal-area-chart {
+  max-height: calc(var(--visual-viewport-h, 50vh) - 120px);
+}
+
+html.hard-keyboard-open .responsive-trading-body {
+  padding-bottom: var(--keyboard-height, 0px);
+}
+
+html.hard-keyboard-open .hard-order-surface {
+  max-height: calc(var(--visual-viewport-h, 80vh) - var(--keyboard-height, 0px));
+}
+
+/* Order snap surface */
+@media (max-width: 1023px) {
+  .hard-order-surface {
+    display: flex;
+    flex-direction: column;
+    will-change: height;
+    transition: height 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .hard-order-surface.hard-snap-dragging {
+    transition: none;
+  }
+
+  .hard-order-snap-handle {
+    width: 2.75rem;
+    height: 5px;
+    margin: 0.5rem auto 0.25rem;
+    border-radius: 999px;
+    background: rgb(var(--gray-600, 100 116 139) / 0.55);
+    touch-action: none;
+    cursor: grab;
+  }
+}
+
+/* Sticky trade actions when keyboard visible */
+.hard-sticky-trade-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--keyboard-height, 0px) + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  padding: 0.5rem 0.75rem;
+  display: none;
+  pointer-events: none;
+}
+
+.hard-sticky-trade-actions--visible {
+  display: flex;
+  justify-content: stretch;
+  gap: 0.5rem;
+  pointer-events: auto;
+  background: linear-gradient(to top, rgb(15 15 30 / 0.98), transparent);
+}
+
+.hard-sticky-trade-actions button {
+  flex: 1;
+  min-height: 44px;
+}
+
+/* Touch feedback */
+.hard-touch-active {
+  opacity: 0.88;
+  transform: scale(0.98);
+  transition: transform 0.08s ease, opacity 0.08s ease;
+}
+
+/* Low-end / reduced motion */
+html.hard-low-end * {
+  backdrop-filter: none !important;
+}
+
+html.hard-low-end .shadow-2xl,
+html.hard-low-end .shadow-xl {
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2) !important;
+}
+
+html.hard-reduced-motion *,
+html.hard-anim-minimal * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+html.hard-anim-light .ticker-marquee {
+  animation-duration: 90s !important;
+}
+
+.hard-offscreen-paused {
+  animation-play-state: paused !important;
+  pointer-events: none;
+}
+
+/* Virtual list */
+.hard-virtual-list {
+  contain: strict;
+  overscroll-behavior: contain;
+}
+
+.hard-virtual-row {
+  contain: layout style;
+}
+
+/* Options chain helpers */
+.hard-options-chain {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
+.hard-options-strike-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-base, #0f0f1e);
+}
+
+/* Safe FAB / bottom nav */
+@media (max-width: 1023px) {
+  .responsive-fab,
+  .responsive-bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .terminal-area-tradebar {
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 4px);
+  }
+}
+
+/* Dev debugger */
+.hard-viewport-debug-toggle {
+  position: fixed;
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  right: 0.5rem;
+  z-index: 9999;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgb(var(--primary-600, 8 145 178) / 0.9);
+  color: white;
+  border: none;
+  opacity: 0.6;
+}
+
+.hard-viewport-debug-panel {
+  position: fixed;
+  bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+  right: 0.5rem;
+  z-index: 9999;
+  width: 180px;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.5rem;
+  background: rgb(15 15 30 / 0.95);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+}
+
+/* Prevent CLS on mobile panels */
+@media (max-width: 1023px) {
+  .responsive-trading-tabs {
+    min-height: 44px;
+  }
+
+  .responsive-order-mobile,
+  .hard-order-surface {
+    contain: layout;
+  }
+}

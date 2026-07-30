@@ -1,0 +1,1006 @@
+"""
+Admin Panel API — Complete user account management + admin hierarchy.
+
+Security layers:
+  1. Firebase token (Bearer header) → identity verification
+  2. role='admin' check → restricts to admins
+  3. Admin level → root / manage / view_only permission checks
+  4. Audit logging → every action recorded
+
+Admin levels:
+  - root:      Full access. Can create/manage/revoke other admins.
+  - manage:    Can approve/deactivate/reactivate users.
+  - view_only: Read-only dashboard access.
+
+All endpoints under /api/admin/*
+"""
+
+import logging
+from io import BytesIO
+from datetime import datetime
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel, Field
+from typing import Optional
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+
+from database.connection import get_db
+from models.user import User
+from dependencies.admin import (
+    get_admin_user,
+    require_root_admin,
+    require_manage_level,
+    get_effective_admin_level,
+)
+from services import admin_service
+from services import admin_group_service
+from core.admin_runtime_flags import admin_runtime_flags
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/admin", tags=["Admin"])
+
+
+def _normalize_user_id(user_id: str) -> UUID:
+    """Validate and return UUID object for DB-safe comparisons."""
+    try:
+        return UUID(str(user_id).strip())
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+
+
+def _safe_excel_value(value):
+    return "" if value is None else str(value)
+
+
+def _build_users_excel(rows: list[dict], sheet_name: str = "Users") -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = sheet_name[:31] or "Users"
+
+    headers = [
+        "Email",
+        "Full Name",
+        "Username",
+        "Mobile",
+        "Status",
+        "Group",
+        "Provider",
+        "Registered At",
+        "Approved At",
+        "Access Expires",
+    ]
+    worksheet.append(headers)
+
+    for row in rows:
+        worksheet.append(
+            [
+                _safe_excel_value(row.get("email")),
+                _safe_excel_value(row.get("full_name")),
+                _safe_excel_value(row.get("username")),
+                _safe_excel_value(row.get("phone")),
+                _safe_excel_value(row.get("account_status")),
+                _safe_excel_value(row.get("group_name") or "Normal"),
+                _safe_excel_value(row.get("auth_provider")),
+                _safe_excel_value(row.get("created_at")),
+                _safe_excel_value(row.get("approved_at")),
+                _safe_excel_value(row.get("access_expires_at")),
+            ]
+        )
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+# ── Schemas ──────────────────────────────────────────────────────────
+
+
+class ApproveUserRequest(BaseModel):
+    duration_days: int = Field(default=30, ge=1, le=365)
+
+
+class DeactivateUserRequest(BaseModel):
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+
+class ReactivateUserRequest(BaseModel):
+    duration_days: int = Field(default=30, ge=1, le=365)
+
+
+class SetDurationRequest(BaseModel):
+    duration_days: int = Field(..., ge=1, le=365)
+
+
+class UpdateFinancialsRequest(BaseModel):
+    available_capital: Optional[float] = Field(default=None, ge=0)
+    virtual_capital: Optional[float] = Field(default=None, ge=0)
+    total_pnl: Optional[float] = None
+    total_pnl_percent: Optional[float] = None
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+class PromoteAdminRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    admin_level: str = Field(default="manage", pattern=r"^(max|manage|view_only)$")
+
+
+class UpdateAdminLevelRequest(BaseModel):
+    admin_level: str = Field(..., pattern=r"^(max|manage|view_only)$")
+
+
+class CreateGroupRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=60)
+
+
+class RenameGroupRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=60)
+
+
+class GroupAutoApprovalUpdateRequest(BaseModel):
+    enabled: bool
+
+
+class SetUserGroupRequest(BaseModel):
+    group_id: Optional[str] = Field(default=None, max_length=64)
+
+
+class AutoApprovalUpdateRequest(BaseModel):
+    enabled: bool
+
+
+class DataFeedSettingsUpdateRequest(BaseModel):
+    """Internal simulation engine configuration. The engine runs in-process
+    (no external vendor, no credentials needed) — admins just enable/disable it."""
+    is_enabled: bool = False
+
+
+class ZebuCredentialsRequest(BaseModel):
+    """Zebu (MYNT API) credentials, used ONLY for one-off/periodic historical
+    EOD import — never for a live feed, order placement, or continuous broker
+    session. The internal tick simulator is unchanged; this just gives it
+    real historical anchors instead of deterministic mock ones."""
+    client_code: str = Field(..., min_length=1, max_length=100)
+    password: str = Field(..., min_length=1)
+    factor2: str = Field(
+        ..., min_length=1,
+        description=(
+            "Zebu's login second factor: your account's DOB (DD-MM-YYYY) or "
+            "PAN, exactly as registered with Zebu. This is NOT a TOTP/"
+            "authenticator code — Zebu's API has no TOTP concept."
+        ),
+    )
+    api_key: str = Field(..., min_length=1, description="Zebu API key (app key)")
+    api_secret: str = Field(..., min_length=1, description="Zebu API secret")
+    vendor_code: str = Field(..., min_length=1)
+    base_url: str = Field(default="https://go.mynt.in")
+
+
+class ZebuImportRequest(BaseModel):
+    days: int = Field(default=90, ge=1, le=400, description="Number of trailing trading days of real EOD history to import")
+
+
+# ── Dashboard ────────────────────────────────────────────────────────
+
+
+@router.get("/dashboard/stats")
+async def dashboard_stats(
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get aggregate dashboard statistics."""
+    stats = await admin_service.get_dashboard_stats(db)
+    level = get_effective_admin_level(admin)
+    stats["admin_level"] = level
+    return stats
+
+
+@router.get("/settings/auto-approval")
+async def get_auto_approval_setting(
+    admin: User = Depends(get_admin_user),
+):
+    """Read current new-user auto-approval setting."""
+    return {"enabled": admin_runtime_flags.is_auto_approval_enabled()}
+
+
+@router.post("/settings/auto-approval")
+async def update_auto_approval_setting(
+    req: AutoApprovalUpdateRequest,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+):
+    """Root-only toggle for new-user auto-approval behavior."""
+    enabled = admin_runtime_flags.set_auto_approval_enabled(req.enabled)
+    ip = request.client.host if request.client else None
+    logger.info(
+        "Admin auto-approval toggled by %s to %s (ip=%s)",
+        admin.email,
+        enabled,
+        ip,
+    )
+    return {"enabled": enabled}
+
+
+@router.get("/settings/data-feed")
+async def get_data_feed_settings(
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read current internal simulation engine settings (root / manage can view)."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        return {
+            "is_enabled": False,
+            "connection_status": "disconnected",
+            "error_message": None,
+        }
+
+    return {
+        "is_enabled": config.is_enabled,
+        "connection_status": config.connection_status,
+        "error_message": config.error_message,
+    }
+
+
+@router.post("/settings/data-feed")
+async def update_data_feed_settings(
+    req: DataFeedSettingsUpdateRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Root/manage-only enable/disable of the internal simulation engine.
+    Triggers a hot reload of the master data feed session."""
+    from models.data_feed_config import DataFeedConfig
+    from services.data_feed_session import data_feed_session_manager
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        config = DataFeedConfig()
+        db.add(config)
+
+    config.is_enabled = req.is_enabled
+
+    await db.commit()
+    await db.refresh(config)
+
+    # Dynamic reload
+    success, error_msg = await data_feed_session_manager.reload_data_feed(db)
+
+    ip = request.client.host if request.client else None
+    logger.info(
+        "Admin %s updated internal simulation engine config (enabled=%s, status=%s, error=%s, ip=%s)",
+        admin.email,
+        config.is_enabled,
+        config.connection_status,
+        error_msg,
+        ip,
+    )
+
+    return {
+        "success": success,
+        "error": error_msg,
+        "config": {
+            "is_enabled": config.is_enabled,
+            "connection_status": config.connection_status,
+            "error_message": config.error_message,
+        }
+    }
+
+
+# ── User Management (require at least 'manage' for writes) ──────────
+
+
+@router.get("/users")
+async def list_users(
+    status: Optional[str] = None,
+    group_id: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = 1,
+    per_page: int = 25,
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all users with pagination and filtering."""
+    per_page = min(per_page, 100)  # Cap page size
+    return await admin_service.get_users_paginated(
+        db,
+        status,
+        search,
+        page,
+        per_page,
+        group_id,
+    )
+
+
+@router.get("/exports/users/overall")
+async def export_users_overall_excel(
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export all non-admin users across normal + custom groups as Excel."""
+    rows = await admin_service.get_users_for_export(db)
+    file_bytes = _build_users_excel(rows, "All Users")
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"alphasync_users_overall_{timestamp}.xlsx"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@router.get("/exports/users/applied")
+async def export_users_applied_excel(
+    status: Optional[str] = None,
+    group_id: Optional[str] = None,
+    search: Optional[str] = None,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export currently applied user filters/group as Excel."""
+    rows = await admin_service.get_users_for_export(
+        db,
+        status_filter=status,
+        search=search,
+        group_id=group_id,
+    )
+    file_bytes = _build_users_excel(rows, "Applied Users")
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    suffix = str(group_id or "all").replace(" ", "_")
+    filename = f"alphasync_users_applied_{suffix}_{timestamp}.xlsx"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        BytesIO(file_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
+@router.get("/groups")
+async def list_groups(
+    admin: User = Depends(require_root_admin),
+):
+    """List custom onboarding groups. Root/Max only."""
+    groups = await admin_group_service.list_groups()
+    return {"groups": groups}
+
+
+@router.post("/groups")
+async def create_group(
+    req: CreateGroupRequest,
+    admin: User = Depends(require_root_admin),
+):
+    """Create a custom group and token for onboarding links. Root/Max only."""
+    result = await admin_group_service.create_group(req.name, str(admin.id))
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Failed to create group")
+    return result
+
+
+@router.post("/groups/{group_id}/generate-link")
+async def generate_group_link(
+    group_id: str,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+):
+    """Regenerate and return a sharable onboarding link for a group. Root/Max only."""
+    result = await admin_group_service.generate_group_link(group_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error") or "Group not found")
+
+    group = result["group"]
+    origin = request.headers.get("origin")
+    base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
+    invite_url = f"{base_url}/login?grp={group['token']}"
+    return {"success": True, "group": group, "invite_url": invite_url}
+
+
+@router.patch("/groups/{group_id}")
+async def rename_group(
+    group_id: str,
+    req: RenameGroupRequest,
+    admin: User = Depends(require_root_admin),
+):
+    """Rename a custom group. Root/Max only."""
+    result = await admin_group_service.rename_group(group_id, req.name)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Failed to rename group")
+    return result
+
+
+@router.delete("/groups/{group_id}")
+async def delete_group(
+    group_id: str,
+    admin: User = Depends(require_root_admin),
+):
+    """Delete a custom group and move its users back to normal. Root/Max only."""
+    result = await admin_group_service.delete_group(group_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error") or "Group not found")
+    return result
+
+
+@router.post("/groups/{group_id}/auto-approval")
+async def set_group_auto_approval(
+    group_id: str,
+    req: GroupAutoApprovalUpdateRequest,
+    admin: User = Depends(require_root_admin),
+):
+    """Toggle auto-approval for one group only. Root/Max only."""
+    result = await admin_group_service.set_group_auto_approval(group_id, req.enabled)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error") or "Group not found")
+    return result
+
+
+@router.post("/users/{user_id}/group")
+async def set_user_group(
+    user_id: str,
+    req: SetUserGroupRequest,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assign user to a custom group or move back to normal. Root/Max only."""
+    normalized_user_id = _normalize_user_id(user_id)
+    target = await admin_service.get_user_detail(db, normalized_user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    normalized_group_id = str(req.group_id or "").strip()
+    if not normalized_group_id or normalized_group_id.lower() == "normal":
+        result = await admin_group_service.remove_user_from_group(str(normalized_user_id))
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error") or "Failed to update group")
+        return {"success": True, "group_id": None, "group_name": None}
+
+    result = await admin_group_service.assign_user_to_group(
+        str(normalized_user_id),
+        normalized_group_id,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Failed to update group")
+
+    group = result.get("group") or {}
+    return {
+        "success": True,
+        "group_id": group.get("id"),
+        "group_name": group.get("name"),
+    }
+
+
+@router.get("/users/{user_id}")
+async def get_user_detail(
+    user_id: str,
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get detailed user info including portfolio and orders."""
+    normalized_user_id = _normalize_user_id(user_id)
+    data = await admin_service.get_user_detail(db, normalized_user_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="User not found")
+    return data
+
+
+@router.post("/users/{user_id}/financials")
+async def update_user_financials(
+    user_id: str,
+    req: UpdateFinancialsRequest,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Root-only user financial control for capital and P&L overrides."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.update_user_financials(
+        db=db,
+        admin_user=admin,
+        target_user_id=normalized_user_id,
+        available_capital=req.available_capital,
+        virtual_capital=req.virtual_capital,
+        total_pnl=req.total_pnl,
+        total_pnl_percent=req.total_pnl_percent,
+        note=req.note,
+        ip=ip,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/users/{user_id}/approve")
+async def approve_user(
+    user_id: str,
+    req: ApproveUserRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a pending user account with access duration."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.approve_user(
+        db, admin, normalized_user_id, req.duration_days, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/users/{user_id}/deactivate")
+async def deactivate_user(
+    user_id: str,
+    req: DeactivateUserRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deactivate a user account."""
+    normalized_user_id = _normalize_user_id(user_id)
+
+    ip = request.client.host if request.client else None
+    result = await admin_service.deactivate_user(
+        db, admin, normalized_user_id, req.reason, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/users/{user_id}/reactivate")
+async def reactivate_user(
+    user_id: str,
+    req: ReactivateUserRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reactivate a deactivated or expired user."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.reactivate_user(
+        db, admin, normalized_user_id, req.duration_days, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/users/{user_id}/set-duration")
+async def set_duration(
+    user_id: str,
+    req: SetDurationRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set or update access duration for a user."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.set_access_duration(
+        db, admin, normalized_user_id, req.duration_days, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/users/{user_id}/force-logout")
+async def force_logout_user(
+    user_id: str,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Force logout all active sessions for a user."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.force_logout_user(db, admin, normalized_user_id, ip)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.delete("/users/{user_id}/delete")
+async def delete_user_account(
+    user_id: str,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete a user account and all linked data."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.delete_user_account(db, admin, normalized_user_id, ip)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+# ── Admin Management (root only) ────────────────────────────────────
+
+
+@router.get("/admins")
+async def list_admins(
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all admin users. Root only."""
+    admins = await admin_service.list_admins(db)
+    return {"admins": admins}
+
+
+@router.post("/admins/promote")
+async def promote_to_admin(
+    req: PromoteAdminRequest,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Promote an existing user to admin. Root only."""
+    ip = request.client.host if request.client else None
+    result = await admin_service.promote_to_admin(
+        db, admin, req.email, req.admin_level, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.patch("/admins/{admin_id}/level")
+async def update_admin_level(
+    admin_id: str,
+    req: UpdateAdminLevelRequest,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update an admin's permission level. Root only."""
+    ip = request.client.host if request.client else None
+    result = await admin_service.update_admin_level(
+        db, admin, admin_id, req.admin_level, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.delete("/admins/{admin_id}")
+async def revoke_admin(
+    admin_id: str,
+    request: Request,
+    admin: User = Depends(require_root_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke admin access — demote back to user. Root only."""
+    ip = request.client.host if request.client else None
+    result = await admin_service.revoke_admin(db, admin, admin_id, ip)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+# ── Audit Log ────────────────────────────────────────────────────────
+
+
+@router.get("/audit-log")
+async def get_audit_log(
+    page: int = 1,
+    per_page: int = 50,
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """View the admin audit trail."""
+    per_page = min(per_page, 200)
+    return await admin_service.get_audit_log(db, page, per_page)
+
+
+# ── Simulation / Data Management ──────────────────────────────────────────────
+
+class SeedSimulationRequest(BaseModel):
+    days: int = Field(default=40, ge=1, le=400, description="Number of trailing trading days to backfill")
+    use_mock: bool = Field(
+        default=False,
+        description="Generate deterministic mock EOD data instead of downloading real NSE/BSE/NSE_FO bhavcopy files (index EOD data is always simulated regardless)",
+    )
+
+
+@router.post("/simulation/seed")
+async def seed_simulation_ticks(
+    req: SeedSimulationRequest = SeedSimulationRequest(),
+    admin: User = Depends(get_admin_user),
+):
+    """
+    Trigger background backfill of the PriceData table via the internal
+    data_layer ingestion pipeline (real NSE/BSE/NSE_FO bhavcopy downloads,
+    or deterministic mock data when use_mock=True). Populates historical
+    prices for Cash, F&O and Commodity markets — no external data vendor
+    involved. Returns immediately; backfill runs as a background task.
+    """
+    import asyncio
+    from data_layer.ingestion.run_ingestion import run_backfill
+
+    async def _run_seed():
+        try:
+            logger.info(
+                f"Admin {admin.email}: background EOD backfill starting "
+                f"(days={req.days}, use_mock={req.use_mock})..."
+            )
+            await run_backfill(req.days, req.use_mock)
+            logger.info(f"Admin {admin.email}: background EOD backfill completed successfully.")
+        except Exception as e:
+            logger.error(f"Admin EOD backfill task failed: {e}", exc_info=True)
+
+    asyncio.create_task(_run_seed())
+    logger.info(f"Admin {admin.email}: initiated background EOD backfill (days={req.days}, use_mock={req.use_mock})")
+    return {
+        "status": "started",
+        "message": f"Backfilling historical data for the last {req.days} trading days in the background. Check server logs for progress.",
+    }
+
+
+@router.get("/simulation/zebu-credentials")
+async def get_zebu_credentials(
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Read whether Zebu historical-import credentials are configured
+    (never returns the secret/password/factor2 values themselves)."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config or config.broker != "zebu":
+        return {"configured": False}
+
+    return {
+        "configured": bool(config.broker_client_code and config.api_key),
+        "client_code": config.broker_client_code,
+        "base_url": config.base_url,
+        "last_import_at": config.broker_last_import_at.isoformat() if config.broker_last_import_at else None,
+        "last_import_status": config.broker_last_import_status,
+        "last_import_error": config.broker_last_import_error,
+    }
+
+
+@router.post("/simulation/zebu-credentials")
+async def save_zebu_credentials(
+    req: ZebuCredentialsRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Store Zebu (MYNT API) credentials for historical EOD import only.
+    Credentials are encrypted at rest (services/crypto.py) and are never
+    used for live trading, order placement, or a continuous broker session
+    — only the one-off/periodic "import real historical prices" action."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        config = DataFeedConfig()
+        db.add(config)
+
+    config.broker = "zebu"
+    config.broker_client_code = req.client_code
+    config.set_broker_password(req.password)
+    config.set_broker_factor2(req.factor2)
+    config.api_key = req.api_key
+    config.set_api_secret(req.api_secret)
+    config.broker_vendor_code = req.vendor_code
+    config.base_url = req.base_url
+
+    await db.commit()
+
+    ip = request.client.host if request.client else None
+    logger.info(f"Admin {admin.email}: saved Zebu historical-import credentials (ip={ip})")
+
+    return {"success": True}
+
+
+@router.post("/simulation/zebu-import")
+async def import_zebu_history(
+    req: ZebuImportRequest = ZebuImportRequest(),
+    admin: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Trigger a background import of REAL historical EOD candles from Zebu
+    for the platform's seed symbol universe, upserted into price_data via
+    the same versioned-upsert pipeline as the mock ingestion path. The
+    internal Brownian-bridge tick simulator then generates ticks from these
+    real anchors instead of deterministic mock ones — no other part of the
+    pipeline changes.
+
+    Login happens synchronously here (fast, single call) so credential
+    errors (bad password/factor2/vendor code) surface immediately in the
+    response instead of only showing up later as an opaque background-task
+    failure. The slower bulk historical fetch then runs in the background
+    with the already-authenticated session.
+    """
+    import asyncio
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+    from data_layer.ingestion.zebu_client import ZebuClient, ZebuAuthError
+
+    stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config or config.broker != "zebu" or not config.broker_client_code:
+        raise HTTPException(status_code=400, detail="Zebu credentials are not configured yet.")
+
+    client = ZebuClient(
+        client_code=config.broker_client_code,
+        password=config.get_broker_password(),
+        factor2=config.get_broker_factor2(),
+        api_key=config.api_key,
+        api_secret=config.get_api_secret(),
+        vendor_code=config.broker_vendor_code,
+        base_url=config.base_url,
+    )
+    try:
+        await asyncio.to_thread(client.login)
+    except ZebuAuthError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not reach Zebu: {e}")
+
+    async def _run_import():
+        from database.connection import async_session
+        from data_layer.ingestion.zebu_import import run_zebu_backfill
+
+        async with async_session() as bg_db:
+            stmt2 = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+            res2 = await bg_db.execute(stmt2)
+            conf = res2.scalar_one_or_none()
+            if not conf:
+                return
+            try:
+                logger.info(f"Admin {admin.email}: Zebu historical import starting (days={req.days})...")
+                rows = await run_zebu_backfill(client, req.days)
+                conf.broker_last_import_status = "success"
+                conf.broker_last_import_error = None
+                logger.info(f"Admin {admin.email}: Zebu historical import completed ({rows} rows).")
+            except Exception as e:
+                conf.broker_last_import_status = "error"
+                conf.broker_last_import_error = str(e)[:1000]
+                logger.error(f"Zebu historical import failed: {e}", exc_info=True)
+            finally:
+                from datetime import datetime, timezone
+                conf.broker_last_import_at = datetime.now(timezone.utc)
+                await bg_db.commit()
+
+    asyncio.create_task(_run_import())
+    logger.info(f"Admin {admin.email}: initiated Zebu historical import (days={req.days})")
+    return {
+        "status": "started",
+        "message": f"Importing the last {req.days} trading days of real EOD history from Zebu in the background.",
+    }
+
+
+@router.get("/simulation/status")
+async def simulation_status(
+    admin: User = Depends(get_admin_user),
+):
+    """Return current simulation engine status and DB tick counts."""
+    from data_layer.simulator.simulator_manager import simulator_manager as data_layer_simulator
+    from market_data.replay.simulation_clock import simulation_clock
+    from database.connection import async_session
+    from sqlalchemy import select
+    from data_layer.db.models import PriceData
+    import json
+
+    # Query active symbols from price_data
+    symbols = []
+    try:
+        async with async_session() as db:
+            stmt = select(PriceData.symbol).distinct().limit(50)
+            res = await db.execute(stmt)
+            symbols = list(res.scalars().all())
+    except Exception as e:
+        logger.warning(f"Failed to query price_data symbols: {e}")
+
+    # Count all unique symbols
+    total_symbols_count = 0
+    try:
+        async with async_session() as db:
+            stmt = select(PriceData.symbol).distinct()
+            res = await db.execute(stmt)
+            total_symbols_count = len(res.scalars().all())
+    except Exception as e:
+        logger.warning(f"Failed to count price_data symbols: {e}")
+
+    # Calculate active subscriptions
+    active_subs = 0
+    for session_id in list(data_layer_simulator.listeners.keys()):
+        from data_layer.core.cache import get_cached_response
+        try:
+            state_raw = await get_cached_response(f"session:{session_id}")
+            if state_raw:
+                state = json.loads(state_raw)
+                active_subs += len(state.get("subscriptions", []))
+        except Exception:
+            pass
+
+    return {
+        "engine_running": data_layer_simulator.is_running,
+        "subscribed_symbols": active_subs,
+        "queue_size": len(data_layer_simulator.listeners),
+        "simulation_time": simulation_clock.now().isoformat(),
+        "db_symbols_with_ticks": total_symbols_count,
+        "db_symbol_list": symbols,
+    }
+
+
+@router.post("/simulation/csv-import")
+async def csv_import(
+    folder: str = "eq",
+    date_str: Optional[str] = None,
+    admin: User = Depends(get_admin_user),
+):
+    """
+    Import CSV files from the server's data/ directory into the tick database.
+    folder: eq | fno | mcx | bfo | combined
+    date_str: YYYY-MM-DD (optional filter)
+    """
+    from market_data.downloader.csv_loader import csv_loader
+    from datetime import datetime
+
+    date = None
+    if date_str:
+        try:
+            date = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date_str must be YYYY-MM-DD")
+
+    import asyncio
+
+    async def _run_import():
+        try:
+            if date:
+                count = await csv_loader.load_date(date)
+            else:
+                files = csv_loader.discover_files()
+                count = 0
+                for meta in files:
+                    if folder and meta["folder"] != folder:
+                        continue
+                    count += await csv_loader.load_file(
+                        meta["path"], meta["symbol"], meta["exchange"]
+                    )
+            logger.info(f"Admin {admin.email}: CSV import complete → {count} ticks")
+        except Exception as e:
+            logger.error(f"CSV import task failed: {e}", exc_info=True)
+
+    asyncio.create_task(_run_import())
+    return {
+        "status": "started",
+        "message": "CSV import running in background. Check server logs.",
+        "folder": folder,
+        "date_filter": date_str,
+    }
+

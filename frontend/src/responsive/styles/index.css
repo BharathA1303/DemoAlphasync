@@ -1,0 +1,6 @@
+@import './ResponsiveUtilities.css';
+
+/* Mark responsive layer active for global guards */
+html.responsive-active {
+  -webkit-tap-highlight-color: transparent;
+}

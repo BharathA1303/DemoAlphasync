@@ -1,0 +1,80 @@
+# ==============================================================================
+#  AlphaSync Academic — Deploy workflow  (ac.alphasync.app)
+#
+#  Deploys ONLY to /opt/apps/alphasync-academic, project "acalphasync".
+#  Executes exactly: git fetch → git reset --hard origin/main → build → up -d
+#  → then a read-only verification.
+#
+#  It NEVER runs: docker system/volume/network prune, docker compose down,
+#  --remove-orphans, docker rm, or docker stop of any container.
+#  It NEVER touches AlphaSync Real (brokerdemo-*) or TickAlpha.
+# ==============================================================================
+name: Deploy AlphaSync Academic
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-acalphasync
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy → /opt/apps/alphasync-academic
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}      # 147.93.168.157
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            APP_DIR="/opt/apps/alphasync-academic"
+            PROJECT="acalphasync"
+            FRONTEND_PORT=3004
+            BACKEND_PORT=8004
+
+            cd "${APP_DIR}"
+
+            echo ">>> git fetch"
+            git fetch origin
+
+            echo ">>> git reset --hard origin/main"
+            git reset --hard origin/main
+
+            # firebase-credentials.json is committed directly to the repo and is
+            # restored by the reset above — no secret materialization needed.
+            # 644 (not 600): the backend container runs as a non-root "app" user
+            # reading this via a read-only bind mount, so it must stay
+            # world-readable or Firebase Admin init fails with EACCES.
+            chmod 644 firebase-credentials.json 2>/dev/null || true
+
+            # ── Mandatory pre-deploy port validation (abort, never kill) ──────
+            echo ">>> validating ports ${FRONTEND_PORT}/${BACKEND_PORT}"
+            ss -tlnp | grep -q ":${FRONTEND_PORT} " && (docker ps --format '{{.Names}} {{.Ports}}' | grep -q "${PROJECT}.*:${FRONTEND_PORT}->" && echo "port ${FRONTEND_PORT} held by our own ${PROJECT} stack — safe to recreate." || (echo "ERROR: Port ${FRONTEND_PORT} is occupied by another application. ABORTING."; exit 1)) || echo "port ${FRONTEND_PORT} free."
+            ss -tlnp | grep -q ":${BACKEND_PORT} " && (docker ps --format '{{.Names}} {{.Ports}}' | grep -q "${PROJECT}.*:${BACKEND_PORT}->" && echo "port ${BACKEND_PORT} held by our own ${PROJECT} stack — safe to recreate." || (echo "ERROR: Port ${BACKEND_PORT} is occupied by another application. ABORTING."; exit 1)) || echo "port ${BACKEND_PORT} free."
+
+            echo ">>> docker compose build"
+            docker compose -p "${PROJECT}" build
+
+            echo ">>> docker compose up -d"
+            docker compose -p "${PROJECT}" up -d
+
+            # ── Post-deploy verification (read-only, never fails the job) ─────
+            echo ">>> verify"
+            if [ -f deploy/scripts/verify.sh ]; then
+              bash deploy/scripts/verify.sh || echo ">>> verify.sh reported issues (see above) — deploy still completed"
+            else
+              docker ps --format "table {{.Names}}\t{{.Ports}}\t{{.Status}}"
+            fi
+            echo ">>> backend container status and logs"
+            docker compose -p "${PROJECT}" ps || true
+            docker compose -p "${PROJECT}" logs backend --tail=100 || true
+            echo ">>> deploy complete: https://ac.alphasync.app"
