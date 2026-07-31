@@ -38,6 +38,18 @@ GAP_CHECK_LOOKBACK_DAYS = 7
 async def scheduled_nightly_ingestion():
     """Runs ingestion for today's data, then self-heals any gaps in the last
     GAP_CHECK_LOOKBACK_DAYS trading days (e.g. missed runs, prior source outages)."""
+    try:
+        async with AsyncSessionLocal() as db:
+            from models.data_feed_config import DataFeedConfig
+            stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+            res = await db.execute(stmt)
+            cfg = res.scalar_one_or_none()
+            if cfg and cfg.oauth_connection_status == "connected":
+                logger.info("Zebu OAuth live data feed is connected. Skipping scheduled nightly EOD bhavcopy ingestion.")
+                return
+    except Exception as e:
+        logger.warning(f"DataFeedConfig check in scheduled_nightly_ingestion: {e}")
+
     today_date = date.today()
     logger.info(f"Triggering scheduled nightly ingestion for {today_date}")
     results = await ingest_date(today_date, use_mock=False)
