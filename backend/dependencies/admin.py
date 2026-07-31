@@ -37,12 +37,13 @@ def normalize_admin_level(level: str) -> str:
 
 
 def is_main_root_admin(user: User) -> bool:
-    return bool(
-        user
-        and user.email
-        and settings.ROOT_ADMIN_EMAIL
-        and user.email.lower() == settings.ROOT_ADMIN_EMAIL.lower()
-    )
+    if not user:
+        return False
+    if settings.ROOT_ADMIN_EMAIL and user.email and user.email.lower() == settings.ROOT_ADMIN_EMAIL.lower():
+        return True
+    if getattr(user, "admin_level", None) == LEVEL_ROOT:
+        return True
+    return False
 
 
 def get_effective_admin_level(user: User) -> str:

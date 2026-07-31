@@ -17,7 +17,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime, timezone, timedelta
@@ -392,7 +392,12 @@ async def register(
             raise HTTPException(status_code=409, detail="An account with this email already exists.")
         raise HTTPException(status_code=409, detail="This username is already taken.")
 
-    admin_allowlisted = _is_admin_allowlisted(email)
+    # Check if this is the first user registering in the system
+    user_count_result = await db.execute(select(func.count()).select_from(User))
+    total_users = user_count_result.scalar_one() or 0
+    is_first_user = (total_users == 0)
+
+    admin_allowlisted = _is_admin_allowlisted(email) or is_first_user
     auto_approval_enabled = admin_runtime_flags.is_auto_approval_enabled()
 
     group_token = (req.group_token or "").strip()
@@ -404,7 +409,7 @@ async def register(
             matched_group = None
 
     group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
-    effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled
+    effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or is_first_user
 
     try:
         user = User(
@@ -416,6 +421,7 @@ async def register(
             virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
             is_verified=admin_allowlisted,
             role=("admin" if admin_allowlisted else "user"),
+            admin_level=("root" if is_first_user else None),
             account_status=(
                 "active"
                 if (admin_allowlisted or effective_auto_approval)
@@ -424,18 +430,22 @@ async def register(
             is_active=(admin_allowlisted or effective_auto_approval),
             approved_at=(
                 datetime.now(timezone.utc)
-                if effective_auto_approval and not admin_allowlisted
+                if (effective_auto_approval and not (admin_allowlisted and not is_first_user))
                 else None
             ),
             access_duration_days=(
-                _AUTO_APPROVAL_DURATION_DAYS
-                if effective_auto_approval and not admin_allowlisted
-                else None
+                None
+                if (is_first_user or (admin_allowlisted and not effective_auto_approval))
+                else (_AUTO_APPROVAL_DURATION_DAYS if effective_auto_approval else None)
             ),
             access_expires_at=(
-                datetime.now(timezone.utc) + timedelta(days=_AUTO_APPROVAL_DURATION_DAYS)
-                if effective_auto_approval and not admin_allowlisted
-                else None
+                None
+                if (is_first_user or (admin_allowlisted and not effective_auto_approval))
+                else (
+                    datetime.now(timezone.utc) + timedelta(days=_AUTO_APPROVAL_DURATION_DAYS)
+                    if effective_auto_approval
+                    else None
+                )
             ),
         )
         db.add(user)
@@ -449,6 +459,8 @@ async def register(
 
         if admin_allowlisted:
             _apply_admin_allowlist_promotion(user)
+            if is_first_user:
+                user.admin_level = "root"
 
         token = create_access_token(str(user.id))
         await db.flush()
