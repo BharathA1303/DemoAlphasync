@@ -906,6 +906,10 @@ async def import_zebu_history(
                 conf.broker_last_import_at = datetime.now(timezone.utc)
                 await bg_db.commit()
 
+    config.broker_last_import_status = "importing"
+    config.broker_last_import_error = None
+    await db.commit()
+
     asyncio.create_task(_run_import())
     logger.info(f"Admin {admin.email}: initiated Zebu historical import (days={req.days})")
     return {
