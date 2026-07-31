@@ -1,46 +1,43 @@
 """
 Auth Service — local username/email/password authentication.
 
-Passwords are hashed with bcrypt (passlib). Sessions are self-issued
-JWTs (HS256) returned to the frontend as a Bearer token, verified on
-every request by decode_access_token().
+Passwords are hashed with bcrypt directly (not via passlib — passlib's
+bcrypt backend is incompatible with bcrypt>=4.1, see hash_password below).
+Sessions are self-issued JWTs (HS256) returned to the frontend as a
+Bearer token, verified on every request by decode_access_token().
 """
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# bcrypt only considers the first 72 bytes of a password; passlib raises
-# instead of silently truncating. Registration already rejects passwords
-# over 72 bytes, so this is just a defensive backstop.
+# bcrypt only considers the first 72 bytes of a password; anything beyond
+# that is a hard error, not a silent truncation.
 _BCRYPT_MAX_BYTES = 72
 
 
-def _clamp_to_bcrypt_limit(password: str) -> str:
+def _clamp_to_bcrypt_limit(password: str) -> bytes:
     encoded = password.encode("utf-8")
-    if len(encoded) <= _BCRYPT_MAX_BYTES:
-        return password
-    return encoded[:_BCRYPT_MAX_BYTES].decode("utf-8", errors="ignore")
+    return encoded[:_BCRYPT_MAX_BYTES]
 
 
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(_clamp_to_bcrypt_limit(password))
+    hashed = bcrypt.hashpw(_clamp_to_bcrypt_limit(password), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     if not password or not password_hash:
         return False
     try:
-        return _pwd_context.verify(_clamp_to_bcrypt_limit(password), password_hash)
+        return bcrypt.checkpw(_clamp_to_bcrypt_limit(password), password_hash.encode("utf-8"))
     except Exception:
         return False
 

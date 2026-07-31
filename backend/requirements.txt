@@ -18,7 +18,11 @@ numpy>=1.26.0,<3.0
 pytz>=2024.1,<2025.0
 
 # ── Local Authentication (JWT + password hashing) ──────────────
-passlib[bcrypt]>=1.7.4,<2.0
+# passlib's bcrypt backend is incompatible with bcrypt>=4.1 (passlib
+# reads bcrypt.__about__.__version__, removed upstream) and misbehaves
+# with a bogus "password cannot be longer than 72 bytes" error on any
+# password. Use the bcrypt library directly instead.
+bcrypt>=4.0.0,<5.0
 python-jose[cryptography]>=3.3.0,<4.0
 
 # ── Market Provider & Cache ─────────────────────────────────────
