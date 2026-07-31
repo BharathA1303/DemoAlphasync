@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Shield, Users, Clock, UserCheck, UserX, RefreshCw, LogOut,
     Search, ChevronLeft, ChevronRight, AlertTriangle, Loader2,
-    CheckCircle2, XCircle, Activity, Eye, X,
+    CheckCircle2, XCircle, Activity, Eye, X, Zap, Database,
     Crown, UserPlus, Settings2, Trash2, ShieldCheck, EyeOff,
     FileText, History, Link2, Copy, Plus, Pencil, Download, Bookmark, Star
 } from 'lucide-react';
@@ -824,211 +824,191 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
 function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClose,
     zebuStatus, zebuDraft, setZebuDraft, zebuSaving, zebuImporting, onSaveZebu, onImportZebu,
     simStatus, simStatusLoading, onRefreshSimStatus, seeding, onSeedFreeHistory }) {
+    const [activeTab, setActiveTab] = useState('sim');
     const inputStyle = {
-        width: '100%', padding: '8px 10px', borderRadius: '8px',
+        width: '100%', padding: '6px 10px', borderRadius: '6px',
         background: 'var(--bg-muted)', border: '1px solid var(--border)',
-        color: 'var(--text-primary)', fontSize: '13px',
+        color: 'var(--text-primary)', fontSize: '12px',
     };
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-            <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl animate-slide-up admin-card"
-                style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+            style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
+            <div className="w-full max-w-xl rounded-2xl animate-slide-up admin-card overflow-hidden"
+                style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border)' }}
                 onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
-                <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid var(--border)' }}>
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.12)' }}>
-                            <Activity size={20} style={{ color: '#10b981' }} />
+                <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.12)' }}>
+                            <Activity size={18} style={{ color: '#10b981' }} />
                         </div>
                         <div>
-                            <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Internal Simulation Engine</h2>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Enable or disable the in-process tick simulation engine</p>
+                            <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>Internal Simulation Engine</h2>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Manage tick simulation, live status & Zebu broker history</p>
                         </div>
                     </div>
-                    <button className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-white/5"
-                        style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={18} /></button>
+                    <button className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/5"
+                        style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={16} /></button>
                 </div>
 
-                <div className="p-5 flex flex-col gap-4">
-                    {/* Status panel */}
-                    <div className="p-4 rounded-xl flex flex-col gap-1.5" 
-                         style={{ 
-                             background: 'rgba(255,255,255,0.02)', 
-                             border: '1px solid var(--border)' 
-                         }}>
-                        <div className="flex justify-between items-center">
-                            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Connection Status</span>
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                                  style={{
-                                      background: config.connection_status === 'connected' ? 'rgba(16,185,129,0.12)' :
-                                                  config.connection_status === 'connecting' ? 'rgba(245,158,11,0.12)' :
-                                                  config.connection_status === 'error' ? 'rgba(239,68,68,0.12)' : 'rgba(148,163,184,0.12)',
-                                      color: config.connection_status === 'connected' ? '#10b981' :
-                                             config.connection_status === 'connecting' ? '#f59e0b' :
-                                             config.connection_status === 'error' ? '#ef4444' : 'var(--text-muted)',
-                                      border: config.connection_status === 'connected' ? '1px solid rgba(16,185,129,0.22)' :
-                                              config.connection_status === 'connecting' ? '1px solid rgba(245,158,11,0.22)' :
-                                              config.connection_status === 'error' ? '1px solid rgba(239,68,68,0.22)' : '1px solid var(--border)'
-                                  }}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${config.connection_status === 'connected' ? 'bg-[#10b981] animate-pulse' : config.connection_status === 'connecting' ? 'bg-[#f59e0b] animate-bounce' : config.connection_status === 'error' ? 'bg-[#ef4444]' : 'bg-[var(--text-muted)]'}`}></span>
-                                {config.connection_status ? config.connection_status.toUpperCase() : 'DISCONNECTED'}
-                            </span>
-                        </div>
-                        {config.error_message && (
-                            <div className="text-xs p-2.5 rounded-lg font-mono break-all mt-1" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}>
-                                {config.error_message}
-                            </div>
-                        )}
-                    </div>
+                {/* Segmented Control Tabs */}
+                <div className="flex px-4 pt-3 gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)' }}>
+                    <button
+                        type="button"
+                        className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${activeTab === 'sim' ? 'border-[#10b981] text-[#10b981]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                        onClick={() => setActiveTab('sim')}>
+                        <Zap size={13} /> Simulation & Live Ticks
+                    </button>
+                    <button
+                        type="button"
+                        className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${activeTab === 'zebu' ? 'border-[#10b981] text-[#10b981]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+                        onClick={() => setActiveTab('zebu')}>
+                        <Database size={13} /> Real Historical Data (Zebu) {zebuStatus?.configured && <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]"></span>}
+                    </button>
+                </div>
 
-                    {/* Form fields */}
-                    <div className="flex flex-col gap-3">
-                        <div className="flex items-center justify-between p-3.5 rounded-xl transition-all" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
-                            <div>
-                                <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Enable Simulation Engine</label>
-                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Runs entirely in-process — no external service or credentials needed.</span>
-                            </div>
-                            <label className="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" className="sr-only peer" checked={draft.is_enabled}
-                                       onChange={(e) => setDraft(prev => ({ ...prev, is_enabled: e.target.checked }))} />
-                                <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#10b981]"></div>
-                            </label>
-                        </div>
-                    </div>
-
-                    {/* Live tick status */}
-                    <div className="pt-2 flex flex-col gap-3" style={{ borderTop: '1px solid var(--border)' }}>
-                        <div className="pt-3 flex items-center justify-between">
-                            <div>
-                                <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Live Tick Status</label>
-                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                    Proves ticks are actually streaming right now, not just that the engine started.
+                <div className="p-4">
+                    {activeTab === 'sim' ? (
+                        <div className="flex flex-col gap-3">
+                            {/* Enable Engine & Status */}
+                            <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
+                                <div className="flex items-center gap-2.5">
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" className="sr-only peer" checked={draft.is_enabled}
+                                            onChange={(e) => setDraft(prev => ({ ...prev, is_enabled: e.target.checked }))} />
+                                        <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#10b981]"></div>
+                                    </label>
+                                    <div>
+                                        <span className="text-xs font-bold block" style={{ color: 'var(--text-primary)' }}>Enable Simulation Engine</span>
+                                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Runs entirely in-process — no external service or credentials needed.</span>
+                                    </div>
+                                </div>
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
+                                    style={{
+                                        background: config.connection_status === 'connected' ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.12)',
+                                        color: config.connection_status === 'connected' ? '#10b981' : 'var(--text-muted)',
+                                        border: config.connection_status === 'connected' ? '1px solid rgba(16,185,129,0.22)' : '1px solid var(--border)'
+                                    }}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${config.connection_status === 'connected' ? 'bg-[#10b981] animate-pulse' : 'bg-[var(--text-muted)]'}`}></span>
+                                    {config.connection_status ? config.connection_status.toUpperCase() : 'DISCONNECTED'}
                                 </span>
                             </div>
-                            <button className="admin-action-btn admin-action-btn--secondary" onClick={onRefreshSimStatus} disabled={simStatusLoading}>
-                                {simStatusLoading ? <Loader2 size={14} className="animate-spin" /> : 'Refresh'}
-                            </button>
-                        </div>
 
-                        {simStatus?.master_provider ? (
-                            <div className="p-3 rounded-xl text-xs flex flex-col gap-1"
-                                style={{
-                                    background: simStatus.master_provider.is_ticking ? 'rgba(16,185,129,0.06)' : 'rgba(239,68,68,0.06)',
-                                    border: simStatus.master_provider.is_ticking ? '1px solid rgba(16,185,129,0.18)' : '1px solid rgba(239,68,68,0.18)',
-                                    color: 'var(--text-muted)',
-                                }}>
-                                <span className="flex items-center gap-1.5">
-                                    <span className={`w-1.5 h-1.5 rounded-full ${simStatus.master_provider.is_ticking ? 'bg-[#10b981] animate-pulse' : 'bg-[#ef4444]'}`}></span>
-                                    <strong style={{ color: simStatus.master_provider.is_ticking ? '#10b981' : '#ef4444' }}>
-                                        {simStatus.master_provider.is_ticking ? 'Ticking now' : 'Not ticking'}
-                                    </strong>
-                                </span>
-                                <span>Last tick: {simStatus.master_provider.last_tick_age_seconds != null
-                                    ? `${simStatus.master_provider.last_tick_age_seconds.toFixed(1)}s ago`
-                                    : 'never'}</span>
-                                <span>Subscribed symbols: {simStatus.master_provider.subscribed_symbols}</span>
-                                <span>Simulated clock active: {simStatus.simulation_clock_active ? 'yes' : 'no (falls back to real market hours)'}</span>
-                                {simStatus.master_provider.error && (
-                                    <span style={{ color: '#ef4444' }}>{simStatus.master_provider.error}</span>
+                            {/* Live Tick Status Grid */}
+                            <div className="p-3 rounded-xl text-xs flex flex-col gap-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                                <div className="flex justify-between items-center">
+                                    <span className="font-semibold text-[11px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Live Tick Engine Status</span>
+                                    <button className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors bg-white/5 hover:bg-white/10 text-[var(--text-primary)] border border-white/10 flex items-center gap-1" onClick={onRefreshSimStatus} disabled={simStatusLoading}>
+                                        {simStatusLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={11} />} Refresh
+                                    </button>
+                                </div>
+
+                                {simStatus?.master_provider ? (
+                                    <div className="grid grid-cols-2 gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                                            <span>Stream State:</span>
+                                            <span className="font-bold flex items-center gap-1" style={{ color: simStatus.master_provider.is_ticking ? '#10b981' : '#ef4444' }}>
+                                                <span className={`w-1.5 h-1.5 rounded-full ${simStatus.master_provider.is_ticking ? 'bg-[#10b981] animate-pulse' : 'bg-[#ef4444]'}`}></span>
+                                                {simStatus.master_provider.is_ticking ? 'Ticking now' : 'Not ticking'}
+                                            </span>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                                            <span>Last Tick:</span>
+                                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
+                                                {simStatus.master_provider.last_tick_age_seconds != null ? `${simStatus.master_provider.last_tick_age_seconds.toFixed(1)}s ago` : 'never'}
+                                            </span>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                                            <span>Subscribed Symbols:</span>
+                                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{simStatus.master_provider.subscribed_symbols}</span>
+                                        </div>
+                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
+                                            <span>Sim Clock Active:</span>
+                                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{simStatus.simulation_clock_active ? 'yes' : 'no'}</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-[11px] text-[var(--text-muted)]">Click Refresh to fetch live tick status.</div>
                                 )}
                             </div>
-                        ) : (
-                            <div className="p-3 rounded-xl text-xs" style={{ background: 'rgba(148,163,184,0.06)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                                {simStatusLoading ? 'Loading…' : 'No status loaded yet — click Refresh.'}
-                            </div>
-                        )}
-                    </div>
 
-                    {/* Free real historical data (no broker account needed) */}
-                    <div className="pt-2 flex flex-col gap-3" style={{ borderTop: '1px solid var(--border)' }}>
-                        <div className="pt-3">
-                            <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Free Historical Data (NSE/BSE Bhavcopy)</label>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                Downloads real, free, no-login NSE/BSE end-of-day archives to seed the simulator.
-                                Falls back to mock data automatically for any day the exchange blocks the request.
-                            </span>
+                            {/* Free Historical Seed Bar */}
+                            <div className="p-3 rounded-xl flex items-center justify-between gap-3" style={{ background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.15)' }}>
+                                <div>
+                                    <span className="text-xs font-bold block" style={{ color: 'var(--text-primary)' }}>Free Historical Data (NSE/BSE Bhavcopy)</span>
+                                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Downloads real, free, no-login end-of-day archives (45 days)</span>
+                                </div>
+                                <button className="admin-action-btn admin-action-btn--primary text-xs py-1.5 px-3 shrink-0" onClick={onSeedFreeHistory} disabled={seeding}>
+                                    {seeding ? <><Loader2 size={12} className="animate-spin" /> Seeding...</> : 'Seed Free Data'}
+                                </button>
+                            </div>
                         </div>
-                        <button className="admin-action-btn admin-action-btn--primary" onClick={onSeedFreeHistory} disabled={seeding}>
-                            {seeding ? (
-                                <>
-                                    <Loader2 size={14} className="animate-spin" /> Seeding…
-                                </>
+                    ) : (
+                        <div className="flex flex-col gap-3">
+                            {/* Zebu Status Banner if configured */}
+                            {zebuStatus?.configured ? (
+                                <div className="p-2.5 rounded-xl text-xs flex items-center justify-between" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
+                                    <div>
+                                        <span className="font-semibold" style={{ color: '#10b981' }}>Configured for Client: {zebuStatus.client_code}</span>
+                                        {zebuStatus.last_import_at && (
+                                            <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                Last import: {new Date(zebuStatus.last_import_at).toLocaleString()} — {zebuStatus.last_import_status || 'unknown'}
+                                            </span>
+                                        )}
+                                        {zebuStatus.last_import_error && (
+                                            <span style={{ color: '#ef4444' }}>{zebuStatus.last_import_error}</span>
+                                        )}
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 uppercase">Ready</span>
+                                </div>
                             ) : (
-                                'Seed Real Historical Data (45 days)'
+                                <div className="p-2.5 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)', color: '#f59e0b' }}>
+                                    Optional. Pulls real EOD candles from your Zebu account to seed the simulator.
+                                </div>
                             )}
-                        </button>
-                    </div>
 
-                    {/* Zebu real historical-data import (optional) */}
-                    <div className="pt-2 flex flex-col gap-3" style={{ borderTop: '1px solid var(--border)' }}>
-                        <div className="pt-3">
-                            <label className="text-sm font-bold block" style={{ color: 'var(--text-primary)' }}>Real Historical Data (Zebu)</label>
-                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                Optional. Pulls real EOD candles from your Zebu account to seed the same
-                                simulator — used only for a one-off/periodic import, never a live feed or order placement.
-                            </span>
-                        </div>
-
-                        {zebuStatus?.configured && (
-                            <div className="p-3 rounded-xl text-xs flex flex-col gap-1" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)', color: 'var(--text-muted)' }}>
-                                <span>Configured for client <strong style={{ color: 'var(--text-primary)' }}>{zebuStatus.client_code}</strong></span>
-                                {zebuStatus.last_import_at && (
-                                    <span>Last import: {new Date(zebuStatus.last_import_at).toLocaleString()} — {zebuStatus.last_import_status || 'unknown'}</span>
-                                )}
-                                {zebuStatus.last_import_error && (
-                                    <span style={{ color: '#ef4444' }}>{zebuStatus.last_import_error}</span>
-                                )}
+                            {/* Credentials Grid */}
+                            <div className="grid grid-cols-2 gap-2">
+                                <input style={inputStyle} placeholder="Client code" value={zebuDraft.client_code}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, client_code: e.target.value }))} />
+                                <input style={inputStyle} placeholder="Vendor code" value={zebuDraft.vendor_code}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, vendor_code: e.target.value }))} />
+                                <input style={inputStyle} type="password" placeholder="Password" value={zebuDraft.password}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, password: e.target.value }))} />
+                                <input style={inputStyle} placeholder="DOB (DD-MM-YYYY) or PAN" value={zebuDraft.factor2}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, factor2: e.target.value }))} />
+                                <input style={inputStyle} placeholder="API key" value={zebuDraft.api_key}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, api_key: e.target.value }))} />
+                                <input style={inputStyle} type="password" placeholder="API secret" value={zebuDraft.api_secret}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, api_secret: e.target.value }))} />
+                                <input style={{ ...inputStyle, gridColumn: 'span 2' }} placeholder="Base URL" value={zebuDraft.base_url}
+                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, base_url: e.target.value }))} />
                             </div>
-                        )}
 
-                        <div className="grid grid-cols-2 gap-2">
-                            <input style={inputStyle} placeholder="Client code" value={zebuDraft.client_code}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, client_code: e.target.value }))} />
-                            <input style={inputStyle} placeholder="Vendor code" value={zebuDraft.vendor_code}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, vendor_code: e.target.value }))} />
-                            <input style={inputStyle} type="password" placeholder="Password" value={zebuDraft.password}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, password: e.target.value }))} />
-                            <input style={inputStyle} placeholder="DOB (DD-MM-YYYY) or PAN" value={zebuDraft.factor2}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, factor2: e.target.value }))} />
-                            <input style={inputStyle} placeholder="API key" value={zebuDraft.api_key}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, api_key: e.target.value }))} />
-                            <input style={inputStyle} type="password" placeholder="API secret" value={zebuDraft.api_secret}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, api_secret: e.target.value }))} />
-                            <input style={{ ...inputStyle, gridColumn: 'span 2' }} placeholder="Base URL" value={zebuDraft.base_url}
-                                onChange={(e) => setZebuDraft(prev => ({ ...prev, base_url: e.target.value }))} />
+                            <div className="flex gap-2 pt-1">
+                                <button className="admin-action-btn admin-action-btn--secondary flex-1 text-xs py-1.5" onClick={onSaveZebu} disabled={zebuSaving}>
+                                    {zebuSaving ? 'Saving…' : 'Save Credentials'}
+                                </button>
+                                <button className="admin-action-btn admin-action-btn--primary flex-1 text-xs py-1.5" onClick={onImportZebu}
+                                    disabled={zebuImporting || !zebuStatus?.configured}>
+                                    {zebuImporting ? 'Importing…' : 'Import Real History'}
+                                </button>
+                            </div>
                         </div>
-                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            The second field is Zebu's login "factor2" — your account's DOB (DD-MM-YYYY) or PAN,
-                            exactly as registered with Zebu. This is not an authenticator/TOTP code.
-                        </span>
-
-                        <div className="flex gap-2">
-                            <button className="admin-action-btn admin-action-btn--secondary flex-1" onClick={onSaveZebu} disabled={zebuSaving}>
-                                {zebuSaving ? 'Saving…' : 'Save Credentials'}
-                            </button>
-                            <button className="admin-action-btn admin-action-btn--primary flex-1" onClick={onImportZebu}
-                                disabled={zebuImporting || !zebuStatus?.configured}>
-                                {zebuImporting ? 'Importing…' : 'Import Real History'}
-                            </button>
-                        </div>
-                    </div>
+                    )}
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-2 p-5" style={{ borderTop: '1px solid var(--border)' }}>
-                    <button className="admin-action-btn admin-action-btn--secondary" onClick={onClose} disabled={saving}>
-                        Cancel
-                    </button>
-                    <button className="admin-action-btn admin-action-btn--primary" onClick={onSave} disabled={saving || loading}>
-                        {saving ? (
-                            <>
-                                <Loader2 size={14} className="animate-spin" /> Saving...
-                            </>
-                        ) : (
-                            'Save'
-                        )}
-                    </button>
+                <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.15)' }}>
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {activeTab === 'sim' ? 'In-process simulation engine' : 'Credentials encrypted with AES-256'}
+                    </span>
+                    <div className="flex gap-2">
+                        <button className="admin-action-btn admin-action-btn--secondary text-xs py-1.5 px-3" onClick={onClose} disabled={saving}>Cancel</button>
+                        <button className="admin-action-btn admin-action-btn--primary text-xs py-1.5 px-3" onClick={onSave} disabled={saving || loading}>
+                            {saving ? <><Loader2 size={12} className="animate-spin" /> Saving...</> : 'Save Settings'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
