@@ -148,6 +148,10 @@ class DataFeedSessionManager:
                 res = await session.execute(stmt)
                 db_config = res.scalar_one_or_none()
                 seeded_generation = getattr(db_config, "seed_generation", None) if db_config else None
+
+                if db_config and db_config.oauth_connection_status == "connected":
+                    logger.info("Zebu OAuth live data feed is connected. Skipping legacy EOD bhavcopy download.")
+                    return
         except Exception as e:
             logger.warning(f"Failed to check existing PriceData coverage: {e}")
             return
@@ -240,14 +244,24 @@ class DataFeedSessionManager:
                 logger.warning(f"Failed to bootstrap default DataFeedConfig: {e}")
 
         if db_config and db_config.is_enabled:
-            logger.info("Initializing internal simulation engine from database configuration...")
+            logger.info("Initializing master data feed session from database configuration...")
 
-            provider = InternalSimProvider(redis_client=redis_cache)
-            self.register_session(MASTER_SESSION_ID, provider)
+            if db_config.oauth_connection_status == "connected":
+                from providers.delayed_feed_provider import DelayedFeedProvider
+                from workers.live_feed_ingestion_worker import live_ingestion_worker
 
-            try:
+                logger.info("Using Zebu OAuth DelayedFeedProvider as master provider.")
+                provider = DelayedFeedProvider(settings=settings)
+                self.register_session(MASTER_SESSION_ID, provider)
+                await provider.start()
+                asyncio.create_task(live_ingestion_worker.start())
+            else:
+                provider = InternalSimProvider(redis_client=redis_cache)
+                self.register_session(MASTER_SESSION_ID, provider)
                 await provider.start()
                 await self._auto_subscribe(provider)
+
+            try:
                 async with async_session() as session:
                     stmt = select(DataFeedConfig).filter(DataFeedConfig.id == db_config.id)
                     res = await session.execute(stmt)
@@ -255,20 +269,10 @@ class DataFeedSessionManager:
                     conf.connection_status = "connected"
                     conf.error_message = None
                     await session.commit()
-                logger.info("Internal simulation engine started successfully at startup")
+                logger.info("Data feed master session started successfully")
                 self._init_simulation_clock_open()
             except Exception as e:
-                logger.error(f"Failed to start internal simulation engine at startup: {e}")
-                try:
-                    async with async_session() as session:
-                        stmt = select(DataFeedConfig).filter(DataFeedConfig.id == db_config.id)
-                        res = await session.execute(stmt)
-                        conf = res.scalar_one()
-                        conf.connection_status = "error"
-                        conf.error_message = str(e)
-                        await session.commit()
-                except Exception as db_err:
-                    logger.debug(f"Failed to write error status: {db_err}")
+                logger.error(f"Failed to update DataFeedConfig status: {e}")
                 self._init_simulation_clock_open()
         else:
             logger.warning("Internal simulation engine is disabled by admin configuration.")
