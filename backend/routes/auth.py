@@ -1,36 +1,34 @@
 """
-Authentication routes — Firebase-based.
+Authentication routes — local username/email/password.
 
 Flow:
-    1. Frontend signs user in via Firebase JS SDK (Google, Email/Password, etc.)
-    2. Frontend gets a Firebase ID token and sends it to POST /api/auth/sync
-    3. Backend verifies the token via Firebase Admin SDK
-    4. Backend finds-or-creates a local User row (linked by firebase_uid)
-    5. Backend returns the local user profile
-    6. All subsequent API calls send the Firebase ID token as Bearer token
-    7. get_current_user() verifies the token on every request
+    1. Frontend calls POST /api/auth/register {username, email, password, full_name}
+       or POST /api/auth/login {username, password} (username field accepts
+       either username or email).
+    2. Backend hashes/verifies the password locally and issues a JWT.
+    3. All subsequent API calls send the JWT as Bearer token.
+    4. get_current_user() verifies the token on every request.
+
+No email verification and no 2FA/TOTP yet — planned for later.
 """
 
 import logging
-import hashlib
 import re
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from pydantic import BaseModel
+from sqlalchemy import select, or_
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime, timezone, timedelta
+import hashlib
+from sqlalchemy.exc import IntegrityError
 
 from database.connection import get_db
 from models.user import User, UserSession, AdminAuditLog
 from models.portfolio import Portfolio
-from services.auth_service import verify_id_token
+from services.auth_service import hash_password, verify_password, create_access_token, decode_access_token
 from services import admin_group_service
-from services.account_deletion_service import (
-    try_delete_firebase_account,
-)
 from core.event_bus import event_bus, Event, EventType
 from core.admin_runtime_flags import admin_runtime_flags
 from config.settings import settings
@@ -111,7 +109,6 @@ def _is_admin_allowlisted(email: str) -> bool:
     return normalized in allowlist
 
 
-
 def _session_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -158,7 +155,7 @@ async def _upsert_user_session(
                 await db.flush()
             return
         except IntegrityError:
-            # Concurrent sync requests can race on the same token fingerprint.
+            # Concurrent requests can race on the same token fingerprint.
             # Fall through to a read+update path instead of failing login.
             pass
 
@@ -176,12 +173,34 @@ async def _upsert_user_session(
 # --- Schemas ---
 
 
-class SyncRequest(BaseModel):
-    """Sent by frontend after Firebase sign-in to sync with backend."""
-
-    username: Optional[str] = None
-    auth_intent: Optional[str] = None
+class RegisterRequest(BaseModel):
+    username: str
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = None
     group_token: Optional[str] = None
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        v = v.strip()
+        if not re.fullmatch(r"[a-zA-Z0-9_.]{3,50}", v):
+            raise ValueError(
+                "Username must be 3-50 characters (letters, numbers, underscore, dot)."
+            )
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters.")
+        return v
+
+
+class LoginRequest(BaseModel):
+    username: str  # accepts username OR email
+    password: str
 
 
 class PhoneSubmitRequest(BaseModel):
@@ -199,63 +218,30 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """
-    Verify Firebase ID token and return the local User.
+    Verify the local JWT and return the local User.
 
-    Every protected route depends on this. The frontend sends the
-    Firebase ID token as a Bearer token in the Authorization header.
-
-    In DEBUG mode without Firebase credentials, a demo user is
-    auto-created so the app works out of the box.
+    Every protected route depends on this. The frontend sends the JWT
+    issued by /api/auth/login or /api/auth/register as a Bearer token.
     """
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Verify Firebase ID token
-    claims = verify_id_token(credentials.credentials)
+    claims = decode_access_token(credentials.credentials)
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-    firebase_uid = claims.get("uid")
-    if not firebase_uid:
+    user_id = claims.get("sub")
+    if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    # Look up local user by firebase_uid
-    result = await db.execute(select(User).where(User.firebase_uid == firebase_uid))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
     if not user:
-        # In DEBUG mode, auto-create the demo user so the app works
-        # without any Firebase setup
-        if settings.DEBUG:
-            email = claims.get("email", "demo@alphasync.app")
-            user = User(
-                firebase_uid=firebase_uid,
-                email=email,
-                username=claims.get("name", "demo_trader").lower().replace(" ", "_"),
-                full_name=claims.get("name", "Demo Trader"),
-                auth_provider="demo",
-                virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
-                is_verified=True,
-                is_active=True,
-                account_status="active",
-            )
-            db.add(user)
-            await db.flush()
-
-            # Create portfolio for the demo user
-            portfolio = Portfolio(
-                user_id=user.id,
-                available_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
-            )
-            db.add(portfolio)
-            await db.commit()
-            await db.refresh(user)
-            logger.info(f"Auto-created demo user: {user.email} (uid={firebase_uid})")
-        else:
-            raise HTTPException(
-                status_code=401,
-                detail="User not found. Please sign in again.",
-            )
+        raise HTTPException(
+            status_code=401,
+            detail="User not found. Please sign in again.",
+        )
 
     account_status = (getattr(user, "account_status", None) or "active").strip().lower()
 
@@ -302,6 +288,16 @@ async def get_current_user(
                 detail="ACCESS_EXPIRED: Your demo trading access has expired. Contact support for extension.",
             )
 
+    # Reject tokens whose session was force-logged-out by an admin, even
+    # though the JWT itself is still cryptographically valid/unexpired.
+    session_key = _session_fingerprint(credentials.credentials)
+    result = await db.execute(
+        select(UserSession).where(UserSession.session_key == session_key)
+    )
+    existing_session = result.scalar_one_or_none()
+    if existing_session and not existing_session.is_active:
+        raise HTTPException(status_code=401, detail="Session revoked. Please sign in again.")
+
     await _upsert_user_session(db, user, request, credentials.credentials)
 
     return user
@@ -314,21 +310,21 @@ async def get_current_user_optional(
     """
     Best-effort auth dependency for routes that can serve public-safe data.
 
-    Returns a User when a valid Firebase token is present, otherwise None.
+    Returns a User when a valid token is present, otherwise None.
     Never raises auth errors.
     """
     if not credentials:
         return None
 
-    claims = verify_id_token(credentials.credentials)
+    claims = decode_access_token(credentials.credentials)
     if not claims:
         return None
 
-    firebase_uid = claims.get("uid")
-    if not firebase_uid:
+    user_id = claims.get("sub")
+    if not user_id:
         return None
 
-    result = await db.execute(select(User).where(User.firebase_uid == firebase_uid))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         return None
@@ -345,50 +341,59 @@ async def get_current_user_optional(
     return user
 
 
+def _user_profile(user: User) -> dict:
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "username": user.username,
+        "full_name": user.full_name,
+        "phone": user.phone,
+        "role": user.role,
+        "virtual_capital": float(user.virtual_capital),
+        "avatar_url": user.avatar_url,
+        "is_verified": user.is_verified,
+        "auth_provider": user.auth_provider,
+        "account_status": getattr(user, "account_status", "active"),
+    }
+
+
+def _apply_admin_allowlist_promotion(user: User) -> None:
+    """Keep allowlisted admin emails in admin state."""
+    user.role = "admin"
+    user.account_status = "active"
+    user.is_active = True
+    user.is_verified = True
+    user.access_expires_at = None
+    user.access_duration_days = None
+    user.deactivation_reason = None
+
+
 # --- Routes ---
 
 
-@router.post("/sync")
-async def sync_user(
-    req: SyncRequest,
+@router.post("/register")
+async def register(
+    req: RegisterRequest,
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Sync Firebase user with local database.
+    """Create a new local account with username + email + password."""
+    email = req.email.strip().lower()
+    username = req.username.strip()
 
-    Called by the frontend after every Firebase sign-in (login or register).
-    Finds existing user by firebase_uid or creates a new one.
-    Returns the local user profile for the frontend store.
-    """
-    if not credentials:
-        logger.warning("Sync called without credentials")
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    token = credentials.credentials
-    logger.info(
-        f"Sync request — token length: {len(token)}, first 20 chars: {token[:20]}..."
+    existing = await db.execute(
+        select(User).where(or_(User.email == email, User.username == username))
     )
+    existing_user = existing.scalar_one_or_none()
+    if existing_user:
+        if existing_user.email == email:
+            raise HTTPException(status_code=409, detail="An account with this email already exists.")
+        raise HTTPException(status_code=409, detail="This username is already taken.")
 
-    claims = verify_id_token(token)
-    if not claims:
-        logger.error(
-            "Firebase token verification failed — is FIREBASE_CREDENTIALS_JSON set?"
-        )
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    firebase_uid = claims.get("uid")
-    email = claims.get("email", "")
-    name = claims.get("name", "")
-    picture = claims.get("picture")
-    email_verified = claims.get("email_verified", False)
-    provider = claims.get("firebase", {}).get("sign_in_provider", "unknown")
-    auth_intent = (req.auth_intent or "login").strip().lower()
-    group_token = (req.group_token or "").strip()
     admin_allowlisted = _is_admin_allowlisted(email)
     auto_approval_enabled = admin_runtime_flags.is_auto_approval_enabled()
 
+    group_token = (req.group_token or "").strip()
     matched_group = None
     if group_token:
         try:
@@ -396,221 +401,151 @@ async def sync_user(
         except Exception:
             matched_group = None
 
-    group_auto_approval_enabled = bool(
-        matched_group and matched_group.get("auto_approval")
-    )
+    group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
     effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled
 
-    logger.info(
-        "Auth sync identity: email=%s provider=%s intent=%s allowlisted_admin=%s auto_approval_global=%s auto_approval_group=%s grouped=%s",
-        email,
-        provider,
-        auth_intent,
-        admin_allowlisted,
-        auto_approval_enabled,
-        group_auto_approval_enabled,
-        bool(group_token),
-    )
-
-    if not firebase_uid:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
     try:
-        # Try to find existing user by firebase_uid
-        result = await db.execute(select(User).where(User.firebase_uid == firebase_uid))
-        user = result.scalar_one_or_none()
+        user = User(
+            email=email,
+            username=username,
+            password_hash=hash_password(req.password),
+            full_name=(req.full_name or username).strip(),
+            auth_provider="local",
+            virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
+            is_verified=admin_allowlisted,
+            role=("admin" if admin_allowlisted else "user"),
+            account_status=(
+                "active"
+                if (admin_allowlisted or effective_auto_approval)
+                else "pending_approval"
+            ),
+            is_active=(admin_allowlisted or effective_auto_approval),
+            approved_at=(
+                datetime.now(timezone.utc)
+                if effective_auto_approval and not admin_allowlisted
+                else None
+            ),
+            access_duration_days=(
+                _AUTO_APPROVAL_DURATION_DAYS
+                if effective_auto_approval and not admin_allowlisted
+                else None
+            ),
+            access_expires_at=(
+                datetime.now(timezone.utc) + timedelta(days=_AUTO_APPROVAL_DURATION_DAYS)
+                if effective_auto_approval and not admin_allowlisted
+                else None
+            ),
+        )
+        db.add(user)
+        await db.flush()
 
-        is_new = False
+        portfolio = Portfolio(
+            user_id=user.id,
+            available_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
+        )
+        db.add(portfolio)
 
-        if not user:
-            # Also check if email already exists (edge case: migrated user)
-            if email:
-                result = await db.execute(select(User).where(User.email == email))
-                user = result.scalar_one_or_none()
+        if admin_allowlisted:
+            _apply_admin_allowlist_promotion(user)
 
-            if user:
-                # Link existing email-based user to Firebase
-                user.firebase_uid = firebase_uid
-                user.auth_provider = provider
-                if picture and not user.avatar_url:
-                    user.avatar_url = picture
-                if email_verified:
-                    user.is_verified = True
-
-                # Auto-promote allowlisted admin emails.
-                if admin_allowlisted:
-                    user.role = "admin"
-                    user.account_status = "active"
-                    user.is_active = True
-                    user.is_verified = True
-                    user.access_expires_at = None
-                    user.access_duration_days = None
-                    user.deactivation_reason = None
-            else:
-                if (
-                    auth_intent == "login"
-                    and not admin_allowlisted
-                    and not effective_auto_approval
-                ):
-                    raise HTTPException(
-                        status_code=404,
-                        detail="Account not found. Please create an account first.",
-                    )
-
-                # Create brand-new user
-                is_new = True
-
-                # Generate username from email or name
-                username = req.username
-                if not username:
-                    username = (
-                        email.split("@")[0] if email else f"user_{firebase_uid[:8]}"
-                    )
-
-                # Ensure username uniqueness
-                base_username = username
-                counter = 1
-                while True:
-                    result = await db.execute(
-                        select(User).where(User.username == username)
-                    )
-                    if not result.scalar_one_or_none():
-                        break
-                    username = f"{base_username}{counter}"
-                    counter += 1
-
-                user = User(
-                    firebase_uid=firebase_uid,
-                    email=email,
-                    username=username,
-                    full_name=name or username,
-                    auth_provider=provider,
-                    avatar_url=picture,
-                    virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
-                    is_verified=(email_verified or admin_allowlisted),
-                    role=("admin" if admin_allowlisted else "user"),
-                    account_status=(
-                        "active"
-                        if (admin_allowlisted or effective_auto_approval)
-                        else "pending_approval"
-                    ),
-                    is_active=(admin_allowlisted or effective_auto_approval),
-                    approved_at=(
-                        datetime.now(timezone.utc)
-                        if effective_auto_approval and not admin_allowlisted
-                        else None
-                    ),
-                    access_duration_days=(
-                        _AUTO_APPROVAL_DURATION_DAYS
-                        if effective_auto_approval and not admin_allowlisted
-                        else None
-                    ),
-                    access_expires_at=(
-                        datetime.now(timezone.utc)
-                        + timedelta(days=_AUTO_APPROVAL_DURATION_DAYS)
-                        if effective_auto_approval and not admin_allowlisted
-                        else None
-                    ),
-                )
-                db.add(user)
-                await db.flush()
-
-                # Create portfolio for new user
-                portfolio = Portfolio(
-                    user_id=user.id,
-                    available_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
-                )
-                db.add(portfolio)
-
-        # Keep allowlisted admin emails in admin state on each sync.
-        if user and admin_allowlisted:
-            user.role = "admin"
-            user.account_status = "active"
-            user.is_active = True
-            user.is_verified = True
-            user.access_expires_at = None
-            user.access_duration_days = None
-            user.deactivation_reason = None
-
-        # Update last login info
-        user.updated_at = datetime.now(timezone.utc)
-
-        await db.flush()  # assign IDs for new rows before session upsert
+        token = create_access_token(str(user.id))
+        await db.flush()
         await _upsert_user_session(db, user, request, token)
-        await db.commit()  # single commit for user + portfolio + session
+        await db.commit()
         await db.refresh(user)
 
         assigned_group = None
         if user.role != "admin" and matched_group:
             try:
                 assign_result = await admin_group_service.assign_user_to_group(
-                    str(user.id),
-                    matched_group["id"],
+                    str(user.id), matched_group["id"]
                 )
                 if assign_result.get("success"):
                     assigned_group = assign_result.get("group")
             except Exception:
                 logger.exception(
-                    "Failed group assignment from token during auth sync for user_id=%s",
+                    "Failed group assignment from token during registration for user_id=%s",
                     user.id,
                 )
 
-        # Send registration confirmation email for new non-admin users
-        if is_new and not admin_allowlisted and not effective_auto_approval:
+        if not admin_allowlisted and not effective_auto_approval:
             send_registration_received_email(user)
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(
-            f"Sync database error for {email} (firebase_uid={firebase_uid}): {e}",
-            exc_info=True,
-        )
+    except IntegrityError:
         await db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Account sync failed: {type(e).__name__}: {e}",
-        )
+        raise HTTPException(status_code=409, detail="Username or email already in use.")
+    except Exception as e:
+        logger.error(f"Registration failed for {email}: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Registration failed: {type(e).__name__}: {e}")
 
     uid = str(user.id)
-
-    # Emit event
     event_bus.emit_nowait(
         Event(
             type=EventType.USER_LOGIN,
-            data={
-                "user_id": uid,
-                "email": email,
-                "action": "register" if is_new else "login",
-                "provider": provider,
-            },
+            data={"user_id": uid, "email": email, "action": "register", "provider": "local"},
             user_id=uid,
             source="auth",
         )
     )
 
     return {
-        "message": "Registration successful" if is_new else "Login successful",
-        "is_new_user": is_new,
-        "assigned_group": {
-            "id": assigned_group.get("id"),
-            "name": assigned_group.get("name"),
-        }
-        if assigned_group
-        else None,
-        "user": {
-            "id": uid,
-            "email": user.email,
-            "username": user.username,
-            "full_name": user.full_name,
-            "phone": user.phone,
-            "role": user.role,
-            "virtual_capital": float(user.virtual_capital),
-            "avatar_url": user.avatar_url,
-            "is_verified": user.is_verified,
-            "auth_provider": user.auth_provider,
-            "account_status": getattr(user, "account_status", "active"),
-        },
+        "message": "Registration successful",
+        "is_new_user": True,
+        "token": token,
+        "assigned_group": (
+            {"id": assigned_group.get("id"), "name": assigned_group.get("name")}
+            if assigned_group
+            else None
+        ),
+        "user": _user_profile(user),
+    }
+
+
+@router.post("/login")
+async def login(
+    req: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Log in with username or email + password."""
+    identifier = req.username.strip()
+
+    result = await db.execute(
+        select(User).where(or_(User.username == identifier, User.email == identifier.lower()))
+    )
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(req.password, user.password_hash or ""):
+        raise HTTPException(status_code=401, detail="Invalid username/email or password.")
+
+    if _is_admin_allowlisted(user.email):
+        _apply_admin_allowlist_promotion(user)
+
+    user.updated_at = datetime.now(timezone.utc)
+
+    token = create_access_token(str(user.id))
+    await _upsert_user_session(db, user, request, token)
+    await db.commit()
+    await db.refresh(user)
+
+    uid = str(user.id)
+    event_bus.emit_nowait(
+        Event(
+            type=EventType.USER_LOGIN,
+            data={"user_id": uid, "email": user.email, "action": "login", "provider": "local"},
+            user_id=uid,
+            source="auth",
+        )
+    )
+
+    return {
+        "message": "Login successful",
+        "is_new_user": False,
+        "token": token,
+        "user": _user_profile(user),
     }
 
 
@@ -626,17 +561,17 @@ def _normalise_phone(raw: str):
     return f"+91{digits}"
 
 
-def _require_firebase_uid(credentials) -> str:
-    """Verify Firebase token and return firebase_uid; raises 401 on failure."""
+def _require_user_id(credentials) -> str:
+    """Verify local JWT and return the user id; raises 401 on failure."""
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    claims = verify_id_token(credentials.credentials)
+    claims = decode_access_token(credentials.credentials)
     if not claims:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-    uid = claims.get("uid")
-    if not uid:
+    user_id = claims.get("sub")
+    if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
-    return uid
+    return user_id
 
 
 @router.post("/set-phone")
@@ -652,7 +587,7 @@ async def set_phone(
     Does NOT enforce account_status so pending_approval users can complete
     their profile. No OTP required — number is for contact purposes only.
     """
-    firebase_uid = _require_firebase_uid(credentials)
+    user_id = _require_user_id(credentials)
 
     normalised = _normalise_phone(req.phone)
     if not normalised:
@@ -661,7 +596,7 @@ async def set_phone(
             detail="Please enter a valid 10-digit Indian mobile number (starts with 6–9).",
         )
 
-    result = await db.execute(select(User).where(User.firebase_uid == firebase_uid))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
@@ -679,17 +614,7 @@ async def set_phone(
 async def get_me(user: User = Depends(get_current_user)):
     """Return current user profile."""
     return {
-        "id": str(user.id),
-        "email": user.email,
-        "username": user.username,
-        "full_name": user.full_name,
-        "phone": user.phone,
-        "role": user.role,
-        "virtual_capital": float(user.virtual_capital),
-        "avatar_url": user.avatar_url,
-        "is_verified": user.is_verified,
-        "auth_provider": user.auth_provider,
-        "account_status": getattr(user, "account_status", "active"),
+        **_user_profile(user),
         "access_expires_at": (
             user.access_expires_at.isoformat()
             if getattr(user, "access_expires_at", None)
@@ -702,24 +627,28 @@ async def get_me(user: User = Depends(get_current_user)):
 @router.post("/logout")
 async def logout(
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Server-side logout acknowledgment.
-
-    The actual sign-out happens on the client (Firebase signOut).
-    This endpoint is for event tracking and any server-side cleanup.
-    """
+    """Invalidate the current session and acknowledge logout."""
     user_id = None
     if credentials:
-        claims = verify_id_token(credentials.credentials)
+        claims = decode_access_token(credentials.credentials)
         if claims:
-            user_id = claims.get("uid")
+            user_id = claims.get("sub")
+            session_key = _session_fingerprint(credentials.credentials)
+            result = await db.execute(
+                select(UserSession).where(UserSession.session_key == session_key)
+            )
+            session = result.scalar_one_or_none()
+            if session:
+                session.is_active = False
+                await db.commit()
 
     if user_id:
         event_bus.emit_nowait(
             Event(
                 type=EventType.USER_LOGOUT,
-                data={"firebase_uid": user_id},
+                data={"user_id": user_id},
                 user_id=user_id,
                 source="auth",
             )
@@ -736,8 +665,8 @@ async def delete_own_account(
     """
     Soft-delete the authenticated user account (keep DB row/data for admin review).
 
-    The user is immediately blocked from access and Firebase auth is revoked/deleted
-    best-effort, while admin can still see and permanently delete later if needed.
+    The user is immediately blocked from access.
+    Admin can still see and permanently delete later if needed.
     """
     snapshot = {
         "user_id": str(user.id),
@@ -747,8 +676,6 @@ async def delete_own_account(
         "deleted_by_user": True,
         "deleted_at": datetime.now(timezone.utc).isoformat(),
     }
-
-    firebase_delete = try_delete_firebase_account(user.firebase_uid)
 
     user.account_status = "deleted"
     user.is_active = False
@@ -760,20 +687,19 @@ async def delete_own_account(
             admin_user_id=None,
             action="self_delete_account",
             target_user_id=user.id,
-            details={
-                **snapshot,
-                "firebase_delete": firebase_delete,
-            },
+            details=snapshot,
             ip_address=None,
         )
     )
+
+    await db.commit()
 
     try:
         event_bus.emit_nowait(
             Event(
                 type=EventType.USER_LOGOUT,
                 data={
-                    "firebase_uid": user.firebase_uid,
+                    "user_id": str(user.id),
                     "self_deleted": True,
                     "email": user.email,
                 },
@@ -788,5 +714,4 @@ async def delete_own_account(
     return {
         "success": True,
         "message": "Your account has been deleted and access is blocked.",
-        "firebase_deleted": firebase_delete.get("deleted", False),
     }

@@ -11,7 +11,7 @@ Endpoints:
     PUT  /api/zeroloss/config       — Update symbols / threshold / RR
 
 All endpoints require authentication via the existing get_current_user
-dependency (Firebase ID token).
+dependency (local JWT Bearer token).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query

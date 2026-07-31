@@ -39,15 +39,6 @@ async def lifespan(app: FastAPI):
     # ── Startup ─────────────────────────────────────────────────────
     logger.info("Starting AlphaSync...")
 
-    # ── Initialize Firebase Admin SDK ───────────────────────────────
-    from config.firebase import init_firebase
-
-    try:
-        init_firebase()
-        logger.info("Firebase Admin SDK initialized")
-    except Exception as e:
-        logger.error(f"Firebase init failed: {e} — auth will not work!")
-
     try:
         await init_db()
         logger.info("Database initialized")
@@ -450,35 +441,8 @@ async def root():
 @app.get("/api/health")
 async def health():
     """Enhanced health endpoint with worker, engine, and session status."""
-    import config.firebase as fb_mod
-    import os
-
-    creds_path = os.environ.get("FIREBASE_CREDENTIALS_PATH", "")
-    creds_json_set = bool(os.environ.get("FIREBASE_CREDENTIALS_JSON", ""))
-    creds_file_exists = os.path.isfile(creds_path) if creds_path else False
-    creds_file_size = os.path.getsize(creds_path) if creds_file_exists else 0
-    creds_readable = os.access(creds_path, os.R_OK) if creds_file_exists else False
-
-    # Try to diagnose Firebase init failure
-    firebase_error = None
-    if not fb_mod._initialized:
-        try:
-            fb_mod.init_firebase()
-        except Exception as e:
-            firebase_error = f"{type(e).__name__}: {e}"
-
     return {
         "status": "healthy",
-        "firebase": {
-            "initialized": fb_mod._initialized,
-            "init_error": firebase_error,
-            "credentials_path": creds_path,
-            "credentials_file_exists": creds_file_exists,
-            "credentials_file_readable": creds_readable,
-            "credentials_file_size": creds_file_size,
-            "credentials_json_env_set": creds_json_set,
-            "process_uid": os.getuid() if hasattr(os, "getuid") else "N/A",
-        },
         "market_session": market_session.get_session_info(),
         "event_bus": event_bus.get_stats(),
         "data_feed_sessions": data_feed_session_manager.get_status(),
@@ -567,25 +531,23 @@ async def debug_db():
 async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
     connection_id = client_id or str(uuid.uuid4())
 
-    # Extract user_id from Firebase ID token (query param)
+    # Extract user_id from the local JWT (query param)
     user_id = None
     token = websocket.query_params.get("token")
     if token:
         try:
-            from services.auth_service import verify_id_token
+            from services.auth_service import decode_access_token
             from sqlalchemy import select as sa_select
             from models.user import User as UserModel
             from database.connection import async_session_factory
 
-            claims = verify_id_token(token)
+            claims = decode_access_token(token)
             if claims:
-                firebase_uid = claims.get("uid")
-                if firebase_uid:
+                claimed_id = claims.get("sub")
+                if claimed_id:
                     async with async_session_factory() as db:
                         result = await db.execute(
-                            sa_select(UserModel).where(
-                                UserModel.firebase_uid == firebase_uid
-                            )
+                            sa_select(UserModel).where(UserModel.id == claimed_id)
                         )
                         ws_user = result.scalar_one_or_none()
                         if ws_user:

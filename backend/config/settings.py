@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+import secrets
 
 
 class Settings(BaseSettings):
@@ -17,9 +18,12 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 3600
     DB_POOL_PRE_PING: bool = True
 
-    # Firebase Authentication
-    FIREBASE_CREDENTIALS_JSON: str = ""  # JSON string of service account key
-    FIREBASE_CREDENTIALS_PATH: str = ""  # Path to service account JSON file
+    # Local username/email/password authentication (JWT sessions)
+    # Set JWT_SECRET_KEY explicitly in production — the random default
+    # changes on every process restart, invalidating all sessions.
+    JWT_SECRET_KEY: str = secrets.token_urlsafe(48)
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRY_DAYS: int = 30
 
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]

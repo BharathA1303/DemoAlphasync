@@ -2,7 +2,7 @@
 Admin dependencies — FastAPI Depends() guards for admin routes.
 
 Security layers:
-  1. Firebase token → get_current_user() (existing)
+  1. Local JWT Bearer token → get_current_user() (existing)
   2. role='admin'  → get_admin_user()
   3. Admin level   → require_root_admin() / require_manage_level()
 

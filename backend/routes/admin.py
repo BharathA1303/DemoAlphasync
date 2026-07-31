@@ -2,7 +2,7 @@
 Admin Panel API — Complete user account management + admin hierarchy.
 
 Security layers:
-  1. Firebase token (Bearer header) → identity verification
+  1. Bearer token (local JWT) → identity verification
   2. role='admin' check → restricts to admins
   3. Admin level → root / manage / view_only permission checks
   4. Audit logging → every action recorded

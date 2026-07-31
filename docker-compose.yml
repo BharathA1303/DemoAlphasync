@@ -65,10 +65,11 @@ services:
       # (see backend/services/crypto.py). Set a real unique value via .env —
       # generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
       DATA_FEED_ENCRYPTION_KEY: "${DATA_FEED_ENCRYPTION_KEY:-CHANGE_ME_strong_unique_data_feed_key}"
-      FIREBASE_CREDENTIALS_PATH: "/app/firebase-credentials.json"
+      # Signs/verifies local login JWTs. Set a real unique value via .env —
+      # generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      JWT_SECRET_KEY: "${JWT_SECRET_KEY:-CHANGE_ME_strong_unique_jwt_secret}"
     volumes:
       - acalphasync-uploads:/app/uploads
-      - ./firebase-credentials.json:/app/firebase-credentials.json:ro
       - ./logs:/app/logs
     depends_on:
       pg:

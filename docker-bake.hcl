@@ -7,14 +7,6 @@ variable "IMAGE_TAG" {
   default = "latest"
 }
 
-// Firebase build args for frontend Vite build
-variable "VITE_FIREBASE_API_KEY" { default = "" }
-variable "VITE_FIREBASE_AUTH_DOMAIN" { default = "" }
-variable "VITE_FIREBASE_PROJECT_ID" { default = "" }
-variable "VITE_FIREBASE_STORAGE_BUCKET" { default = "" }
-variable "VITE_FIREBASE_MESSAGING_SENDER_ID" { default = "" }
-variable "VITE_FIREBASE_APP_ID" { default = "" }
-
 group "default" {
   targets = ["backend", "frontend"]
 }
@@ -37,14 +29,6 @@ target "frontend" {
     "${IMAGE_PREFIX}-frontend:latest",
     "${IMAGE_PREFIX}-frontend:${IMAGE_TAG}",
   ]
-  args = {
-    VITE_FIREBASE_API_KEY              = VITE_FIREBASE_API_KEY
-    VITE_FIREBASE_AUTH_DOMAIN          = VITE_FIREBASE_AUTH_DOMAIN
-    VITE_FIREBASE_PROJECT_ID           = VITE_FIREBASE_PROJECT_ID
-    VITE_FIREBASE_STORAGE_BUCKET       = VITE_FIREBASE_STORAGE_BUCKET
-    VITE_FIREBASE_MESSAGING_SENDER_ID  = VITE_FIREBASE_MESSAGING_SENDER_ID
-    VITE_FIREBASE_APP_ID               = VITE_FIREBASE_APP_ID
-  }
   cache-from = ["type=gha,scope=frontend-v2"]
   cache-to   = ["type=gha,scope=frontend-v2,mode=max"]
 }

@@ -31,24 +31,22 @@ export default function LoginPage() {
   );
 
   const [tab, setTab] = useState("login");
-  const [loginEmail, setLoginEmail]     = useState("");
+  const [loginId, setLoginId]           = useState("");
   const [loginPass, setLoginPass]       = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [regFname, setRegFname]         = useState("");
   const [regLname, setRegLname]         = useState("");
+  const [regUsername, setRegUsername]   = useState("");
   const [regEmail, setRegEmail]         = useState("");
   const [regPass, setRegPass]           = useState("");
   const [regAgree, setRegAgree]         = useState(false);
   const [regLoading, setRegLoading]     = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [showLoginPass, setShowLoginPass] = useState(false);
   const [showRegPass,   setShowRegPass]   = useState(false);
 
-  const loginWithEmail     = useAuthStore((s) => s.loginWithEmail);
-  const loginWithGoogle    = useAuthStore((s) => s.loginWithGoogle);
-  const registerWithEmail  = useAuthStore((s) => s.registerWithEmail);
-  const resendVerification = useAuthStore((s) => s.resendVerification);
-  const existingUser       = useAuthStore((s) => s.user);
+  const login       = useAuthStore((s) => s.login);
+  const register    = useAuthStore((s) => s.register);
+  const existingUser = useAuthStore((s) => s.user);
   const navigate           = useNavigate();
   const [searchParams]     = useSearchParams();
   const adminIntent        = (searchParams.get("intent") || "").toLowerCase() === "admin";
@@ -93,7 +91,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoginLoading(true);
     try {
-      const result = await loginWithEmail(loginEmail, loginPass);
+      const result = await login(loginId, loginPass);
       if ((result?.user?.account_status || "active") !== "active") {
         toast("Login successful. Your account is pending review.");
       } else {
@@ -101,18 +99,10 @@ export default function LoginPage() {
       }
       handleAuthSuccess(result?.user);
     } catch (err) {
-      const code = err.code;
-      if (code === "auth/email-not-verified") {
-        try { await resendVerification(loginEmail, loginPass); toast.error("Email not verified. We sent a new verification link."); }
-        catch  { toast.error("Email not verified. Check your inbox."); }
-        navigate("/verify-email", { state: { email: loginEmail, password: loginPass } });
-        return;
-      } else if (code === "auth/user-not-found" || code === "auth/wrong-password" || code === "auth/invalid-credential") {
-        toast.error("Invalid email or password");
-      } else if (code === "auth/too-many-requests") {
-        toast.error("Too many attempts. Try again later.");
+      if (err?.response?.status === 401) {
+        toast.error("Invalid username/email or password");
       } else {
-        toast.error(err.message || "Login failed");
+        toast.error(err.response?.data?.detail || err.message || "Login failed");
       }
     } finally { setLoginLoading(false); }
   };
@@ -120,65 +110,22 @@ export default function LoginPage() {
   const handleRegister = async (e) => {
     e.preventDefault();
     if (regPass.length < 6) return toast.error("Password must be at least 6 characters");
+    if (!regUsername.trim()) return toast.error("Please choose a username");
     setRegLoading(true);
     try {
       const fullName = (regFname + " " + regLname).trim();
-      const result   = await registerWithEmail(regEmail, regPass, fullName, "");
-      if (result.needsVerification) {
-        navigate("/verify-email", { state: { email: regEmail, password: regPass } });
-      } else {
-        localStorage.setItem("alphasync_trading_mode", "demo");
-        localStorage.setItem("alphasync_onboarded", "1");
-        navigate("/dashboard");
-      }
+      const result = await register({
+        username: regUsername.trim(),
+        email: regEmail,
+        password: regPass,
+        full_name: fullName,
+      });
+      localStorage.setItem("alphasync_trading_mode", "demo");
+      localStorage.setItem("alphasync_onboarded", "1");
+      handleAuthSuccess(result?.user);
     } catch (err) {
-      const code = err.code;
-      if (code === "auth/email-already-in-use") toast.error("Email already registered. Try signing in.");
-      else if (code === "auth/weak-password")   toast.error("Password is too weak.");
-      else toast.error(err.message || "Registration failed");
+      toast.error(err.response?.data?.detail || err.message || "Registration failed");
     } finally { setRegLoading(false); }
-  };
-
-  const handleGoogleLogin = async () => {
-    setGoogleLoading(true);
-    try {
-      const result = await loginWithGoogle("login");
-      const email  = result?.user?.email || "selected Google account";
-      if ((result?.user?.account_status || "active") !== "active") {
-        toast(`Signed in as ${email}. Your account is under review.`);
-      } else {
-        toast.success(`Welcome back, ${email}!`);
-      }
-      handleAuthSuccess(result?.user);
-    } catch (err) {
-      if (err.response?.status === 404) { toast.error("Account not found. Please create an account first."); setTab("register"); return; }
-      if (err.code !== "auth/popup-closed-by-user") toast.error(err.message || "Google sign-in failed");
-    } finally { setGoogleLoading(false); }
-  };
-
-  const handleGoogleRegister = async () => {
-    setGoogleLoading(true);
-    try {
-      const result = await loginWithGoogle("register");
-      const email  = result?.user?.email || "selected Google account";
-      if ((result?.user?.account_status || "active") !== "active") {
-        toast.success(`Registered as ${email}. Account pending approval.`);
-      } else {
-        toast.success(result.isNew ? `Welcome to AlphaSync, ${email}!` : `Welcome back, ${email}!`);
-      }
-      handleAuthSuccess(result?.user);
-    } catch (err) {
-      if (err.code !== "auth/popup-closed-by-user") toast.error(err.message || "Google sign-up failed");
-    } finally { setGoogleLoading(false); }
-  };
-
-  const handleForgotPassword = async () => {
-    if (!loginEmail) return toast.error("Enter your email first");
-    try {
-      const { resetPassword } = useAuthStore.getState();
-      await resetPassword(loginEmail);
-      toast.success("Password reset email sent!");
-    } catch { toast.error("Could not send reset email."); }
   };
 
   return (
@@ -333,12 +280,12 @@ export default function LoginPage() {
               <form onSubmit={handleLogin}>
 
                 <div className="lp-field">
-                  <label>Email Address</label>
+                  <label>Username or Email</label>
                   <div className="lp-inp">
-                    <i className="lp-ico fa fa-envelope"></i>
-                    <input type="email" placeholder="you@email.com" required
-                      autoComplete="email" value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)} />
+                    <i className="lp-ico fa fa-user"></i>
+                    <input type="text" placeholder="username or you@email.com" required
+                      autoComplete="username" value={loginId}
+                      onChange={(e) => setLoginId(e.target.value)} />
                   </div>
                 </div>
 
@@ -360,10 +307,6 @@ export default function LoginPage() {
                   <label className="lp-check">
                     <input type="checkbox" /> Remember me
                   </label>
-                  <a href="#forgot" className="lp-forgot"
-                     onClick={(e) => { e.preventDefault(); handleForgotPassword(); }}>
-                    Forgot password?
-                  </a>
                 </div>
 
                 <button type="submit" className="lp-btn-primary" disabled={loginLoading}>
@@ -373,15 +316,6 @@ export default function LoginPage() {
                 </button>
 
               </form>
-
-              <div className="lp-or">or continue with</div>
-
-              <button className="lp-btn-google" onClick={handleGoogleLogin}
-                      disabled={googleLoading} type="button">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                     alt="Google" width="20" height="20" />
-                {googleLoading ? "Signing in…" : "Continue with Google"}
-              </button>
 
               <p className="lp-terms">
                 By logging in, you agree to our{" "}
@@ -409,6 +343,15 @@ export default function LoginPage() {
                       <input type="text" placeholder="Last name" required autoComplete="family-name"
                         value={regLname} onChange={(e) => setRegLname(e.target.value)} />
                     </div>
+                  </div>
+                </div>
+
+                <div className="lp-field">
+                  <label>Username</label>
+                  <div className="lp-inp">
+                    <i className="lp-ico fa fa-at"></i>
+                    <input type="text" placeholder="username" required autoComplete="username"
+                      value={regUsername} onChange={(e) => setRegUsername(e.target.value)} />
                   </div>
                 </div>
 
@@ -456,15 +399,6 @@ export default function LoginPage() {
                 </button>
 
               </form>
-
-              <div className="lp-or">or sign up with</div>
-
-              <button className="lp-btn-google" onClick={handleGoogleRegister}
-                      disabled={googleLoading} type="button">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
-                     alt="Google" width="20" height="20" />
-                {googleLoading ? "Signing up…" : "Sign up with Google"}
-              </button>
             </div>
 
           </div>

@@ -27,7 +27,6 @@ import LeaderboardPage from './pages/LeaderboardPage';
 import AIMentorPage from './pages/AIMentorPage';
 import DashboardWorkspace from './workspaces/DashboardWorkspace';
 import TradingWorkspace from './workspaces/TradingWorkspace';
-import VerifyEmailPage from './pages/VerifyEmailPage';
 import CollectPhonePage from './pages/CollectPhonePage';
 import AccountStatusPage from './pages/AccountStatusPage';
 import AdminAccessPage from './pages/AdminAccessPage';
@@ -60,7 +59,6 @@ export default function App() {
                         <Route path="/embed/chart" element={<ChartEmbed />} />
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/register" element={<LoginPage />} />
-                        <Route path="/verify-email" element={<VerifyEmailPage />} />
                         <Route path="/admin" element={<AdminAccessPage />} />
                         <Route path="/admin/panel" element={
                             <AdminRoute><AdminPanelPage /></AdminRoute>

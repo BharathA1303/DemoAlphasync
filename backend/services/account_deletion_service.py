@@ -6,8 +6,6 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from firebase_admin import auth as firebase_auth
-
 from models.user import User, UserSession, EmailNotificationLog
 from models.order import Order
 from models.portfolio import Portfolio, Holding, Transaction
@@ -124,16 +122,3 @@ async def purge_user_account_data(db: AsyncSession, user_id: UUID) -> dict[str, 
         logger.exception("Failed to remove deleted user from group assignment: user_id=%s", user_id)
 
     return summary
-
-
-def try_delete_firebase_account(firebase_uid: str | None) -> dict[str, Any]:
-    """Best-effort Firebase Auth account deletion."""
-    if not firebase_uid:
-        return {"attempted": False, "deleted": False, "error": None}
-
-    try:
-        firebase_auth.delete_user(firebase_uid)
-        return {"attempted": True, "deleted": True, "error": None}
-    except Exception as exc:
-        logger.warning("Failed to delete Firebase account uid=%s: %s", firebase_uid, exc)
-        return {"attempted": True, "deleted": False, "error": str(exc)}

@@ -28,7 +28,6 @@ from services.email_service import (
 )
 from services.account_deletion_service import (
     purge_user_account_data,
-    try_delete_firebase_account,
 )
 from config.settings import settings
 from dependencies.admin import (
@@ -40,7 +39,6 @@ from dependencies.admin import (
     is_main_root_admin,
 )
 from core.event_bus import event_bus, Event, EventType
-from firebase_admin import auth as firebase_auth
 
 logger = logging.getLogger(__name__)
 
@@ -926,8 +924,10 @@ async def force_logout_user(
 ) -> dict:
     """Force logout all active sessions for a target user.
 
-    Marks local UserSession rows inactive and revokes Firebase refresh tokens
-    when possible so existing JWT sessions are invalidated.
+    Marks local UserSession rows inactive. get_current_user() rejects any
+    token whose session fingerprint is inactive, so this immediately
+    invalidates existing JWT sessions even though the token itself hasn't
+    expired.
     """
     target_uuid = _coerce_uuid(target_user_id)
     if not target_uuid:
@@ -957,20 +957,6 @@ async def force_logout_user(
         s.last_seen_at = now
         deactivated += 1
 
-    firebase_revoked = False
-    firebase_error = None
-    if user.firebase_uid:
-        try:
-            firebase_auth.revoke_refresh_tokens(user.firebase_uid)
-            firebase_revoked = True
-        except Exception as e:
-            firebase_error = str(e)
-            logger.warning(
-                "Failed to revoke Firebase tokens for user_id=%s: %s",
-                user.id,
-                e,
-            )
-
     await _write_audit(
         db,
         admin_user,
@@ -978,8 +964,6 @@ async def force_logout_user(
         target_user_id=user.id,
         details={
             "deactivated_sessions": deactivated,
-            "firebase_revoked": firebase_revoked,
-            "firebase_error": firebase_error,
         },
         ip=ip,
     )
@@ -1000,8 +984,6 @@ async def force_logout_user(
         "success": True,
         "user_id": str(user.id),
         "deactivated_sessions": deactivated,
-        "firebase_revoked": firebase_revoked,
-        "firebase_error": firebase_error,
     }
 
 
@@ -1033,7 +1015,6 @@ async def delete_user_account(
         "auth_provider": user.auth_provider,
     }
 
-    firebase_delete = try_delete_firebase_account(user.firebase_uid)
     purge_summary = await purge_user_account_data(db, user.id)
 
     await _write_audit(
@@ -1044,7 +1025,6 @@ async def delete_user_account(
         details={
             **snapshot,
             "deleted_at": datetime.now(timezone.utc).isoformat(),
-            "firebase_delete": firebase_delete,
             "purge_summary": purge_summary,
         },
         ip=ip,
@@ -1055,7 +1035,6 @@ async def delete_user_account(
         "success": True,
         "message": "User account permanently deleted",
         "deleted_email": snapshot["email"],
-        "firebase_deleted": firebase_delete.get("deleted", False),
     }
 
 

@@ -316,14 +316,16 @@ async def init_db():
             )
 
         if is_postgres:
-            # ── Add missing columns for Firebase auth migration ─────────────
+            # ── Add missing auth-related columns for fresh/legacy DBs ───────
             # create_all doesn't ALTER existing tables — add columns manually
-            # if they're missing (idempotent).
+            # if they're missing (idempotent). firebase_uid is kept (unused)
+            # for backward compatibility with any pre-migration rows; new
+            # users are created with auth_provider='local' (see routes/auth.py).
             await conn.execute(
                 text(
                     """
                 DO $$ BEGIN
-                    -- Add firebase_uid column if missing
+                    -- Add firebase_uid column if missing (legacy, unused)
                     IF NOT EXISTS (
                         SELECT 1 FROM information_schema.columns
                         WHERE table_name = 'users' AND column_name = 'firebase_uid'
@@ -337,10 +339,10 @@ async def init_db():
                         SELECT 1 FROM information_schema.columns
                         WHERE table_name = 'users' AND column_name = 'auth_provider'
                     ) THEN
-                        ALTER TABLE users ADD COLUMN auth_provider VARCHAR(30) NOT NULL DEFAULT 'firebase';
+                        ALTER TABLE users ADD COLUMN auth_provider VARCHAR(30) NOT NULL DEFAULT 'local';
                     END IF;
 
-                    -- Make password_hash nullable (Firebase users have no password)
+                    -- Keep password_hash nullable (legacy rows may lack one)
                     ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
                 EXCEPTION WHEN others THEN
                     RAISE NOTICE 'Migration note: %', SQLERRM;

@@ -10,7 +10,7 @@ export default function ProtectedRoute({ children, requireOnboarding = false }) 
     const initializing = useAuthStore((s) => s.initializing);
 
     // Fast path: if we have a cached user in localStorage, skip the spinner
-    // entirely to prevent the flash. Firebase will validate in the background.
+    // entirely to prevent the flash. initAuth() validates it in the background.
     const hasCachedUser = !user && initializing && (() => {
         try { return !!localStorage.getItem('alphasync_user'); } catch { return false; }
     })();

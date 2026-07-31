@@ -731,17 +731,6 @@ export default function SettingsPage() {
     setLoading(false);
   };
 
-  const handleResetPassword = async () => {
-    if (!user?.email) return toast.error("No email found");
-    try {
-      const { resetPassword } = useAuthStore.getState();
-      await resetPassword(user.email);
-      toast.success("Password reset email sent! Check your inbox.");
-    } catch {
-      toast.error("Could not send reset email");
-    }
-  };
-
   const handleExportData = () => {
     const data = {
       profile: {
@@ -889,61 +878,22 @@ export default function SettingsPage() {
                 <SettingRow
                   icon={ShieldCheck}
                   iconColor="text-emerald-600"
-                  title="Authentication Provider"
-                  description={isGoogleAuth
-                    ? "Your account is linked to Google. Password is managed by Google."
-                    : "Your account uses email & password via Firebase Authentication"
-                  }
+                  title="Authentication"
+                  description="Your account uses a username and password"
                 >
                   <span className="text-xs font-semibold text-emerald-600 bg-emerald-500/10 px-2.5 py-1 rounded-full">
-                    {isGoogleAuth ? "Google" : "Active"}
+                    Active
                   </span>
                 </SettingRow>
 
-                {/* Password reset — only for email/password users */}
-                {!isGoogleAuth && (
-                  <SettingRow
-                    icon={Lock}
-                    title="Reset Password"
-                    description="We'll send a password reset link to your email"
-                  >
-                    <button onClick={handleResetPassword} className="btn-primary text-xs px-3 py-1.5" style={{ height: 'auto' }}>
-                      Send Reset Email
-                    </button>
-                  </SettingRow>
-                )}
-
-                {/* Google users — password info */}
-                {isGoogleAuth && (
-                  <SettingRow
-                    icon={Lock}
-                    title="Password"
-                    description="Your password is managed through your Google account. Use Google's security settings to change it."
-                  >
-                    <a
-                      href="https://myaccount.google.com/security"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-semibold text-primary-600 hover:text-primary-500 transition-colors flex items-center gap-1"
-                    >
-                      Google Security <ChevronRight className="w-3 h-3" />
-                    </a>
-                  </SettingRow>
-                )}
-
-                {/* Email verification status */}
+                {/* Password reset — self-service reset not available yet */}
                 <SettingRow
-                  icon={Mail}
-                  iconColor={user?.is_verified ? "text-emerald-600" : "text-amber-500"}
-                  title="Email Verification"
-                  description={user?.is_verified ? `${user.email} is verified` : "Your email is not yet verified"}
+                  icon={Lock}
+                  title="Change Password"
+                  description="Self-service password reset isn't available yet — contact support to change your password."
                 >
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                    user?.is_verified
-                      ? "text-emerald-600 bg-emerald-500/10"
-                      : "text-amber-500 bg-amber-500/10"
-                  }`}>
-                    {user?.is_verified ? "Verified" : "Unverified"}
+                  <span className="text-xs font-semibold text-gray-500 bg-gray-500/10 px-2.5 py-1 rounded-full">
+                    Contact Support
                   </span>
                 </SettingRow>
 

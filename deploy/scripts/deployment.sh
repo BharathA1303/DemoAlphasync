@@ -31,7 +31,6 @@ command -v docker >/dev/null || fail "docker not installed."
 
 info "Ensuring runtime directories exist..."
 mkdir -p uploads logs
-[[ -f firebase-credentials.json ]] || echo "{}" > firebase-credentials.json
 ok "Directories ready."
 
 # ── MANDATORY port validation — abort, never kill ────────────────────────────
