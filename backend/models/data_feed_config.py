@@ -61,6 +61,18 @@ class DataFeedConfig(Base):
     broker_last_import_status = Column(String(50), nullable=True)
     broker_last_import_error = Column(Text, nullable=True)
 
+    # ── Admin Zebu OAuth & Time-Delayed Feed Configuration ───────────────
+    oauth_client_id = Column(String(100), nullable=True)
+    oauth_secret_key_enc = Column(Text, nullable=True)
+    oauth_redirect_url = Column(String(500), nullable=True)
+    oauth_access_token_enc = Column(Text, nullable=True)
+    oauth_refresh_token_enc = Column(Text, nullable=True)
+    oauth_token_expires_at = Column(DateTime(timezone=True), nullable=True)
+    oauth_connection_status = Column(String(50), default="disconnected")
+    oauth_last_error = Column(Text, nullable=True)
+    feed_delay_seconds = Column(Integer, nullable=False, default=300, server_default=text("300"))
+    redis_active_market_hours_only = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, server_default=text("CURRENT_TIMESTAMP"))
 
     def get_api_secret(self) -> str:
@@ -107,3 +119,44 @@ class DataFeedConfig(Base):
     def set_broker_factor2(self, plaintext: str) -> None:
         from services.crypto import encrypt_token
         self.broker_totp_secret_enc = encrypt_token(plaintext) if plaintext else None
+
+    # ── OAuth Crypto Accessors ───────────────────────────────────────────
+    def get_oauth_secret_key(self) -> str:
+        if not self.oauth_secret_key_enc:
+            return ""
+        from services.crypto import decrypt_token
+        try:
+            return decrypt_token(self.oauth_secret_key_enc)
+        except Exception:
+            return self.oauth_secret_key_enc
+
+    def set_oauth_secret_key(self, plaintext: str) -> None:
+        from services.crypto import encrypt_token
+        self.oauth_secret_key_enc = encrypt_token(plaintext) if plaintext else None
+
+    def get_oauth_access_token(self) -> str:
+        if not self.oauth_access_token_enc:
+            return ""
+        from services.crypto import decrypt_token
+        try:
+            return decrypt_token(self.oauth_access_token_enc)
+        except Exception:
+            return self.oauth_access_token_enc
+
+    def set_oauth_access_token(self, plaintext: str) -> None:
+        from services.crypto import encrypt_token
+        self.oauth_access_token_enc = encrypt_token(plaintext) if plaintext else None
+
+    def get_oauth_refresh_token(self) -> str:
+        if not self.oauth_refresh_token_enc:
+            return ""
+        from services.crypto import decrypt_token
+        try:
+            return decrypt_token(self.oauth_refresh_token_enc)
+        except Exception:
+            return self.oauth_refresh_token_enc
+
+    def set_oauth_refresh_token(self, plaintext: str) -> None:
+        from services.crypto import encrypt_token
+        self.oauth_refresh_token_enc = encrypt_token(plaintext) if plaintext else None
+

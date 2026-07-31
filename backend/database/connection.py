@@ -120,12 +120,14 @@ async def init_db():
         from strategies.zeroloss import models as zeroloss_models  # noqa
         from data_layer.db.models import PriceData, APIKey, IngestionLog  # noqa
 
-        # Ensure admin panel models are loaded
         from models.user import (
             AdminAuditLog,
             EmailNotificationLog,
         )  # noqa
         from models.data_feed_config import DataFeedConfig  # noqa
+        from models.symbol_master import SymbolMaster  # noqa
+        from models.raw_ticks import RawTick  # noqa
+        from models.bulk_file_index import BulkFileIndex  # noqa
 
         await conn.run_sync(Base.metadata.create_all)
 
@@ -596,7 +598,25 @@ async def init_db():
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_status VARCHAR(50);
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_error TEXT;
                     END IF;
+
+                    -- Zebu OAuth & Time-Delayed Feed columns
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_client_id'
+                    ) THEN
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_client_id VARCHAR(100);
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_secret_key_enc TEXT;
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_redirect_url VARCHAR(500);
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_access_token_enc TEXT;
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_refresh_token_enc TEXT;
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_token_expires_at TIMESTAMPTZ;
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_connection_status VARCHAR(50) DEFAULT 'disconnected';
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_last_error TEXT;
+                        ALTER TABLE data_feed_configs ADD COLUMN feed_delay_seconds INTEGER NOT NULL DEFAULT 300;
+                        ALTER TABLE data_feed_configs ADD COLUMN redis_active_market_hours_only BOOLEAN NOT NULL DEFAULT true;
+                    END IF;
                 END $$;
             """
                 )
             )
+

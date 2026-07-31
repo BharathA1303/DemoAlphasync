@@ -162,6 +162,21 @@ const adminApi = {
     updateBugReportStatus(reportId, payload) {
         return api.post(`/bug-reports/${safeUserId(reportId)}/update-status`, payload);
     },
+
+    // ── Generic Axios Passthrough for Admin Endpoints ────────────────
+    get(url, config) {
+        return api.get(`/admin${url.startsWith('/') ? url : '/' + url}`, config);
+    },
+    post(url, data, config) {
+        return api.post(`/admin${url.startsWith('/') ? url : '/' + url}`, data, config);
+    },
+    put(url, data, config) {
+        return api.put(`/admin${url.startsWith('/') ? url : '/' + url}`, data, config);
+    },
+    delete(url, config) {
+        return api.delete(`/admin${url.startsWith('/') ? url : '/' + url}`, config);
+    },
 };
 
 export default adminApi;
+

@@ -33,3 +33,7 @@ redisdata/
 # ── Uploads ──────────────────────────────────────────────────
 backend/uploads/avatars/*
 !backend/uploads/avatars/.gitkeep
+
+# ── Symbol Data ──────────────────────────────────────────────
+Zebu all symbols/
+

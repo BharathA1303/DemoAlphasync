@@ -35,6 +35,7 @@ import RootControlPage from './pages/RootControlPage';
 import AdminAuditLogPage from './pages/AdminAuditLogPage';
 import BugReportPage from './pages/BugReportPage';
 import AdminBugReportsPage from './pages/AdminBugReportsPage';
+import DataFeedPanel from './pages/DataFeedPanel';
 import ChartEmbed from './pages/ChartEmbed';
 
 export default function App() {
@@ -62,6 +63,9 @@ export default function App() {
                         <Route path="/admin" element={<AdminAccessPage />} />
                         <Route path="/admin/panel" element={
                             <AdminRoute><AdminPanelPage /></AdminRoute>
+                        } />
+                        <Route path="/admin/data-feed" element={
+                            <AdminRoute><DataFeedPanel /></AdminRoute>
                         } />
                         <Route path="/admin/bug-reports" element={
                             <AdminRoute><AdminBugReportsPage /></AdminRoute>

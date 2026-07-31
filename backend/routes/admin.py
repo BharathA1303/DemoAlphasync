@@ -1047,3 +1047,235 @@ async def csv_import(
         "date_filter": date_str,
     }
 
+
+# ── Zebu OAuth & Time-Delayed Data Feed Routes ───────────────────────
+
+class ZebuOAuthConfigRequest(BaseModel):
+    client_id: str = Field(..., min_length=2, max_length=100)
+    secret_key: str = Field(..., min_length=2, max_length=200)
+    redirect_url: str = Field(..., min_length=10, max_length=500)
+
+
+class FeedDelayUpdateRequest(BaseModel):
+    delay_seconds: int = Field(..., ge=0, le=86400)
+
+
+class RedisPolicyUpdateRequest(BaseModel):
+    active_market_hours_only: bool
+
+
+@router.post("/broker/zebu/oauth/configure")
+async def configure_zebu_oauth(
+    body: ZebuOAuthConfigRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Save Zebu OAuth Client ID, Secret Key, and Redirect URL."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        config = DataFeedConfig(broker="zebu")
+        db.add(config)
+
+    config.oauth_client_id = body.client_id
+    config.set_oauth_secret_key(body.secret_key)
+    config.oauth_redirect_url = body.redirect_url
+    config.oauth_connection_status = "configured"
+    await db.commit()
+
+    return {"status": "success", "message": "Zebu OAuth configuration saved."}
+
+
+@router.get("/broker/zebu/oauth/authorize-url")
+async def get_zebu_oauth_url(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Return constructed Zebu MYNT browser authorization URL."""
+    from models.data_feed_config import DataFeedConfig
+    from providers.zebu_oauth_client import ZebuOAuthClient
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config or not config.oauth_client_id:
+        raise HTTPException(status_code=400, detail="Zebu OAuth client_id not configured.")
+
+    client = ZebuOAuthClient(base_url=getattr(config, "base_url", None))
+    auth_url = client.build_authorize_url(config.oauth_client_id)
+    return {"authorize_url": auth_url, "client_id": config.oauth_client_id}
+
+
+@router.get("/broker/zebu/oauth-callback")
+async def zebu_oauth_callback(
+    code: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public callback route redirected to by Zebu after successful admin login."""
+    from models.data_feed_config import DataFeedConfig
+    from providers.zebu_oauth_client import ZebuOAuthClient
+    from workers.live_feed_ingestion_worker import live_ingestion_worker
+    from sqlalchemy import select
+    from datetime import datetime, timezone, timedelta
+
+    stmt = select(DataFeedConfig).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config or not config.oauth_client_id:
+        raise HTTPException(status_code=400, detail="OAuth not configured on backend.")
+
+    secret_key = config.get_oauth_secret_key()
+    client = ZebuOAuthClient(base_url=getattr(config, "base_url", None))
+
+    try:
+        token_info = await client.exchange_code_for_token(config.oauth_client_id, secret_key, code)
+        config.set_oauth_access_token(token_info["access_token"])
+        config.set_oauth_refresh_token(token_info["refresh_token"])
+        config.oauth_token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_info["expires_in"])
+        config.oauth_connection_status = "connected"
+        config.oauth_last_error = None
+        await db.commit()
+
+        # Start live ingestion worker
+        asyncio.create_task(live_ingestion_worker.start())
+
+        return {
+            "status": "connected",
+            "message": "Zebu OAuth authorization successful. Live ingestion started.",
+        }
+    except Exception as e:
+        logger.error(f"Zebu OAuth callback error: {e}")
+        config.oauth_connection_status = "error"
+        config.oauth_last_error = str(e)
+        await db.commit()
+        raise HTTPException(status_code=400, detail=f"OAuth token exchange failed: {e}")
+
+
+@router.post("/broker/zebu/oauth/disconnect")
+async def disconnect_zebu_oauth(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Disconnect Zebu OAuth session and stop ingestion worker."""
+    from models.data_feed_config import DataFeedConfig
+    from workers.live_feed_ingestion_worker import live_ingestion_worker
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if config:
+        config.oauth_access_token_enc = None
+        config.oauth_refresh_token_enc = None
+        config.oauth_connection_status = "disconnected"
+        await db.commit()
+
+    await live_ingestion_worker.stop()
+    return {"status": "disconnected", "message": "Zebu OAuth disconnected."}
+
+
+@router.get("/data-feed/status")
+async def get_data_feed_status(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Return data feed monitor metrics, delay configuration, and worker status."""
+    from models.data_feed_config import DataFeedConfig
+    from models.symbol_master import SymbolMaster
+    from workers.live_feed_ingestion_worker import live_ingestion_worker
+    from sqlalchemy import select, func
+
+    cfg_stmt = select(DataFeedConfig).limit(1)
+    cfg_res = await db.execute(cfg_stmt)
+    config = cfg_res.scalar_one_or_none()
+
+    active_symbols_cnt = await db.scalar(select(func.count()).select_from(SymbolMaster).where(SymbolMaster.is_active.is_(True))) or 0
+
+    worker_status = live_ingestion_worker.get_status()
+
+    return {
+        "connection_status": config.oauth_connection_status if config else "disconnected",
+        "client_id": config.oauth_client_id if config else None,
+        "feed_delay_seconds": config.feed_delay_seconds if config else 300,
+        "redis_active_market_hours_only": config.redis_active_market_hours_only if config else True,
+        "active_symbols_count": active_symbols_cnt,
+        "worker": worker_status,
+        "token_expires_at": config.oauth_token_expires_at.isoformat() if (config and config.oauth_token_expires_at) else None,
+    }
+
+
+@router.put("/data-feed/delay")
+async def update_feed_delay(
+    body: FeedDelayUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Update feed_delay_seconds knob controlling delay across the platform."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        config = DataFeedConfig(broker="zebu")
+        db.add(config)
+
+    config.feed_delay_seconds = body.delay_seconds
+    await db.commit()
+    return {"status": "updated", "feed_delay_seconds": config.feed_delay_seconds}
+
+
+@router.put("/data-feed/redis-policy")
+async def update_redis_policy(
+    body: RedisPolicyUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Update redis_active_market_hours_only setting."""
+    from models.data_feed_config import DataFeedConfig
+    from sqlalchemy import select
+
+    stmt = select(DataFeedConfig).limit(1)
+    res = await db.execute(stmt)
+    config = res.scalar_one_or_none()
+
+    if not config:
+        config = DataFeedConfig(broker="zebu")
+        db.add(config)
+
+    config.redis_active_market_hours_only = body.active_market_hours_only
+    await db.commit()
+    return {"status": "updated", "redis_active_market_hours_only": config.redis_active_market_hours_only}
+
+
+@router.post("/data-feed/symbols/resync")
+async def resync_symbols(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Trigger manual symbol master re-sync from local symbol files or Zebu download."""
+    from pathlib import Path
+    from data_layer.ingestion.zebu_symbol_master import ZebuSymbolMasterService
+
+    symbols_dir = Path("Zebu all symbols")
+    if not symbols_dir.exists():
+        symbols_dir = Path("../Zebu all symbols")
+
+    if not symbols_dir.exists():
+        raise HTTPException(status_code=404, detail="Local 'Zebu all symbols' directory not found.")
+
+    summary = await ZebuSymbolMasterService.sync_from_local_folder(db, symbols_dir)
+    return {"status": "success", "synced_counts": summary}
+
+
