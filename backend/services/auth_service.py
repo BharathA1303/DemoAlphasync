@@ -19,16 +19,28 @@ logger = logging.getLogger(__name__)
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# bcrypt only considers the first 72 bytes of a password; passlib raises
+# instead of silently truncating. Registration already rejects passwords
+# over 72 bytes, so this is just a defensive backstop.
+_BCRYPT_MAX_BYTES = 72
+
+
+def _clamp_to_bcrypt_limit(password: str) -> str:
+    encoded = password.encode("utf-8")
+    if len(encoded) <= _BCRYPT_MAX_BYTES:
+        return password
+    return encoded[:_BCRYPT_MAX_BYTES].decode("utf-8", errors="ignore")
+
 
 def hash_password(password: str) -> str:
-    return _pwd_context.hash(password)
+    return _pwd_context.hash(_clamp_to_bcrypt_limit(password))
 
 
 def verify_password(password: str, password_hash: str) -> bool:
     if not password or not password_hash:
         return False
     try:
-        return _pwd_context.verify(password, password_hash)
+        return _pwd_context.verify(_clamp_to_bcrypt_limit(password), password_hash)
     except Exception:
         return False
 

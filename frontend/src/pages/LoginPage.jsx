@@ -6,6 +6,15 @@ import toast from "react-hot-toast";
 import usePageMeta from "../hooks/usePageMeta";
 import { hasUserSessionCookie } from "../utils/authSessionCookie";
 
+function extractErrorMessage(err, fallback) {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((d) => d.msg || String(d)).join(" ");
+  }
+  return err?.message || fallback;
+}
+
 function PwdStrength({ password }) {
   if (!password) return null;
   const score = [
@@ -102,7 +111,7 @@ export default function LoginPage() {
       if (err?.response?.status === 401) {
         toast.error("Invalid username/email or password");
       } else {
-        toast.error(err.response?.data?.detail || err.message || "Login failed");
+        toast.error(extractErrorMessage(err, "Login failed"));
       }
     } finally { setLoginLoading(false); }
   };
@@ -110,6 +119,7 @@ export default function LoginPage() {
   const handleRegister = async (e) => {
     e.preventDefault();
     if (regPass.length < 6) return toast.error("Password must be at least 6 characters");
+    if (regPass.length > 72) return toast.error("Password must be at most 72 characters");
     if (!regUsername.trim()) return toast.error("Please choose a username");
     setRegLoading(true);
     try {
@@ -124,7 +134,7 @@ export default function LoginPage() {
       localStorage.setItem("alphasync_onboarded", "1");
       handleAuthSuccess(result?.user);
     } catch (err) {
-      toast.error(err.response?.data?.detail || err.message || "Registration failed");
+      toast.error(extractErrorMessage(err, "Registration failed"));
     } finally { setRegLoading(false); }
   };
 
@@ -371,6 +381,7 @@ export default function LoginPage() {
                     <input
                       type={showRegPass ? "text" : "password"}
                       placeholder="Min 8 characters" required autoComplete="new-password"
+                      maxLength={72}
                       value={regPass} onChange={(e) => setRegPass(e.target.value)}
                     />
                     <i className={"lp-eye fa " + (showRegPass ? "fa-eye-slash" : "fa-eye")}
