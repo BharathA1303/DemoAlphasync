@@ -944,7 +944,7 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2.5">
                             {/* Zebu Status Banner if configured */}
                             {zebuStatus?.configured ? (
                                 <div className="p-2.5 rounded-xl text-xs flex items-center justify-between" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
@@ -962,10 +962,56 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 uppercase">Ready</span>
                                 </div>
                             ) : (
-                                <div className="p-2.5 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)', color: '#f59e0b' }}>
+                                <div className="p-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)', color: '#f59e0b' }}>
                                     Optional. Pulls real EOD candles from your Zebu account to seed the simulator.
                                 </div>
                             )}
+
+                            {/* Zebu Developer App Settings (Redirect URL & Server IP) */}
+                            <div className="p-2.5 rounded-xl text-xs flex flex-col gap-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
+                                <div className="flex items-center justify-between">
+                                    <span className="font-semibold text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Broker App Developer Settings</span>
+                                    <span className="text-[10px] text-[#10b981] font-medium">Use in Zebu Developer Portal</span>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+                                    <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5">
+                                        <div className="truncate mr-2">
+                                            <span className="text-[var(--text-muted)] block text-[9px] uppercase font-semibold">Redirect URL (OAuth Callback)</span>
+                                            <code className="text-[#10b981] font-mono text-[11px] select-all truncate block">
+                                                {`${window.location.origin}/api/admin/broker/zebu/oauth-callback`}
+                                            </code>
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[var(--text-primary)] text-[10px] font-medium border border-white/10 shrink-0 flex items-center gap-1"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(`${window.location.origin}/api/admin/broker/zebu/oauth-callback`);
+                                                toast.success('Redirect URL copied');
+                                            }}>
+                                            <Copy size={11} /> Copy
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5">
+                                        <div className="truncate mr-2">
+                                            <span className="text-[var(--text-muted)] block text-[9px] uppercase font-semibold">Server IP (Broker Whitelist)</span>
+                                            <code className="text-[#3b82f6] font-mono text-[11px] select-all truncate block">
+                                                95.111.252.225
+                                            </code>
+                                        </div>
+                                        <button 
+                                            type="button"
+                                            className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[var(--text-primary)] text-[10px] font-medium border border-white/10 shrink-0 flex items-center gap-1"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText('95.111.252.225');
+                                                toast.success('Server IP copied');
+                                            }}>
+                                            <Copy size={11} /> Copy
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* Credentials Grid */}
                             <div className="grid grid-cols-2 gap-2">
@@ -985,7 +1031,7 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                                     onChange={(e) => setZebuDraft(prev => ({ ...prev, base_url: e.target.value }))} />
                             </div>
 
-                            <div className="flex gap-2 pt-1">
+                            <div className="flex gap-2 pt-0.5">
                                 <button className="admin-action-btn admin-action-btn--secondary flex-1 text-xs py-1.5" onClick={onSaveZebu} disabled={zebuSaving}>
                                     {zebuSaving ? 'Saving…' : 'Save Credentials'}
                                 </button>
