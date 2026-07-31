@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     # unreachable/blocked, so charts replay genuine historical prices
     # whenever the exchange is reachable. Set False to always use mock data
     # (e.g. offline dev, or to avoid NSE's anti-bot rate limiting).
-    BACKFILL_TRY_REAL_DATA_FIRST: bool = True
+    BACKFILL_TRY_REAL_DATA_FIRST: bool = False
 
     # ── Progressive hydration feature flags (Phase 1A) ─────────────
     # Keep disabled by default; enables snapshot-first responses per page.

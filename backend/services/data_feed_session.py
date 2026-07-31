@@ -177,7 +177,7 @@ class DataFeedSessionManager:
                 await run_backfill(
                     days_to_backfill=45,
                     use_mock=True,
-                    try_real_first=_app_settings.BACKFILL_TRY_REAL_DATA_FIRST,
+                    try_real_first=False,
                 )
             except Exception as e:
                 # Real-data attempt raised instead of gracefully returning
