@@ -856,7 +856,7 @@ async def import_zebu_history(
     import asyncio
     from models.data_feed_config import DataFeedConfig
     from sqlalchemy import select
-    from data_layer.ingestion.zebu_client import ZebuClient, ZebuAuthError
+    from data_layer.ingestion.zebu_client import ZebuClient, ZebuAuthError, ZebuApiError
 
     stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
     res = await db.execute(stmt)
@@ -878,6 +878,8 @@ async def import_zebu_history(
         await asyncio.to_thread(client.login)
     except ZebuAuthError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except ZebuApiError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Could not reach Zebu: {e}")
 
@@ -897,6 +899,17 @@ async def import_zebu_history(
                 conf.broker_last_import_status = "success"
                 conf.broker_last_import_error = None
                 logger.info(f"Admin {admin.email}: Zebu historical import completed ({rows} rows).")
+
+                # Already-open simulator sessions are pinned to whatever
+                # price_data version was current at subscribe-time and won't
+                # pick up this import's new/corrected rows until their next
+                # day-rollover — resync them now so connected users start
+                # ticking the real Zebu data immediately instead of silently
+                # continuing on old mock-seeded ticks.
+                if rows:
+                    from data_layer.simulator.simulator_manager import simulator_manager
+                    resynced = await simulator_manager.resync_active_sessions_to_latest_data()
+                    logger.info(f"Admin {admin.email}: resynced {resynced} active session(s) after Zebu import.")
             except Exception as e:
                 conf.broker_last_import_status = "error"
                 conf.broker_last_import_error = str(e)[:1000]
@@ -916,6 +929,23 @@ async def import_zebu_history(
         "status": "started",
         "message": f"Importing the last {req.days} trading days of real EOD history from Zebu in the background.",
     }
+
+
+@router.post("/simulation/resync-sessions")
+async def resync_simulation_sessions(
+    admin: User = Depends(get_admin_user),
+):
+    """Force every active simulator session to re-pin to the latest
+    (non-superseded) price_data version instead of waiting for its next
+    day-rollover. Normally triggered automatically after a Zebu import
+    completes — exposed here so an admin can retrigger it manually (e.g. a
+    user subscribed mid-import, or after an import that ran outside this
+    admin session)."""
+    from data_layer.simulator.simulator_manager import simulator_manager
+
+    resynced = await simulator_manager.resync_active_sessions_to_latest_data()
+    logger.info(f"Admin {admin.email}: manually resynced {resynced} active session(s).")
+    return {"status": "success", "resynced_sessions": resynced}
 
 
 @router.get("/simulation/status")
@@ -1058,7 +1088,7 @@ class ZebuOAuthConfigRequest(BaseModel):
     client_id: str = Field(..., min_length=2, max_length=100)
     secret_key: str = Field(..., min_length=2, max_length=200)
     redirect_url: str = Field(..., min_length=10, max_length=500)
-    base_url: str = Field(default="https://zebumyntapi.web.app/Base", max_length=500)
+    base_url: str = Field(default="https://go.mynt.in", max_length=500)
 
 
 class FeedDelayUpdateRequest(BaseModel):

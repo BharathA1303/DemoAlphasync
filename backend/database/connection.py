@@ -306,24 +306,25 @@ async def init_db():
 
             # ── data_feed_configs: separate oauth_base_url from the legacy
             # shared base_url column, and repoint any rows still pointing at
-            # the old 404ing go.mynt.in / mynt.in hosts to the docs-confirmed
-            # Zebu MYNT API host.
+            # the docs-site host (zebumyntapi.web.app is documentation only,
+            # not an API host — see zebu_client.py) or the old localhost
+            # placeholder at the real Zebu MYNT API host, go.mynt.in.
             dfc_cols = await _sqlite_columns("data_feed_configs")
             if "oauth_base_url" not in dfc_cols:
                 await conn.execute(text(
                     "ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) "
-                    "DEFAULT 'https://zebumyntapi.web.app/Base';"
+                    "DEFAULT 'https://go.mynt.in';"
                 ))
             await conn.execute(text("""
                 UPDATE data_feed_configs
-                SET base_url = 'https://zebumyntapi.web.app/Base'
-                WHERE base_url IN ('http://localhost:8000', 'https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                SET base_url = 'https://go.mynt.in/NorenWClientTP'
+                WHERE base_url IN ('http://localhost:8000', 'https://zebumyntapi.web.app/Base', 'https://mynt.in/NorenClientTP')
                    OR base_url IS NULL
             """))
             await conn.execute(text("""
                 UPDATE data_feed_configs
-                SET oauth_base_url = 'https://zebumyntapi.web.app/Base'
-                WHERE oauth_base_url IN ('https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                SET oauth_base_url = 'https://go.mynt.in'
+                WHERE oauth_base_url IN ('https://zebumyntapi.web.app/Base', 'https://mynt.in/NorenClientTP')
                    OR oauth_base_url IS NULL
             """))
 
@@ -649,20 +650,22 @@ async def init_db():
                         SELECT 1 FROM information_schema.columns
                         WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_base_url'
                     ) THEN
-                        ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) DEFAULT 'https://zebumyntapi.web.app/Base';
-                        UPDATE data_feed_configs SET oauth_base_url = 'https://zebumyntapi.web.app/Base' WHERE oauth_base_url IS NULL;
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) DEFAULT 'https://go.mynt.in';
+                        UPDATE data_feed_configs SET oauth_base_url = 'https://go.mynt.in' WHERE oauth_base_url IS NULL;
                     END IF;
 
-                    -- Repoint any legacy rows still pointing at the old,
-                    -- 404ing go.mynt.in / mynt.in hosts at the correct
-                    -- docs-confirmed Zebu MYNT API host.
+                    -- Repoint any legacy rows still pointing at the
+                    -- docs-site host (zebumyntapi.web.app is documentation
+                    -- only, not an API host — see zebu_client.py) or the
+                    -- old localhost placeholder at the real Zebu MYNT API
+                    -- host, go.mynt.in.
                     UPDATE data_feed_configs
-                        SET base_url = 'https://zebumyntapi.web.app/Base'
-                        WHERE base_url IN ('http://localhost:8000', 'https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                        SET base_url = 'https://go.mynt.in/NorenWClientTP'
+                        WHERE base_url IN ('http://localhost:8000', 'https://zebumyntapi.web.app/Base', 'https://mynt.in/NorenClientTP')
                            OR base_url IS NULL;
                     UPDATE data_feed_configs
-                        SET oauth_base_url = 'https://zebumyntapi.web.app/Base'
-                        WHERE oauth_base_url IN ('https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                        SET oauth_base_url = 'https://go.mynt.in'
+                        WHERE oauth_base_url IN ('https://zebumyntapi.web.app/Base', 'https://mynt.in/NorenClientTP')
                            OR oauth_base_url IS NULL;
                 END $$;
             """

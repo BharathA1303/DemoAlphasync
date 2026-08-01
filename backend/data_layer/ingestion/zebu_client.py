@@ -6,13 +6,16 @@ continuous live session. Every call is synchronous (`requests`); callers
 run this inside a background task / threadpool, not the event loop
 directly.
 
-API reference (confirmed against the official docs, not just the vendored
-SDK): https://zebumyntapi.web.app/Base/Users/ (login) and
-https://zebumyntapi.web.app/Base/MarketQuotes/ (quotes/TPSeries).
-Host: https://zebumyntapi.web.app/Base — this is the docs-confirmed host.
-Earlier revisions of this client pointed at https://go.mynt.in/NorenWClientTP
-and, before that, https://mynt.in/NorenClientTP; both 404 against the live
-API. Override via DataFeedConfig.base_url if login fails against the default.
+API docs (rendered at https://zebumyntapi.web.app/Base/Users/ and
+https://zebumyntapi.web.app/Base/MarketQuotes/) are served from a static
+MkDocs/Firebase Hosting site — that domain is documentation only and is NOT
+an API host; POSTing to it returns a Firebase Hosting response, not a
+NorenOMS JSON payload (this was tried and produced a JSON-decode failure on
+an effectively empty body). The docs' own code samples and the endpoint URL
+printed on the page both point at the real API host:
+https://go.mynt.in/NorenWClientTP — confirmed against the official Users
+page and cross-checked against the vendored NorenRestApiPy SDK. Override via
+DataFeedConfig.base_url if login fails against the default.
 
 Important: Zebu's "factor2" second-factor login field is NOT a TOTP/
 authenticator code (there is no TOTP concept in this API at all) — per the
@@ -30,7 +33,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "https://zebumyntapi.web.app/Base"
+DEFAULT_BASE_URL = "https://go.mynt.in/NorenWClientTP"
 _TIMEOUT = 15
 # Largest interval TPSeries supports (minutes) — there is no dedicated daily
 # bucket, so 4-hour bars are requested and collapsed into true daily OHLCV
@@ -44,6 +47,39 @@ class ZebuAuthError(Exception):
 
 class ZebuApiError(Exception):
     pass
+
+
+def _parse_json_response(resp: "requests.Response", context: str) -> Any:
+    """Parse a Zebu API response as JSON, raising ZebuApiError with the raw
+    body on failure instead of an opaque `json.JSONDecodeError`.
+
+    Two Noren-family quirks observed in the wild are handled here:
+    - Some endpoints prefix the JSON body with a stray newline/whitespace.
+    - Some endpoints return a JSON *string* (double-encoded) rather than a
+      bare object, so a successful first parse that yields a str is decoded
+      once more.
+    """
+    text = resp.text.strip()
+    if not text:
+        raise ZebuApiError(
+            f"Zebu {context}: empty response body (HTTP {resp.status_code}). "
+            f"Check base_url — the account/app may not be provisioned for "
+            f"API access, or the endpoint path is wrong for this host."
+        )
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        snippet = text[:300]
+        raise ZebuApiError(
+            f"Zebu {context}: non-JSON response (HTTP {resp.status_code}): {e}. "
+            f"Body started with: {snippet!r}"
+        ) from e
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            pass
+    return data
 
 
 class ZebuClient:
@@ -72,12 +108,11 @@ class ZebuClient:
         self.vendor_code = vendor_code
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         # Symbol-master files are served from the bare host, not under the
-        # /Base API path — derive it once rather than re-parsing base_url on
-        # every download call. Also strips legacy /NorenWClientTP or
-        # /NorenClientTP suffixes from any old saved config.
+        # /NorenWClientTP API path — derive it once rather than re-parsing
+        # base_url on every download call. Also strips a legacy
+        # /NorenClientTP suffix from any old saved config.
         self.root_host = (
-            self.base_url.split("/Base")[0]
-            .split("/NorenWClientTP")[0]
+            self.base_url.split("/NorenWClientTP")[0]
             .split("/NorenClientTP")[0]
         )
         self._session_token: Optional[str] = None
@@ -103,10 +138,13 @@ class ZebuClient:
         body = "jData=" + json.dumps(payload_obj)
 
         resp = requests.post(
-            f"{self.base_url}/QuickAuth", data=body, timeout=_TIMEOUT
+            f"{self.base_url}/QuickAuth",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            timeout=_TIMEOUT,
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = _parse_json_response(resp, context="QuickAuth login")
 
         if str(data.get("stat", "")).lower() != "ok" or not data.get("susertoken"):
             raise ZebuAuthError(f"Zebu login failed: {data.get('emsg') or data}")
@@ -119,9 +157,14 @@ class ZebuClient:
         if not self._session_token:
             raise ZebuAuthError("Not logged in — call login() first")
         body = "jData=" + json.dumps(payload_obj) + f"&jKey={self._session_token}"
-        resp = requests.post(f"{self.base_url}{path}", data=body, timeout=_TIMEOUT)
+        resp = requests.post(
+            f"{self.base_url}{path}",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            timeout=_TIMEOUT,
+        )
         resp.raise_for_status()
-        data = resp.json()
+        data = _parse_json_response(resp, context=path)
         if isinstance(data, dict) and str(data.get("stat", "")).lower() == "not_ok":
             raise ZebuApiError(f"Zebu API error on {path}: {data.get('emsg') or data}")
         return data

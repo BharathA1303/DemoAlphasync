@@ -356,6 +356,77 @@ class SimulatorManager:
 
         return new_date, new_subscription_versions
 
+    async def resync_active_sessions_to_latest_data(self) -> int:
+        """Force every active session's subscriptions to re-pin to the
+        current (latest, non-superseded) price_data version for the
+        session's in-progress date, instead of waiting for the natural
+        day-rollover re-pin in `_roll_over_to_next_day`.
+
+        Without this, a freshly completed historical import (e.g. Zebu real
+        EOD data replacing mock-seeded rows) writes a new PriceData version
+        but every already-open session keeps ticking the OLD version it was
+        pinned to at subscribe-time — so users see no change until their
+        session happens to roll over to a new trading day. Call this once
+        after an import completes so already-connected users pick up the
+        new data on the next tick instead.
+
+        Returns the number of sessions resynced.
+        """
+        active_ids: Set[str] = set()
+        if cache_module.redis_client:
+            try:
+                active_ids = await cache_module.redis_client.smembers("active_sessions")
+            except Exception as e:
+                logger.error(f"Redis smembers error during resync: {e}")
+        else:
+            from data_layer.core.cache import _in_memory_cache
+            for key, (val, _) in list(_in_memory_cache.items()):
+                if key.startswith("session:"):
+                    active_ids.add(key[len("session:"):])
+
+        resynced = 0
+        async with AsyncSessionLocal() as db:
+            for session_id in active_ids:
+                raw_state = await get_cached_response(f"session:{session_id}")
+                if not raw_state:
+                    continue
+                state = json.loads(raw_state)
+                if state.get("status") != "active":
+                    continue
+
+                date_obj = date_str_to_date(state["date"])
+                subscriptions = state.get("subscriptions", [])
+                new_versions: Dict[str, int] = {}
+                for spec in subscriptions:
+                    parts = spec.split(":")
+                    if len(parts) != 3:
+                        continue
+                    exchange, segment, symbol = parts
+                    stmt = select(PriceData.version).where(
+                        PriceData.exchange == exchange.upper(),
+                        PriceData.segment == segment.upper(),
+                        PriceData.symbol == symbol.upper(),
+                        PriceData.market_timestamp == date_obj,
+                        PriceData.superseded_at.is_(None),
+                    )
+                    result = await db.execute(stmt)
+                    current_version = result.scalar_one_or_none()
+                    if current_version is not None:
+                        new_versions[spec] = current_version
+
+                if new_versions:
+                    state["subscription_versions"] = new_versions
+                    await set_cached_response(f"session:{session_id}", json.dumps(state), ttl=86400)
+                    resynced += 1
+
+        # Any cached tick arrays for the OLD version are now stale for these
+        # sessions; drop the whole in-memory cache so the next tick re-reads
+        # from Redis/DB and re-runs ensure_ticks_cached against the newly
+        # pinned version.
+        self.tick_data_cache.clear()
+        logger.info(f"Resynced {resynced} active session(s) to latest price_data version.")
+        return resynced
+
     async def run_loop(self):
         """Infinite loop running every 1 second, advancing virtual clocks."""
         while self.is_running:

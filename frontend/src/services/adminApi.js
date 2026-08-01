@@ -54,6 +54,10 @@ const adminApi = {
         });
     },
 
+    resyncSimulationSessions() {
+        return api.post('/admin/simulation/resync-sessions');
+    },
+
     // ── User Management ─────────────────────────────────────────────
     listUsers(params = {}) {
         return api.get('/admin/users', { params });

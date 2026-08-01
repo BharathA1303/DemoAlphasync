@@ -823,6 +823,7 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
 /* ── Data Feed Configuration Modal (Root Only) ────────────────────────── */
 function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClose,
     zebuStatus, zebuDraft, setZebuDraft, zebuSaving, zebuImporting, onSaveZebu, onImportZebu,
+    zebuResyncing, onResyncSessions,
     simStatus, simStatusLoading, onRefreshSimStatus, seeding, onSeedFreeHistory }) {
     const [activeTab, setActiveTab] = useState('sim');
     const inputStyle = {
@@ -1040,6 +1041,11 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                                     {zebuImporting ? 'Importing…' : 'Import Real History'}
                                 </button>
                             </div>
+                            <button className="admin-action-btn admin-action-btn--secondary w-full text-xs py-1.5" onClick={onResyncSessions}
+                                disabled={zebuResyncing}
+                                title="Push already-connected users onto the latest imported data now, instead of waiting for their session's next day-rollover.">
+                                {zebuResyncing ? 'Resyncing…' : 'Resync Live Sessions to Latest Data'}
+                            </button>
                         </div>
                     )}
                 </div>
@@ -1120,7 +1126,7 @@ export default function AdminPanelPage() {
     const [zebuDraft, setZebuDraft] = useState({
         client_code: '', password: '', factor2: '',
         api_key: '', api_secret: '', vendor_code: '',
-        base_url: 'https://zebumyntapi.web.app/Base',
+        base_url: 'https://go.mynt.in/NorenWClientTP',
     });
     const [zebuSaving, setZebuSaving] = useState(false);
     const [zebuImporting, setZebuImporting] = useState(false);
@@ -1214,6 +1220,19 @@ export default function AdminPanelPage() {
             toast.error(parseApiError(err, 'Failed to start Zebu import'));
         } finally {
             setZebuImporting(false);
+        }
+    }, []);
+
+    const [zebuResyncing, setZebuResyncing] = useState(false);
+    const handleResyncSessions = useCallback(async () => {
+        setZebuResyncing(true);
+        try {
+            const { data } = await adminApi.resyncSimulationSessions();
+            toast.success(`Resynced ${data?.resynced_sessions ?? 0} active session(s) to the latest data.`);
+        } catch (err) {
+            toast.error(parseApiError(err, 'Failed to resync sessions'));
+        } finally {
+            setZebuResyncing(false);
         }
     }, []);
 
@@ -2435,6 +2454,7 @@ export default function AdminPanelPage() {
                     zebuStatus={zebuStatus} zebuDraft={zebuDraft} setZebuDraft={setZebuDraft}
                     zebuSaving={zebuSaving} zebuImporting={zebuImporting}
                     onSaveZebu={handleSaveZebuCredentials} onImportZebu={handleImportZebuHistory}
+                    zebuResyncing={zebuResyncing} onResyncSessions={handleResyncSessions}
                     simStatus={simStatus} simStatusLoading={simStatusLoading} onRefreshSimStatus={loadSimStatus}
                     seeding={seedingFreeHistory} onSeedFreeHistory={handleSeedFreeHistory} />
             )}

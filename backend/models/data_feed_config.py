@@ -32,7 +32,7 @@ class DataFeedConfig(Base):
     # api_secret = Zebu API secret, base_url = Zebu API base URL).
     api_key = Column(String(255), nullable=True)
     api_secret = Column(Text, nullable=True)  # AES-256-GCM encrypted, see services/crypto.py
-    base_url = Column(String(500), nullable=True, default="https://zebumyntapi.web.app/Base")
+    base_url = Column(String(500), nullable=True, default="https://go.mynt.in/NorenWClientTP")
     is_enabled = Column(Boolean, default=False, nullable=False, server_default=text("false"))
     connection_status = Column(String(50), default="disconnected")  # disconnected, connecting, connected, error
     error_message = Column(Text, nullable=True)
@@ -64,8 +64,10 @@ class DataFeedConfig(Base):
     # ── Admin Zebu OAuth & Time-Delayed Feed Configuration ───────────────
     # Separate from `base_url` above (which belongs to the QuickAuth
     # historical-import credential set) so saving one form never silently
-    # repoints the other flow's host.
-    oauth_base_url = Column(String(500), nullable=True, default="https://zebumyntapi.web.app/Base")
+    # repoints the other flow's host. This is the bare host (no
+    # /NorenWClientTP suffix) — ZebuOAuthClient appends /NorenWClientAPI or
+    # /OAuthlogin itself.
+    oauth_base_url = Column(String(500), nullable=True, default="https://go.mynt.in")
     oauth_client_id = Column(String(100), nullable=True)
     oauth_secret_key_enc = Column(Text, nullable=True)
     oauth_redirect_url = Column(String(500), nullable=True)

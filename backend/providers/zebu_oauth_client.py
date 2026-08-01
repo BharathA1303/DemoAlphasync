@@ -9,8 +9,32 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-ZEBU_PROD_URL = "https://zebumyntapi.web.app/Base"
-ZEBU_WS_PROD_URL = "wss://zebumyntapi.web.app/NorenWSTP/"
+ZEBU_PROD_URL = "https://go.mynt.in"
+ZEBU_WS_PROD_URL = "wss://go.mynt.in/NorenWSTP/"
+
+
+def _parse_json_response(response: "httpx.Response", context: str) -> dict:
+    """Parse a Zebu API response as JSON, raising a clear error with the raw
+    body on failure instead of an opaque JSONDecodeError (e.g. when the
+    request reached the wrong host and got back an empty/HTML body)."""
+    text = response.text.strip()
+    if not text:
+        raise ValueError(
+            f"Zebu {context}: empty response body (HTTP {response.status_code})."
+        )
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"Zebu {context}: non-JSON response (HTTP {response.status_code}): {e}. "
+            f"Body started with: {text[:300]!r}"
+        ) from e
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError:
+            pass
+    return data
 
 
 class ZebuOAuthClient:
@@ -41,12 +65,13 @@ class ZebuOAuthClient:
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             # Noren API accepts jData payload format: jData={"code": ..., "checksum": ...}
-            response = await client.post(url, data={"jData": json.dumps(payload)})
+            response = await client.post(
+                url,
+                data="jData=" + json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+            )
             response.raise_for_status()
-
-            res_json = response.json()
-            if isinstance(res_json, str):
-                res_json = json.loads(res_json)
+            res_json = _parse_json_response(response, context="GenAcsTok")
 
             stat = res_json.get("stat") or res_json.get("status")
             if stat and stat.lower() == "not_ok":
@@ -73,12 +98,13 @@ class ZebuOAuthClient:
         payload = {"refresh_token": refresh_token}
 
         async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(url, data={"jData": json.dumps(payload)})
+            response = await client.post(
+                url,
+                data="jData=" + json.dumps(payload),
+                headers={"Content-Type": "application/json"},
+            )
             response.raise_for_status()
-
-            res_json = response.json()
-            if isinstance(res_json, str):
-                res_json = json.loads(res_json)
+            res_json = _parse_json_response(response, context="RefreshToken")
 
             stat = res_json.get("stat") or res_json.get("status")
             if stat and stat.lower() == "not_ok":
