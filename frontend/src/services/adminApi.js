@@ -39,7 +39,11 @@ const adminApi = {
     },
 
     importZebuHistory(days = 90) {
-        return api.post('/admin/simulation/zebu-import', { days });
+        // This request awaits a synchronous Zebu QuickAuth login server-side
+        // (its own ~15s timeout) before returning — the default 15s axios
+        // timeout races that and can fire first on any added latency, so
+        // give this call real headroom over the server-side timeout.
+        return api.post('/admin/simulation/zebu-import', { days }, { timeout: 45000 });
     },
 
     getSimulationStatus() {

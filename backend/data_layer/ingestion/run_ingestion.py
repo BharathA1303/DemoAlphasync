@@ -162,7 +162,25 @@ async def save_records_to_db(db, records: List[Dict[str, Any]]) -> int:
         )
 
     if to_insert:
-        await db.execute(pg_insert(PriceData).values(to_insert))
+        # price_data can legitimately be written by more than one concurrent
+        # ingestion path (e.g. this mock/real bhavcopy backfill and a Zebu
+        # historical import both seeding the same symbol/date). The
+        # SELECT-then-INSERT above is only race-free within a single
+        # session/transaction — a concurrent writer's commit landing between
+        # our SELECT and INSERT would otherwise raise UniqueViolationError
+        # on `uq_price_data_symbol_exchange_segment_date_version` and abort
+        # this whole batch (and, upstream, poison the caller's transaction).
+        # ON CONFLICT DO NOTHING makes the insert idempotent under that race:
+        # whichever writer's row for a given (key, version) lands first wins,
+        # and the loser silently no-ops instead of erroring — correct here
+        # since two concurrent writers computing the same "next version" for
+        # the same source data would try to insert identical or equivalent
+        # rows anyway.
+        stmt = pg_insert(PriceData).values(to_insert)
+        stmt = stmt.on_conflict_do_nothing(
+            constraint="uq_price_data_symbol_exchange_segment_date_version"
+        )
+        await db.execute(stmt)
 
     return written_count
 
@@ -301,7 +319,16 @@ async def ingest_date_for_exchange(
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Failed ingestion for {exchange} on {target_date}: {error_msg}")
-        
+
+        # A DB-level failure (e.g. IntegrityError from save_records_to_db)
+        # leaves this session's transaction poisoned — Postgres refuses ALL
+        # further commands (including the ingestion_log insert below, and
+        # every subsequent exchange's ingestion on this same session) with
+        # InFailedSQLTransactionError until a rollback happens. Roll back
+        # before trying to log the failure so one bad exchange doesn't take
+        # down every other exchange ingested on the same call.
+        await db.rollback()
+
         # Log failure in ingestion_log
         log_entry = IngestionLog(
             source=f"{exchange.lower()}_bhavcopy",
@@ -311,6 +338,7 @@ async def ingest_date_for_exchange(
             error_message=error_msg[:1000]
         )
         db.add(log_entry)
+        await db.commit()
         return 0
 
 async def ingest_date(target_date: date, use_mock: bool, try_real_first: bool = False) -> Dict[str, int]:
