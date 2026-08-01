@@ -9,8 +9,8 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-ZEBU_PROD_URL = "https://go.mynt.in"
-ZEBU_WS_PROD_URL = "wss://go.mynt.in/NorenWSTP/"
+ZEBU_PROD_URL = "https://zebumyntapi.web.app/Base"
+ZEBU_WS_PROD_URL = "wss://zebumyntapi.web.app/NorenWSTP/"
 
 
 class ZebuOAuthClient:
@@ -42,7 +42,7 @@ class ZebuOAuthClient:
         async with httpx.AsyncClient(timeout=15.0) as client:
             # Noren API accepts jData payload format: jData={"code": ..., "checksum": ...}
             response = await client.post(url, data={"jData": json.dumps(payload)})
-            response.raise_for_request()
+            response.raise_for_status()
 
             res_json = response.json()
             if isinstance(res_json, str):
@@ -74,7 +74,7 @@ class ZebuOAuthClient:
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(url, data={"jData": json.dumps(payload)})
-            response.raise_for_request()
+            response.raise_for_status()
 
             res_json = response.json()
             if isinstance(res_json, str):
@@ -101,7 +101,7 @@ class ZebuOAuthClient:
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             res = await client.get(url, headers=headers)
-            res.raise_for_request()
+            res.raise_for_status()
             return res.content
 
 

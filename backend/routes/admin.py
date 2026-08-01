@@ -1058,6 +1058,7 @@ class ZebuOAuthConfigRequest(BaseModel):
     client_id: str = Field(..., min_length=2, max_length=100)
     secret_key: str = Field(..., min_length=2, max_length=200)
     redirect_url: str = Field(..., min_length=10, max_length=500)
+    base_url: str = Field(default="https://zebumyntapi.web.app/Base", max_length=500)
 
 
 class FeedDelayUpdateRequest(BaseModel):
@@ -1089,6 +1090,7 @@ async def configure_zebu_oauth(
     config.oauth_client_id = body.client_id
     config.set_oauth_secret_key(body.secret_key)
     config.oauth_redirect_url = body.redirect_url
+    config.oauth_base_url = body.base_url
     config.oauth_connection_status = "configured"
     await db.commit()
 
@@ -1112,7 +1114,7 @@ async def get_zebu_oauth_url(
     if not config or not config.oauth_client_id:
         raise HTTPException(status_code=400, detail="Zebu OAuth client_id not configured.")
 
-    client = ZebuOAuthClient(base_url=getattr(config, "base_url", None))
+    client = ZebuOAuthClient(base_url=getattr(config, "oauth_base_url", None))
     auth_url = client.build_authorize_url(config.oauth_client_id)
     return {"authorize_url": auth_url, "client_id": config.oauth_client_id}
 
@@ -1137,7 +1139,7 @@ async def zebu_oauth_callback(
         raise HTTPException(status_code=400, detail="OAuth not configured on backend.")
 
     secret_key = config.get_oauth_secret_key()
-    client = ZebuOAuthClient(base_url=getattr(config, "base_url", None))
+    client = ZebuOAuthClient(base_url=getattr(config, "oauth_base_url", None))
 
     try:
         token_info = await client.exchange_code_for_token(config.oauth_client_id, secret_key, code)

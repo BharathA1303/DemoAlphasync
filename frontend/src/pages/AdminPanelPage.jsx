@@ -1120,7 +1120,7 @@ export default function AdminPanelPage() {
     const [zebuDraft, setZebuDraft] = useState({
         client_code: '', password: '', factor2: '',
         api_key: '', api_secret: '', vendor_code: '',
-        base_url: 'https://go.mynt.in',
+        base_url: 'https://zebumyntapi.web.app/Base',
     });
     const [zebuSaving, setZebuSaving] = useState(false);
     const [zebuImporting, setZebuImporting] = useState(false);
@@ -1128,7 +1128,16 @@ export default function AdminPanelPage() {
     const loadZebuStatus = useCallback(async () => {
         try {
             const { data } = await adminApi.getZebuCredentials();
-            if (data) setZebuStatus(data);
+            if (data) {
+                setZebuStatus(data);
+                if (data.client_code) {
+                    setZebuDraft(prev => ({
+                        ...prev,
+                        client_code: data.client_code,
+                        base_url: data.base_url || prev.base_url,
+                    }));
+                }
+            }
         } catch (err) {
             // Non-fatal — Zebu is optional; don't block the modal on this.
         }

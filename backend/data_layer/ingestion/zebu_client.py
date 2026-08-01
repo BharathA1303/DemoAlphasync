@@ -9,9 +9,10 @@ directly.
 API reference (confirmed against the official docs, not just the vendored
 SDK): https://zebumyntapi.web.app/Base/Users/ (login) and
 https://zebumyntapi.web.app/Base/MarketQuotes/ (quotes/TPSeries).
-Host: https://go.mynt.in/NorenWClientTP — this is the docs-confirmed host,
-distinct from an older SDK-hardcoded https://mynt.in/NorenClientTP; override
-via DataFeedConfig.base_url if login fails against the default.
+Host: https://zebumyntapi.web.app/Base — this is the docs-confirmed host.
+Earlier revisions of this client pointed at https://go.mynt.in/NorenWClientTP
+and, before that, https://mynt.in/NorenClientTP; both 404 against the live
+API. Override via DataFeedConfig.base_url if login fails against the default.
 
 Important: Zebu's "factor2" second-factor login field is NOT a TOTP/
 authenticator code (there is no TOTP concept in this API at all) — per the
@@ -29,7 +30,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_BASE_URL = "https://go.mynt.in/NorenWClientTP"
+DEFAULT_BASE_URL = "https://zebumyntapi.web.app/Base"
 _TIMEOUT = 15
 # Largest interval TPSeries supports (minutes) — there is no dedicated daily
 # bucket, so 4-hour bars are requested and collapsed into true daily OHLCV
@@ -71,9 +72,14 @@ class ZebuClient:
         self.vendor_code = vendor_code
         self.base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
         # Symbol-master files are served from the bare host, not under the
-        # /NorenWClientTP API path — derive it once rather than re-parsing
-        # base_url on every download call.
-        self.root_host = self.base_url.split("/NorenWClientTP")[0].split("/NorenClientTP")[0]
+        # /Base API path — derive it once rather than re-parsing base_url on
+        # every download call. Also strips legacy /NorenWClientTP or
+        # /NorenClientTP suffixes from any old saved config.
+        self.root_host = (
+            self.base_url.split("/Base")[0]
+            .split("/NorenWClientTP")[0]
+            .split("/NorenClientTP")[0]
+        )
         self._session_token: Optional[str] = None
 
     def login(self) -> str:

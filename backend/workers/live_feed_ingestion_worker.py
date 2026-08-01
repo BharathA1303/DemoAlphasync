@@ -66,7 +66,7 @@ class LiveFeedIngestionWorker:
                 logger.warning("Missing OAuth credentials for Zebu WS. Ingestion worker dormant.")
                 return
 
-            ws_url = getattr(config, "base_url", None) or ZEBU_WS_PROD_URL
+            ws_url = ZEBU_WS_PROD_URL
 
             self._ws_feed = ZebuLiveFeed(
                 ws_url=ws_url,

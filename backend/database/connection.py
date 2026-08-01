@@ -304,6 +304,29 @@ async def init_db():
             # integrations are fully removed (see alembic 010).
             await conn.execute(text("DROP TABLE IF EXISTS broker_accounts;"))
 
+            # ── data_feed_configs: separate oauth_base_url from the legacy
+            # shared base_url column, and repoint any rows still pointing at
+            # the old 404ing go.mynt.in / mynt.in hosts to the docs-confirmed
+            # Zebu MYNT API host.
+            dfc_cols = await _sqlite_columns("data_feed_configs")
+            if "oauth_base_url" not in dfc_cols:
+                await conn.execute(text(
+                    "ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) "
+                    "DEFAULT 'https://zebumyntapi.web.app/Base';"
+                ))
+            await conn.execute(text("""
+                UPDATE data_feed_configs
+                SET base_url = 'https://zebumyntapi.web.app/Base'
+                WHERE base_url IN ('http://localhost:8000', 'https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                   OR base_url IS NULL
+            """))
+            await conn.execute(text("""
+                UPDATE data_feed_configs
+                SET oauth_base_url = 'https://zebumyntapi.web.app/Base'
+                WHERE oauth_base_url IN ('https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                   OR oauth_base_url IS NULL
+            """))
+
             await conn.execute(
                 text(
                     "CREATE INDEX IF NOT EXISTS ix_zeroloss_signals_user_ts "
@@ -615,6 +638,32 @@ async def init_db():
                         ALTER TABLE data_feed_configs ADD COLUMN feed_delay_seconds INTEGER NOT NULL DEFAULT 300;
                         ALTER TABLE data_feed_configs ADD COLUMN redis_active_market_hours_only BOOLEAN NOT NULL DEFAULT true;
                     END IF;
+
+                    -- oauth_base_url: separate host field from the legacy
+                    -- shared `base_url` column, so saving QuickAuth creds
+                    -- never silently repoints the OAuth flow's host (and
+                    -- vice versa). Added after the block above, so it needs
+                    -- its own existence guard for installs that already had
+                    -- oauth_client_id before this column existed.
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_base_url'
+                    ) THEN
+                        ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) DEFAULT 'https://zebumyntapi.web.app/Base';
+                        UPDATE data_feed_configs SET oauth_base_url = 'https://zebumyntapi.web.app/Base' WHERE oauth_base_url IS NULL;
+                    END IF;
+
+                    -- Repoint any legacy rows still pointing at the old,
+                    -- 404ing go.mynt.in / mynt.in hosts at the correct
+                    -- docs-confirmed Zebu MYNT API host.
+                    UPDATE data_feed_configs
+                        SET base_url = 'https://zebumyntapi.web.app/Base'
+                        WHERE base_url IN ('http://localhost:8000', 'https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                           OR base_url IS NULL;
+                    UPDATE data_feed_configs
+                        SET oauth_base_url = 'https://zebumyntapi.web.app/Base'
+                        WHERE oauth_base_url IN ('https://go.mynt.in', 'https://go.mynt.in/NorenWClientTP', 'https://mynt.in/NorenClientTP')
+                           OR oauth_base_url IS NULL;
                 END $$;
             """
                 )
