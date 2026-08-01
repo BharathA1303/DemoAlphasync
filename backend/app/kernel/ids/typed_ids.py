@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+
 from app.kernel.ids.generator import default_id_generator
 
 

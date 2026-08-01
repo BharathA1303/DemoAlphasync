@@ -1,23 +1,23 @@
 import contextvars
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-_correlation_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("correlation_id", default=None)
-_session_id_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("session_id", default=None)
+_correlation_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("correlation_id", default=None)
+_session_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("session_id", default=None)
 
 
 class ContextLogger:
     """Correlation Context Manager for tracing logs across execution boundaries."""
 
     @staticmethod
-    def set_context(correlation_id: str, session_id: Optional[str] = None) -> None:
+    def set_context(correlation_id: str, session_id: str | None = None) -> None:
         _correlation_id_ctx.set(correlation_id)
         if session_id:
             _session_id_ctx.set(session_id)
 
     @staticmethod
-    def get_context() -> Dict[str, Optional[str]]:
+    def get_context() -> dict[str, str | None]:
         return {
             "correlation_id": _correlation_id_ctx.get(),
             "session_id": _session_id_ctx.get(),
@@ -34,7 +34,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         ctx = ContextLogger.get_context()
-        log_payload: Dict[str, Any] = {
+        log_payload: dict[str, Any] = {
             "timestamp": self.formatTime(record, self.datefmt),
             "level": record.levelname,
             "logger": record.name,

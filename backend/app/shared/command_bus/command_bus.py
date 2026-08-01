@@ -1,5 +1,7 @@
 import logging
-from typing import Any, Callable, Dict, Type
+from collections.abc import Callable
+from typing import Any
+
 from app.kernel.primitives.command import Command
 
 logger = logging.getLogger(__name__)
@@ -11,9 +13,9 @@ class CommandBus:
     """In-Process CQS Command Bus Dispatcher. Enforces single-handler point-to-point routing."""
 
     def __init__(self) -> None:
-        self._handlers: Dict[Type[Command], CommandHandler] = {}
+        self._handlers: dict[type[Command], CommandHandler] = {}
 
-    def register(self, command_type: Type[Command], handler: CommandHandler) -> None:
+    def register(self, command_type: type[Command], handler: CommandHandler) -> None:
         if command_type in self._handlers:
             raise ValueError(f"Command {command_type.__name__} already has a registered handler")
         self._handlers[command_type] = handler

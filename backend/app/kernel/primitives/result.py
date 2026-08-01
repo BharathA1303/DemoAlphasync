@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 E = TypeVar("E", bound=Exception)
@@ -9,8 +9,8 @@ E = TypeVar("E", bound=Exception)
 class Result(Generic[T, E]):
     """Result primitive for explicit success/failure handling without raw exception throwing."""
 
-    _value: Optional[T] = None
-    _error: Optional[E] = None
+    _value: T | None = None
+    _error: E | None = None
     _is_success: bool = True
 
     @classmethod

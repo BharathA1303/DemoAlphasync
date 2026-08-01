@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+
 from app.kernel.ids.generator import default_id_generator
 
 
