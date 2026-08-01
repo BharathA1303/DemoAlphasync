@@ -141,6 +141,17 @@ class InternalSimProvider(MarketProvider):
         self._setup_task: Optional[asyncio.Task] = None
         self._reconnect_count = 0
 
+        # Set when a day_rollover message arrives, cleared after being
+        # attached to the next tick_update batch. Lets the frontend chart
+        # distinguish "next 5-minute bucket, same session" (should keep
+        # compressing onto the previous candle's close) from "next session
+        # entirely" (should start a fresh candle at the new session's price
+        # and show a real time-axis gap) — see LiveChart.jsx's live-tick
+        # handler. Previously day_rollover was logged and discarded here,
+        # so the frontend had no way to tell the two cases apart and always
+        # rendered sessions as one continuous line.
+        self._pending_rollover: Optional[dict] = None
+
     # ── Lifecycle ───────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -487,10 +498,21 @@ class InternalSimProvider(MarketProvider):
                     f"{data.get('previous_date')} -> {data.get('date')} "
                     f"(virtual_time={data.get('virtual_time')})"
                 )
+                # Tag the NEXT tick_update batch (published right after this
+                # message by the same SimulatorManager loop) as starting a
+                # new session, instead of silently dropping the rollover
+                # entirely — see the _pending_rollover field comment above.
+                self._pending_rollover = {
+                    "previous_date": data.get("previous_date"),
+                    "date": data.get("date"),
+                }
                 return
 
             if msg_type != "tick_update":
                 return
+
+            rollover = self._pending_rollover
+            self._pending_rollover = None
 
             session_date_str = data.get("date")
             session_date = None
@@ -557,6 +579,9 @@ class InternalSimProvider(MarketProvider):
                         "oi": tick.get("oi"),
                         "timestamp": epoch_ts,
                     }
+                    if rollover is not None:
+                        mapped_tick["session_rollover"] = True
+                        mapped_tick["previous_session_date"] = rollover.get("previous_date")
                     await market_publisher.publish_tick(mapped_tick)
         except Exception as e:
             logger.debug(f"InternalSimProvider: Failed to handle sim message: {e}")

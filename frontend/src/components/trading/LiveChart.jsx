@@ -368,19 +368,6 @@ const startOfIstDay = (epochSeconds) => {
     return dayStartLocal - IST_OFFSET_SECONDS;
 };
 
-const intradaySessionBucketStart = (epochSeconds, intervalSeconds) => {
-    if (!Number.isFinite(epochSeconds) || !Number.isFinite(intervalSeconds) || intervalSeconds <= 0) return null;
-
-    const istDayStart = startOfIstDay(epochSeconds);
-    if (!Number.isFinite(istDayStart)) return null;
-
-    const sessionStart = istDayStart + (MARKET_OPEN_MINUTES_IST * 60);
-    if (epochSeconds <= sessionStart) return sessionStart;
-
-    const elapsed = epochSeconds - sessionStart;
-    return sessionStart + (Math.floor(elapsed / intervalSeconds) * intervalSeconds);
-};
-
 const alignBucketTime = (displayTs, _lastCandleTime, intervalSeconds, intervalCode) => {
     if (!Number.isFinite(displayTs)) return null;
 
@@ -405,11 +392,19 @@ const alignBucketTime = (displayTs, _lastCandleTime, intervalSeconds, intervalCo
         return Math.floor(displayTs);
     }
 
-    if (intervalSeconds > 60) {
-        const bucket = intradaySessionBucketStart(displayTs, intervalSeconds);
-        if (Number.isFinite(bucket)) return bucket;
-    }
-
+    // Intraday buckets (<= 1d) MUST use the same absolute-epoch grid the
+    // backend uses for both historical candles (_build_intraday_candles in
+    // internal_sim_provider.py) and live aggregation (_update_interval_candle
+    // in market_worker.py): `(ts // intervalSeconds) * intervalSeconds`.
+    // A previous version of this function re-anchored intervals > 60s to a
+    // 09:15-IST session start instead. That grid coincides with the epoch
+    // grid for 1m/3m/5m/15m purely by coincidence (09:15 IST is 13500s
+    // after UTC midnight, itself a multiple of those periods) but is
+    // genuinely offset for 2m/10m/30m/1h/2h/4h (e.g. 13500 % 600 = 300),
+    // silently merging/splitting backend-provided candles at the wrong
+    // boundaries on those timeframes. Always deferring to the backend's
+    // grid removes the mismatch entirely instead of only masking it on the
+    // intervals that happened to line up.
     return Math.floor(displayTs / intervalSeconds) * intervalSeconds;
 };
 
@@ -1386,6 +1381,7 @@ const LiveChart = memo(function LiveChart({
             quoteTs,
             intervalSeconds: getIntervalSeconds(period),
             intervalCode: periodCfg?.interval,
+            sessionRollover: Boolean(liveQuote?.session_rollover),
         };
 
         if (liveUpdateRafRef.current) return;
@@ -1417,8 +1413,16 @@ const LiveChart = memo(function LiveChart({
 
             if (bucketTime < lastCandle.time) return;
 
+            // A tick explicitly tagged by the backend as the first tick of a
+            // new trading session (see InternalSimProvider._handle_sim_message
+            // / market_publisher.py's session_rollover flag) is EXPECTED to
+            // land far past maxForwardGap — an overnight gap is ~17.75h and a
+            // weekend gap ~65.75h, both far beyond any interval's guard. Only
+            // apply the guard to non-rollover ticks, where a huge forward jump
+            // really does indicate a stale/bad source rather than a genuine
+            // session boundary.
             const maxForwardGap = Math.max(pending.intervalSeconds * 12, 30 * 60);
-            if ((bucketTime - lastCandle.time) > maxForwardGap) return;
+            if (!pending.sessionRollover && (bucketTime - lastCandle.time) > maxForwardGap) return;
 
             // Guard against cross-symbol/stale-source jumps creating extreme spikes.
             const baseClose = toFiniteNumber(lastCandle.close);
@@ -1465,11 +1469,19 @@ const LiveChart = memo(function LiveChart({
                     liveVolumeStateRef.current = null;
                 }
 
+                // Within a session, a new bucket's open is pinned to the
+                // previous candle's close (continuous intraday compression).
+                // Across a session boundary that's wrong — it manufactures a
+                // fake continuous price path across a real overnight/weekend
+                // gap. On a tagged rollover tick, open the new candle fresh
+                // at the new session's own price instead, so the true gap is
+                // visible on the time axis rather than stitched over.
+                const openPrice = pending.sessionRollover ? pending.ltp : lastCandle.close;
                 updated = {
                     time: bucketTime,
-                    open: lastCandle.close,
-                    high: Math.max(lastCandle.close, pending.ltp),
-                    low: Math.min(lastCandle.close, pending.ltp),
+                    open: openPrice,
+                    high: Math.max(openPrice, pending.ltp),
+                    low: Math.min(openPrice, pending.ltp),
                     close: pending.ltp,
                     volume: nextVolume,
                 };

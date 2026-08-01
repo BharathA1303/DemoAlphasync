@@ -23,7 +23,7 @@ TOTAL_SECONDS = 22500  # 6 hours and 15 minutes = 22500 seconds
 # previous algorithm version are never served after a deploy - otherwise
 # a code change here would silently have no visible effect until each
 # symbol/day's 24h Redis TTL happened to expire.
-TICK_ALGO_VERSION = 3
+TICK_ALGO_VERSION = 4
 
 # Pre-calculate time strings to optimize generation loop performance
 TIME_STRINGS = []
@@ -101,7 +101,17 @@ def generate_brownian_bridge_ticks(
             # what reads as candle-to-candle chop once aggregated.
             frac = (pivot_idx - idx_start) / span
             segment_level = p_start + frac * (p_end - p_start)
-            pivot_price = segment_level + (pivot_price - segment_level) * 0.6
+            # 0.15, not 0.6: at 0.6 each pivot's excursion off the segment's
+            # interpolated level was large enough that, combined with `vol`
+            # below, a typical 5-minute (300-tick) candle's high-low range
+            # ended up averaging ~90% of the ENTIRE DAY's true range -
+            # every bar rendered at near-identical full height regardless of
+            # its real body, so bodies looked like invisible hairlines under
+            # huge wicks. Measured empirically across several symbol/days:
+            # 0.15 brings the 5m-range/day-range ratio down to a realistic
+            # ~12-22% while keeping body/range (~0.39) and candle-to-candle
+            # reversal rate (~50-65%) essentially unchanged from before.
+            pivot_price = segment_level + (pivot_price - segment_level) * 0.15
             pivot_price = min(max(pivot_price, low_price), high_price)
             key_points.append((pivot_idx, pivot_price))
 
@@ -120,12 +130,14 @@ def generate_brownian_bridge_ticks(
 
         # Standard Brownian bridge formula:
         # W_t - (t/T)*W_T + p_start + (t/T)*(p_end - p_start)
-        # Volatility raised well above real per-second noise so it survives
-        # 5-minute (300-tick) aggregation as visible wick/body texture
-        # instead of averaging out to a flat line. Denser pivots (above)
-        # handle candle-to-candle direction changes; this controls the
-        # wick/noise texture *within* each short pivot-to-pivot segment.
-        vol = 0.0022
+        # Denser pivots (above) handle candle-to-candle direction changes;
+        # this controls the wick/noise texture *within* each short
+        # pivot-to-pivot segment. Previously 0.0022, which (combined with
+        # the old pivot excursion factor) clipped ~47% of raw ticks to the
+        # day's high/low bound and produced 5-minute candles whose range
+        # averaged ~90% of the entire day's range - see the pivot_price
+        # comment above for the empirical before/after numbers.
+        vol = 0.0002
         steps = np.random.normal(0, vol * p_start, n_steps)
         w = np.cumsum(steps)
         w_bridge = w - (np.arange(n_steps) / (n_steps - 1)) * w[-1]

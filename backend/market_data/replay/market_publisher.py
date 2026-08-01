@@ -100,12 +100,22 @@ class MarketPublisher:
         canonical = tick["symbol"]
         exchange = tick.get("exchange", "NSE")
         lp = tick["price"]
+        session_rollover = bool(tick.get("session_rollover"))
 
         # Check if price or volume changed
         prev_cache = self._price_cache.get(canonical, {})
         _changed = prev_cache.get("price") != lp or prev_cache.get("volume") != tick.get("volume", 0)
 
         prev_close = await self._get_prev_close(canonical, exchange, lp)
+
+        # On a session rollover, today's running open/high/low must reset to
+        # the new session's own price rather than carry over the previous
+        # session's — otherwise a symbol's displayed day-range would keep
+        # reflecting yesterday's (or Friday's) high/low after the date has
+        # already moved on.
+        running_open = lp if session_rollover else prev_cache.get("open", lp)
+        running_high = lp if session_rollover else max(lp, prev_cache.get("high", lp))
+        running_low = lp if session_rollover else min(lp, prev_cache.get("low", lp))
 
         # Build canonical quote dictionary
         quote = {
@@ -115,9 +125,9 @@ class MarketPublisher:
             "price": lp,
             "change": round(lp - prev_close, 2),
             "change_percent": round(((lp - prev_close) / prev_close * 100.0) if prev_close else 0.0, 2),
-            "open": prev_cache.get("open", lp),
-            "high": max(lp, prev_cache.get("high", lp)),
-            "low": min(lp, prev_cache.get("low", lp)),
+            "open": running_open,
+            "high": running_high,
+            "low": running_low,
             "close": prev_close,
             "prev_close": prev_close,
             "volume": tick.get("volume", 0),
@@ -131,6 +141,11 @@ class MarketPublisher:
             "timestamp": tick["timestamp"],  # Matches the simulation clock
             "last_trade_time": tick["timestamp"],
             "source": "live_ws",  # Disguise as live_ws for downstream pipelines
+            # Tags the first quote of a new trading session so the frontend
+            # chart can render a real gap instead of stitching sessions
+            # together — see InternalSimProvider._handle_sim_message and
+            # LiveChart.jsx's live-tick handler.
+            "session_rollover": session_rollover,
         }
 
         # Update local cache
