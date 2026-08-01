@@ -67,6 +67,13 @@ class DataFeedConfig(Base):
     broker_last_import_rows = Column(Integer, nullable=True)
     broker_last_import_symbols_found = Column(Integer, nullable=True)
     broker_last_import_symbols_total = Column(Integer, nullable=True)
+    # Live progress while broker_last_import_status == "importing", so
+    # polling UI can show "42/103 symbols fetched" instead of an
+    # indefinite spinner with no way to tell a slow-but-healthy import
+    # (large symbol universe, ~100 sequential-looking network calls) apart
+    # from one that's actually hung.
+    broker_import_progress_done = Column(Integer, nullable=True)
+    broker_import_progress_total = Column(Integer, nullable=True)
 
     # ── Admin Zebu OAuth & Time-Delayed Feed Configuration ───────────────
     # Separate from `base_url` above (which belongs to the QuickAuth

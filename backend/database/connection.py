@@ -319,6 +319,8 @@ async def init_db():
                 await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_rows INTEGER;"))
                 await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_found INTEGER;"))
                 await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_total INTEGER;"))
+                await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_import_progress_done INTEGER;"))
+                await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_import_progress_total INTEGER;"))
             await conn.execute(text("""
                 UPDATE data_feed_configs
                 SET base_url = 'https://go.mynt.in/NorenWClientTP'
@@ -636,6 +638,8 @@ async def init_db():
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_rows INTEGER;
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_found INTEGER;
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_total INTEGER;
+                        ALTER TABLE data_feed_configs ADD COLUMN broker_import_progress_done INTEGER;
+                        ALTER TABLE data_feed_configs ADD COLUMN broker_import_progress_total INTEGER;
                     END IF;
 
                     -- Zebu OAuth & Time-Delayed Feed columns

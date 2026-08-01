@@ -794,6 +794,8 @@ async def get_zebu_credentials(
         "last_import_rows": config.broker_last_import_rows,
         "last_import_symbols_found": config.broker_last_import_symbols_found,
         "last_import_symbols_total": config.broker_last_import_symbols_total,
+        "import_progress_done": config.broker_import_progress_done,
+        "import_progress_total": config.broker_import_progress_total,
     }
 
 
@@ -890,6 +892,21 @@ async def import_zebu_history(
         from database.connection import async_session
         from data_layer.ingestion.zebu_import import run_zebu_backfill
 
+        async def _report_progress(done: int, total: int):
+            # Uses its own short-lived session — run_zebu_backfill holds its
+            # own session open for the whole import for DB writes, and the
+            # outer bg_db session below is only touched before/after the
+            # import runs, so a shared session here would interleave badly
+            # with either of those.
+            async with async_session() as progress_db:
+                stmt = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+                res = await progress_db.execute(stmt)
+                conf = res.scalar_one_or_none()
+                if conf:
+                    conf.broker_import_progress_done = done
+                    conf.broker_import_progress_total = total
+                    await progress_db.commit()
+
         async with async_session() as bg_db:
             stmt2 = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
             res2 = await bg_db.execute(stmt2)
@@ -898,7 +915,7 @@ async def import_zebu_history(
                 return
             try:
                 logger.info(f"Admin {admin.email}: Zebu historical import starting (days={req.days})...")
-                result = await run_zebu_backfill(client, req.days)
+                result = await run_zebu_backfill(client, req.days, progress_cb=_report_progress)
                 rows = result["rows_written"]
                 conf.broker_last_import_rows = rows
                 conf.broker_last_import_symbols_found = result["symbols_found"]
@@ -951,10 +968,17 @@ async def import_zebu_history(
             finally:
                 from datetime import datetime, timezone
                 conf.broker_last_import_at = datetime.now(timezone.utc)
+                # Import has reached a terminal state — clear the in-flight
+                # progress counters so a stale "42/103" doesn't linger next
+                # to a finished result.
+                conf.broker_import_progress_done = None
+                conf.broker_import_progress_total = None
                 await bg_db.commit()
 
     config.broker_last_import_status = "importing"
     config.broker_last_import_error = None
+    config.broker_import_progress_done = 0
+    config.broker_import_progress_total = None
     await db.commit()
 
     asyncio.create_task(_run_import())

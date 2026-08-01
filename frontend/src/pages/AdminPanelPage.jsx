@@ -957,7 +957,16 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                                             <span className="font-semibold" style={{ color: badgeColor }}>Configured for Client: {zebuStatus.client_code}</span>
                                             <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0" style={{ background: `${badgeColor}26`, color: badgeColor, border: `1px solid ${badgeColor}4d` }}>{badgeLabel}</span>
                                         </div>
-                                        {zebuStatus.last_import_at && (
+                                        {status === 'importing' && zebuStatus.import_progress_total ? (
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                Fetching symbol {zebuStatus.import_progress_done ?? 0} of {zebuStatus.import_progress_total} from Zebu…
+                                            </span>
+                                        ) : status === 'importing' ? (
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                Logging in and resolving symbol tokens… this can take a few minutes for the full symbol universe.
+                                            </span>
+                                        ) : null}
+                                        {zebuStatus.last_import_at && status !== 'importing' && (
                                             <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                                 Last import: {new Date(zebuStatus.last_import_at).toLocaleString()}
                                                 {status === 'success' && (
@@ -1229,9 +1238,12 @@ export default function AdminPanelPage() {
             // endpoint until broker_last_import_status leaves "importing" so
             // the admin sees a real pass/fail result (with row/symbol counts)
             // instead of a fire-and-forget toast that says nothing about
-            // whether data actually landed.
+            // whether data actually landed. ~100 symbols fetched with bounded
+            // concurrency server-side can still take several minutes, so this
+            // polls for up to 30 minutes rather than giving up early and
+            // silently orphaning a still-running import.
             const POLL_INTERVAL_MS = 3000;
-            const MAX_POLLS = 40; // ~2 minutes
+            const MAX_POLLS = 600; // ~30 minutes
             for (let i = 0; i < MAX_POLLS; i++) {
                 await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
                 const { data: status } = await adminApi.getZebuCredentials();

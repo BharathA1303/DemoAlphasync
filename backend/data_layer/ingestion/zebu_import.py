@@ -94,10 +94,26 @@ def _collapse_to_daily_bars(candles: list) -> Dict[date, dict]:
     return bars
 
 
-async def run_zebu_backfill(client, days: int) -> Dict[str, int]:
+_FETCH_CONCURRENCY = 12  # bounded parallel TPSeries calls; ~100 symbols
+# sequentially at up to 15s/call could take 20+ minutes and look "stuck" —
+# fetching concurrently keeps a full import to roughly total_time / this
+# factor instead.
+
+
+async def run_zebu_backfill(client, days: int, progress_cb=None) -> Dict[str, int]:
     """Given an already-logged-in ZebuClient, resolve tokens for the seed
     symbol universe, pull `days` trailing trading days of real EOD history
     per symbol, and upsert into price_data.
+
+    TPSeries fetches (network I/O, one blocking `requests` call per symbol
+    via `asyncio.to_thread`) run with bounded concurrency so ~100 symbols
+    don't serialize into a many-minute wait. DB writes stay sequential on a
+    single AsyncSession, since SQLAlchemy sessions aren't safe for
+    concurrent use — that part was never the bottleneck anyway.
+
+    `progress_cb`, if given, is awaited as `progress_cb(done, total)` after
+    each symbol's fetch completes, so a caller can persist live progress
+    (e.g. for polling UI) instead of only a terminal state.
 
     Returns a dict with `rows_written`, `symbols_found` (had a resolvable
     Zebu instrument token), and `symbols_total` (the full seed universe) —
@@ -115,16 +131,34 @@ async def run_zebu_backfill(client, days: int) -> Dict[str, int]:
     end_date = date.today()
     start_date = end_date - timedelta(days=int(days * 1.6) + 10)  # pad for weekends/holidays
 
-    total_written = 0
-    async with async_session() as db:
-        for symbol, token in token_map.items():
+    semaphore = asyncio.Semaphore(_FETCH_CONCURRENCY)
+
+    async def _fetch(symbol: str, token: str):
+        async with semaphore:
             try:
-                candles = await asyncio.to_thread(
+                return symbol, await asyncio.to_thread(
                     client.get_time_price_series,
                     exchange="NSE", token=token, start=start_date, end=end_date,
                 )
             except Exception as e:
                 logger.warning(f"Zebu TPSeries failed for {symbol} (token={token}): {e}")
+                return symbol, None
+
+    tasks = [asyncio.create_task(_fetch(symbol, token)) for symbol, token in token_map.items()]
+
+    total_written = 0
+    done = 0
+    async with async_session() as db:
+        for coro in asyncio.as_completed(tasks):
+            symbol, candles = await coro
+            done += 1
+            if progress_cb is not None:
+                try:
+                    await progress_cb(done, len(tasks))
+                except Exception:
+                    logger.warning("Zebu import progress_cb raised — ignoring.", exc_info=True)
+
+            if not candles:
                 continue
 
             daily_bars = _collapse_to_daily_bars(candles)
