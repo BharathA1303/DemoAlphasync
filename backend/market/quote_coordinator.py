@@ -231,33 +231,50 @@ class QuoteCoordinator:
         return set(self._authority.keys())
 
     async def recover_symbol(self, symbol: str, reason: str) -> None:
-        """Stale recovery — refresh provider subscription + optional REST."""
-        sym = str(symbol or "").strip().upper()
-        if not sym:
+        """Stale recovery for a single symbol — refresh provider
+        subscription + optional REST. Prefer `recover_symbols` for
+        multi-symbol recovery (e.g. a stale-detector scan cycle); calling
+        this once per symbol in a loop means one provider-subscribe
+        round-trip (DB SELECT + session-state read/write) per symbol
+        instead of one for the whole batch."""
+        await self.recover_symbols([symbol], reason)
+
+    async def recover_symbols(self, symbols: list[str], reason: str) -> None:
+        """Batched stale recovery — refreshes the provider subscription
+        ONCE for every stale symbol found in a scan cycle (instead of once
+        per symbol), then REST-refreshes each symbol concurrently. This is
+        the path `StaleSymbolDetector` uses; keeping the resubscribe as a
+        single batched call is what avoids the per-symbol resubscribe
+        storm that previously starved real tick delivery under load."""
+        syms = [str(s or "").strip().upper() for s in symbols if str(s or "").strip()]
+        if not syms:
             return
 
         for handler in self._recovery_handlers:
             try:
-                result = handler(sym, reason)
+                result = handler(syms, reason)
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as e:
-                logger.debug(f"Recovery handler error for {sym}: {e}")
+                logger.debug(f"Recovery handler error for {len(syms)} symbols: {e}")
 
-        try:
-            from services.market_data import get_system_quote_safe
+        async def _refresh_one(sym: str) -> None:
+            try:
+                from services.market_data import get_system_quote_safe
 
-            refreshed = await get_system_quote_safe(sym)
-            if refreshed:
-                await self.ingest_equity_quote(
-                    sym,
-                    refreshed,
-                    source="poll",
-                    changed=True,
-                    emit_event=True,
-                )
-        except Exception as e:
-            logger.debug(f"Coordinator REST recovery failed for {sym}: {e}")
+                refreshed = await get_system_quote_safe(sym)
+                if refreshed:
+                    await self.ingest_equity_quote(
+                        sym,
+                        refreshed,
+                        source="poll",
+                        changed=True,
+                        emit_event=True,
+                    )
+            except Exception as e:
+                logger.debug(f"Coordinator REST recovery failed for {sym}: {e}")
+
+        await asyncio.gather(*(_refresh_one(sym) for sym in syms), return_exceptions=True)
 
 
 quote_coordinator = QuoteCoordinator()

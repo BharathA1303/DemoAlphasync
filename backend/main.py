@@ -218,12 +218,16 @@ async def lifespan(app: FastAPI):
         from market.quote_snapshot_engine import quote_snapshot_engine
         from engines.market_session import market_session, MarketState
 
-        async def _provider_resubscribe(sym: str, _reason: str) -> None:
-            await manager._provider_subscribe([sym])
+        async def _provider_resubscribe(syms: list, _reason: str) -> None:
+            # Batched: one provider-subscribe round-trip (DB SELECT +
+            # session-state read/write) for every stale symbol in a scan
+            # cycle, not one per symbol - see stale_symbol_detector.py and
+            # quote_coordinator.recover_symbols for why this matters.
+            await manager._provider_subscribe(syms)
 
         quote_coordinator.register_recovery_handler(_provider_resubscribe)
         stale_symbol_detector.configure(
-            recovery_callback=quote_coordinator.recover_symbol,
+            recovery_callback=quote_coordinator.recover_symbols,
             get_last_tick_at=quote_coordinator.get_last_tick_at,
             is_market_open=lambda: market_session.get_current_state() == MarketState.OPEN,
         )
