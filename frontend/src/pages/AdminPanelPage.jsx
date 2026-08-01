@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Shield, Users, Clock, UserCheck, UserX, RefreshCw, LogOut,
     Search, ChevronLeft, ChevronRight, AlertTriangle, Loader2,
-    CheckCircle2, XCircle, Activity, Eye, X, Zap, Database,
+    CheckCircle2, XCircle, Activity, Eye, X, Zap,
     Crown, UserPlus, Settings2, Trash2, ShieldCheck, EyeOff,
     FileText, History, Link2, Copy, Plus, Pencil, Download, Bookmark, Star
 } from 'lucide-react';
@@ -865,27 +865,11 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                         </div>
                         <div>
                             <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>Internal Simulation Engine</h2>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Manage tick simulation, live status & Zebu broker history</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Manage tick simulation & live status</p>
                         </div>
                     </div>
                     <button className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/5"
                         style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={16} /></button>
-                </div>
-
-                {/* Segmented Control Tabs */}
-                <div className="flex px-4 pt-3 gap-2" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(0,0,0,0.2)' }}>
-                    <button
-                        type="button"
-                        className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${activeTab === 'sim' ? 'border-[#10b981] text-[#10b981]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-                        onClick={() => setActiveTab('sim')}>
-                        <Zap size={13} /> Simulation & Live Ticks
-                    </button>
-                    <button
-                        type="button"
-                        className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 ${activeTab === 'zebu' ? 'border-[#10b981] text-[#10b981]' : 'border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-                        onClick={() => setActiveTab('zebu')}>
-                        <Database size={13} /> Real Historical Data (Zebu) {zebuStatus?.configured && <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]"></span>}
-                    </button>
                 </div>
 
                 <div className="p-4">
