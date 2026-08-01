@@ -108,11 +108,32 @@ class OrderExecutionWorker:
     def __init__(self):
         self._running = False
         self._stats = {"sweeps": 0, "fills": 0, "expired": 0, "errors": 0}
+        # Symbols with at least one OPEN order — refreshed every REFRESH_INTERVAL
+        # seconds. Lets on_price_event() skip the per-tick DB roundtrip for the
+        # (overwhelming majority of) symbols nobody has an order on, instead of
+        # querying the DB on every single simulated tick.
+        self._open_symbols: set[str] = set()
+        self._open_symbols_task: asyncio.Task | None = None
+
+    REFRESH_INTERVAL = 3  # seconds between open-symbols cache refreshes
+
+    async def _refresh_open_symbols_loop(self) -> None:
+        while self._running:
+            try:
+                async with async_session_factory() as db:
+                    result = await db.execute(
+                        select(Order.symbol).where(Order.status == "OPEN").distinct()
+                    )
+                    self._open_symbols = {row[0] for row in result.all()}
+            except Exception as e:
+                logger.debug(f"Open-symbols cache refresh failed: {e}")
+            await asyncio.sleep(self.REFRESH_INTERVAL)
 
     async def run(self) -> None:
         """Main loop — sweeps periodically for order expiry and clean up."""
         self._running = True
         logger.info("Order Execution Worker started")
+        self._open_symbols_task = asyncio.create_task(self._refresh_open_symbols_loop())
 
         while self._running:
             try:
@@ -137,6 +158,15 @@ class OrderExecutionWorker:
         symbol = event.data.get("symbol")
         quote = event.data.get("quote")
         if not symbol or not quote or "price" not in quote:
+            return
+
+        # Skip the DB roundtrip entirely for symbols nobody has an open order
+        # on — the overwhelming majority of ticks in a simulated feed with
+        # many symbols streaming. The periodic sweep (run() loop) and the
+        # REFRESH_INTERVAL-second cache refresh mean a fill lands at most a
+        # few seconds late in the rare case the cache is momentarily stale,
+        # which is fine for a simulated demo environment.
+        if symbol not in self._open_symbols:
             return
 
         current_price = _to_decimal(quote["price"])
@@ -505,6 +535,9 @@ class OrderExecutionWorker:
 
     async def stop(self) -> None:
         self._running = False
+        if self._open_symbols_task:
+            self._open_symbols_task.cancel()
+            self._open_symbols_task = None
 
     def get_stats(self) -> dict:
         return self._stats.copy()

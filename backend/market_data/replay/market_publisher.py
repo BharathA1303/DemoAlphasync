@@ -46,6 +46,21 @@ class MarketPublisher:
             from data_layer.db.models import PriceData
 
             base_symbol = canonical.split(".")[0].upper()
+
+            # PriceData.symbol is NOT unique per instrument: the equity
+            # ("RELIANCE", segment=EQ), its futures contract, and every
+            # option strike/expiry combo (segment=FUT/OPT) can all share the
+            # same base symbol string. Without a segment filter the query
+            # below could match an option row (price ~tens of rupees) as the
+            # "previous close" for a ~3000-4000 rupee equity, producing a
+            # nonsensical >50,000% change (the RELIANCE +59764% incident).
+            # Always scope to the EQ segment here since this cache is only
+            # ever consulted for equity/index/commodity canonicals (NFO/BFO
+            # derivative ticks carry their own contract-specific symbol
+            # strings like "RELIANCEFUT", not the bare base symbol, so they
+            # naturally fall through to the hash-based fallback instead).
+            segment = "EQ"
+
             async with async_session() as db:
                 # The most recent PriceData row for this symbol IS the
                 # session's own replay day (its EOD close is what the
@@ -58,6 +73,7 @@ class MarketPublisher:
                     .where(
                         PriceData.exchange == exchange.upper(),
                         PriceData.symbol == base_symbol,
+                        PriceData.segment == segment,
                         PriceData.superseded_at.is_(None),
                     )
                     .order_by(PriceData.market_timestamp.desc())
@@ -78,6 +94,7 @@ class MarketPublisher:
                         .where(
                             PriceData.exchange == exchange.upper(),
                             PriceData.symbol == base_symbol,
+                            PriceData.segment == segment,
                             PriceData.superseded_at.is_(None),
                         )
                         .order_by(PriceData.market_timestamp.desc())
@@ -89,6 +106,20 @@ class MarketPublisher:
                         prev_close = float(only_row)
         except Exception as e:
             logger.debug(f"MarketPublisher: prev_close lookup failed for {canonical}: {e}")
+
+        # Final sanity guard: a "previous close" more than 3x away from the
+        # live tick price is not a plausible overnight move for this
+        # simulator (real EOD continuity drifts a fraction of a percent per
+        # day - see mock_price_continuity.py) and is a strong signal the
+        # lookup above resolved to an unrelated instrument's row (wrong
+        # segment/strike, stale seed, etc). Fall back to the live price
+        # itself (0.00% change) rather than publish a nonsensical percent.
+        if prev_close <= 0 or prev_close > lp * 3 or prev_close < lp / 3:
+            logger.warning(
+                f"MarketPublisher: implausible prev_close={prev_close} for {canonical} "
+                f"(live={lp}); falling back to live price as reference."
+            )
+            prev_close = lp
 
         self._prev_close_cache[canonical] = prev_close
         return prev_close

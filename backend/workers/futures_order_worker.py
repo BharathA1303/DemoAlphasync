@@ -49,10 +49,31 @@ class FuturesOrderExecutionWorker:
 
     EVAL_INTERVAL = 15  # seconds between fallback sweeps (reduced from 5 since ticks handle most fills)
 
+    REFRESH_INTERVAL = 3  # seconds between open-contracts cache refreshes
+
     def __init__(self):
         self._running = False
         self._stats = {"sweeps": 0, "tick_evals": 0, "fills": 0, "expired": 0, "errors": 0}
-        self._open_orders_cache: dict[str, list] = {}  # contract_symbol -> [order_ids]
+        # Contract symbols with at least one OPEN order — refreshed every
+        # REFRESH_INTERVAL seconds. Lets on_futures_tick() skip the per-tick
+        # DB roundtrip for the vast majority of contracts nobody has an
+        # order on, instead of querying the DB on every single tick.
+        self._open_contracts: set[str] = set()
+        self._open_contracts_task: asyncio.Task | None = None
+
+    async def _refresh_open_contracts_loop(self) -> None:
+        while self._running:
+            try:
+                async with async_session_factory() as db:
+                    result = await db.execute(
+                        select(FuturesOrder.contract_symbol)
+                        .where(FuturesOrder.status == "OPEN")
+                        .distinct()
+                    )
+                    self._open_contracts = {row[0] for row in result.all()}
+            except Exception as e:
+                logger.debug(f"Open-contracts cache refresh failed: {e}")
+            await asyncio.sleep(self.REFRESH_INTERVAL)
 
     async def on_futures_tick(self, event) -> None:
         """EventBus handler: evaluate open orders on every FUTURES_QUOTE tick."""
@@ -60,6 +81,9 @@ class FuturesOrderExecutionWorker:
             contract_symbol = event.data.get("contract_symbol")
             quote = event.data.get("quote")
             if not contract_symbol or not quote:
+                return
+
+            if contract_symbol not in self._open_contracts:
                 return
 
             ltp = quote.get("ltp")
@@ -96,6 +120,7 @@ class FuturesOrderExecutionWorker:
         """Main loop — started via asyncio.create_task in lifespan."""
         self._running = True
         logger.info("Futures Order Execution Worker started (tick-driven + periodic sweep)")
+        self._open_contracts_task = asyncio.create_task(self._refresh_open_contracts_loop())
 
         while self._running:
             try:
@@ -115,6 +140,9 @@ class FuturesOrderExecutionWorker:
     async def stop(self) -> None:
         """Stop the worker gracefully."""
         self._running = False
+        if self._open_contracts_task:
+            self._open_contracts_task.cancel()
+            self._open_contracts_task = None
 
     async def _sweep(self) -> None:
         """Scan all open orders and evaluate them."""

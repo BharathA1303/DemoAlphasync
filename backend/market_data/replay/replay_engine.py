@@ -299,9 +299,29 @@ class UltraTickReplayEngine:
             base_sleep = random.uniform(0.03, 0.12)
             await asyncio.sleep(base_sleep / max(vol_mult, 0.1))
 
-            # Market-wide drift random walk (mean-reverting)
-            self._market_drift += random.normalvariate(drift_bias, 0.0001)
-            self._market_drift = max(-0.015, min(0.015, self._market_drift))
+            # Market-wide drift random walk (softly mean-reverting).
+            #
+            # This used to be: a fixed-std normalvariate step (0.0001, tiny
+            # relative to the clamp range) plus a hard symmetric clamp at
+            # ±0.015. A hard clamp makes the walk pile up against its
+            # boundary and bounce back with almost the same shape every
+            # time, and because this single shared value was then applied
+            # to EVERY symbol (scaled by a fixed correlation multiplier),
+            # the entire market rose and fell in the same smooth, repeating
+            # cycle - an obviously synthetic sine-wave look on every chart.
+            #
+            # Fix: (a) proportional (soft) mean reversion instead of a hard
+            # clamp, so the walk decelerates gradually near its extremes
+            # rather than bouncing off a wall on a fixed schedule; (b) a
+            # randomized reversion strength and noise scale each tick so the
+            # cycle length/amplitude is never the same twice.
+            reversion_strength = random.uniform(0.02, 0.08)
+            noise_std = random.uniform(0.00006, 0.00022)
+            self._market_drift += (
+                random.normalvariate(drift_bias, noise_std)
+                - reversion_strength * self._market_drift
+            )
+            self._market_drift = max(-0.02, min(0.02, self._market_drift))
 
             # Resolve active symbols: use subscriptions if any, else full catalogue
             active = list(self._subscribed_symbols) if self._subscribed_symbols else list(SYMBOL_CATALOGUE.keys())
@@ -365,6 +385,11 @@ class UltraTickReplayEngine:
             "exchange": exchange,
             "kind": kind,
             "lot": lot,
+            # Idiosyncratic per-symbol drift: an independent slow random
+            # walk (separate from the shared market-wide drift) so each
+            # symbol has its own trend/noise character instead of every
+            # chart just being a scaled copy of the same shared signal.
+            "idio_drift": 0.0,
         }
 
     def _generate_dynamic_tick(self, symbol: str, sim_now: datetime, vol_mult: float = 1.0) -> dict:
@@ -380,9 +405,31 @@ class UltraTickReplayEngine:
         # Effective volatility with regime multiplier
         eff_vol = base_vol * vol_mult
 
-        # Market correlation: indices highly correlated, stocks moderately
-        corr = 0.85 if kind == "index" else 0.45 if kind in ("future", "option") else 0.55
-        drift = self._market_drift * corr + random.normalvariate(0.0, eff_vol)
+        # Market correlation: indices highly correlated, stocks moderately.
+        # Correlations were previously high enough (0.85/0.45/0.55) that the
+        # single shared `_market_drift` walk dominated every symbol's price
+        # path, so all charts moved in the same synchronized wave. Lowered
+        # here so idiosyncratic per-symbol noise is the larger contributor,
+        # and each symbol also gets its own independent slow drift
+        # (`idio_drift`) so it can trend differently from the broader market
+        # instead of being a scaled mirror of it.
+        corr = 0.55 if kind == "index" else 0.25 if kind in ("future", "option") else 0.30
+
+        # Idiosyncratic drift: independent soft-mean-reverting walk, unique
+        # per symbol (separate RNG draw per tick), decoupled from the shared
+        # market drift entirely.
+        idio_reversion = random.uniform(0.03, 0.10)
+        idio_noise_std = eff_vol * random.uniform(0.4, 0.9)
+        state["idio_drift"] += (
+            random.normalvariate(0.0, idio_noise_std) - idio_reversion * state["idio_drift"]
+        )
+        state["idio_drift"] = max(-0.01, min(0.01, state["idio_drift"]))
+
+        drift = (
+            self._market_drift * corr
+            + state["idio_drift"]
+            + random.normalvariate(0.0, eff_vol)
+        )
 
         old_price = state["price"]
         new_price = old_price * (1.0 + drift)
