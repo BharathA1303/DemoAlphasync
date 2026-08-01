@@ -23,7 +23,7 @@ TOTAL_SECONDS = 22500  # 6 hours and 15 minutes = 22500 seconds
 # previous algorithm version are never served after a deploy - otherwise
 # a code change here would silently have no visible effect until each
 # symbol/day's 24h Redis TTL happened to expire.
-TICK_ALGO_VERSION = 2
+TICK_ALGO_VERSION = 3
 
 # Pre-calculate time strings to optimize generation loop performance
 TIME_STRINGS = []
@@ -77,28 +77,31 @@ def generate_brownian_bridge_ticks(
 
     # A pure 4-point bridge collapses each ~75-candle segment into one long
     # smooth arc once aggregated into 5-minute bars, which reads as visibly
-    # "fake" (real intraday charts chop direction every few candles).
-    # Interleave several random intermediate pivots between each pair of
-    # fixed points, clipped within [low, high], so direction reverses many
-    # more times across the session while still guaranteeing the path
-    # starts/ends/touches its four required prices exactly.
+    # "fake" (real intraday charts chop direction every 1-3 candles, not
+    # every 30 minutes). One pivot per ~30 min (the previous density) still
+    # produced long straight diagonal runs across many aggregated candles.
+    # Use a much denser pivot spacing (~2-3 min) with wider excursions off
+    # the interpolated segment level, so direction reverses on the scale of
+    # single 5-minute candles instead of spanning many of them.
     key_points = list(fixed_points)
     for i in range(len(fixed_points) - 1):
         idx_start, p_start = fixed_points[i]
         idx_end, p_end = fixed_points[i + 1]
         span = idx_end - idx_start
-        if span < 600:
+        if span < 120:
             continue
-        n_pivots = max(1, span // 1800)  # roughly one pivot per ~30 min
+        n_pivots = max(2, span // 150)  # roughly one pivot every ~2.5 min
         for _ in range(n_pivots):
-            pivot_idx = rng.randint(idx_start + 60, idx_end - 60)
+            pivot_idx = rng.randint(idx_start + 30, idx_end - 30)
             pivot_price = rng.uniform(low_price, high_price)
-            # Bias the pivot toward the segment's own interpolated level so
-            # it adds zig-zag texture without frequently re-touching/
-            # exceeding the day's true low/high.
+            # Bias the pivot toward the segment's own interpolated level,
+            # but keep a much larger share of the random excursion than
+            # before (0.35 -> 0.6) so each pivot visibly deviates from the
+            # smooth line rather than barely nudging it - that deviation is
+            # what reads as candle-to-candle chop once aggregated.
             frac = (pivot_idx - idx_start) / span
             segment_level = p_start + frac * (p_end - p_start)
-            pivot_price = segment_level + (pivot_price - segment_level) * 0.35
+            pivot_price = segment_level + (pivot_price - segment_level) * 0.6
             pivot_price = min(max(pivot_price, low_price), high_price)
             key_points.append((pivot_idx, pivot_price))
 
@@ -119,8 +122,10 @@ def generate_brownian_bridge_ticks(
         # W_t - (t/T)*W_T + p_start + (t/T)*(p_end - p_start)
         # Volatility raised well above real per-second noise so it survives
         # 5-minute (300-tick) aggregation as visible wick/body texture
-        # instead of averaging out to a flat line.
-        vol = 0.0009
+        # instead of averaging out to a flat line. Denser pivots (above)
+        # handle candle-to-candle direction changes; this controls the
+        # wick/noise texture *within* each short pivot-to-pivot segment.
+        vol = 0.0022
         steps = np.random.normal(0, vol * p_start, n_steps)
         w = np.cumsum(steps)
         w_bridge = w - (np.arange(n_steps) / (n_steps - 1)) * w[-1]
