@@ -259,7 +259,18 @@ async def update_data_feed_settings(
     db: AsyncSession = Depends(get_db),
 ):
     """Root/manage-only enable/disable of the internal simulation engine.
-    Triggers a hot reload of the master data feed session."""
+    Triggers a hot reload of the master data feed session.
+
+    Enabling can involve a first-time/stale 45-day historical backfill
+    (real NSE/BSE bhavcopy downloads with retries, falling back to mock
+    per-exchange/day) which can legitimately take several minutes — far
+    longer than any reasonable HTTP client timeout. This endpoint persists
+    the enabled flag and returns immediately with status "connecting"; the
+    actual reload/seed runs in the background and the admin panel polls
+    GET /settings/data-feed for the real outcome, the same pattern already
+    used for the Zebu historical import.
+    """
+    import asyncio
     from models.data_feed_config import DataFeedConfig
     from services.data_feed_session import data_feed_session_manager
     from sqlalchemy import select
@@ -273,31 +284,52 @@ async def update_data_feed_settings(
         db.add(config)
 
     config.is_enabled = req.is_enabled
+    config.connection_status = "connecting" if req.is_enabled else "disconnected"
+    config.error_message = None
 
     await db.commit()
     await db.refresh(config)
 
-    # Dynamic reload
-    success, error_msg = await data_feed_session_manager.reload_data_feed(db)
-
     ip = request.client.host if request.client else None
     logger.info(
-        "Admin %s updated internal simulation engine config (enabled=%s, status=%s, error=%s, ip=%s)",
-        admin.email,
-        config.is_enabled,
-        config.connection_status,
-        error_msg,
-        ip,
+        "Admin %s requested internal simulation engine enabled=%s (ip=%s); reload running in background",
+        admin.email, req.is_enabled, ip,
     )
 
+    async def _run_reload():
+        from database.connection import async_session
+
+        async with async_session() as bg_db:
+            try:
+                success, error_msg = await data_feed_session_manager.reload_data_feed(bg_db)
+                logger.info(
+                    "Admin %s: internal simulation engine reload finished (success=%s, error=%s)",
+                    admin.email, success, error_msg,
+                )
+            except Exception as e:
+                logger.error(f"Internal simulation engine reload failed: {e}", exc_info=True)
+                stmt2 = select(DataFeedConfig).order_by(DataFeedConfig.updated_at.desc()).limit(1)
+                res2 = await bg_db.execute(stmt2)
+                conf = res2.scalar_one_or_none()
+                if conf:
+                    conf.connection_status = "error"
+                    conf.error_message = str(e)[:1000]
+                    await bg_db.commit()
+
+    asyncio.create_task(_run_reload())
+
     return {
-        "success": success,
-        "error": error_msg,
+        "success": True,
+        "error": None,
         "config": {
             "is_enabled": config.is_enabled,
             "connection_status": config.connection_status,
             "error_message": config.error_message,
-        }
+        },
+        "message": (
+            "Simulation engine enable requested — seeding/reload running in the "
+            "background. Refresh status to see the final connected/error result."
+        ) if req.is_enabled else "Simulation engine disabled.",
     }
 
 

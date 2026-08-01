@@ -1471,13 +1471,6 @@ export default function AdminPanelPage() {
         setDataFeedSaving(true);
         try {
             const { data } = await adminApi.updateDataFeedConfig(dataFeedDraft);
-            if (data?.success) {
-                toast.success('Simulation engine configuration saved!');
-            } else if (data?.error) {
-                toast.error(`Saved with error: ${data.error}`);
-            } else {
-                toast.success('Simulation engine configuration saved');
-            }
             if (data?.config) {
                 setDataFeedConfig(data.config);
                 setDataFeedDraft({
@@ -1485,6 +1478,34 @@ export default function AdminPanelPage() {
                 });
             }
             setShowDataFeedModal(false);
+
+            // Enabling can trigger a first-time/stale 45-day historical
+            // backfill in the background (real bhavcopy downloads with
+            // retries) that can take minutes — the request above returns
+            // immediately with status "connecting". Poll for the real
+            // connected/error outcome instead of assuming success.
+            if (data?.config?.connection_status === 'connecting') {
+                toast.success('Simulation engine enable requested — seeding data in the background…');
+                const POLL_INTERVAL_MS = 3000;
+                const MAX_POLLS = 200; // ~10 minutes
+                for (let i = 0; i < MAX_POLLS; i++) {
+                    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+                    const { data: status } = await adminApi.getDataFeedConfig();
+                    if (status) setDataFeedConfig(prev => ({ ...prev, ...status }));
+                    if (status?.connection_status && status.connection_status !== 'connecting') {
+                        if (status.connection_status === 'connected') {
+                            toast.success('Simulation engine connected and ticking.');
+                        } else {
+                            toast.error(status.error_message || `Simulation engine failed to start (${status.connection_status}).`);
+                        }
+                        break;
+                    }
+                }
+            } else if (data?.success) {
+                toast.success('Simulation engine configuration saved!');
+            } else if (data?.error) {
+                toast.error(`Saved with error: ${data.error}`);
+            }
             await refreshDashboard();
         } catch (err) {
             toast.error(parseApiError(err, 'Failed to save data feed configuration'));
