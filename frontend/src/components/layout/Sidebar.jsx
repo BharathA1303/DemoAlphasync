@@ -117,7 +117,7 @@ const NAV_SECTIONS = [
   {
     label: "Academy",
     items: [
-      { to: "/academy", icon: GraduationCap, label: "Academy Dashboard" },
+      { to: "/academy", icon: GraduationCap, label: "Academy Dashboard", end: true },
       { to: "/academy/analytics", icon: Brain, label: "Learning Analytics" },
       { to: "/academy/mentor", icon: MessagesSquare, label: "Academy AI Mentor" },
     ],
@@ -125,10 +125,11 @@ const NAV_SECTIONS = [
 ];
 
 /* ─── Reusable nav item ──────────────────────────────────── */
-function SidebarItem({ to, icon: Icon, label, collapsed, onNavigate }) {
+function SidebarItem({ to, icon: Icon, label, collapsed, onNavigate, end = false }) {
   const link = (
     <NavLink
       to={to}
+      end={end}
       aria-label={label}
       onClick={onNavigate}
       className={({ isActive }) =>
@@ -143,8 +144,8 @@ function SidebarItem({ to, icon: Icon, label, collapsed, onNavigate }) {
               ? "bg-primary-500/10 text-primary-600 ring-1 ring-primary-500/20"
               : "bg-primary-500/[0.08] text-primary-600 border-l-[2px] border-primary-500 font-semibold"
             : collapsed
-              ? "text-gray-500 hover:text-heading hover:bg-overlay/[0.05]"
-              : "text-gray-500 hover:text-heading hover:bg-overlay/[0.04] border-l-[2px] border-transparent",
+              ? "text-gray-300 dark:text-gray-300 hover:text-heading hover:bg-overlay/[0.05]"
+              : "text-gray-300 dark:text-gray-300 hover:text-heading hover:bg-overlay/[0.04] border-l-[2px] border-transparent",
         )
       }
     >
