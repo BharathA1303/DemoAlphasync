@@ -947,22 +947,30 @@ function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClo
                     ) : (
                         <div className="flex flex-col gap-2.5">
                             {/* Zebu Status Banner if configured */}
-                            {zebuStatus?.configured ? (
-                                <div className="p-2.5 rounded-xl text-xs flex items-center justify-between" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.18)' }}>
-                                    <div>
-                                        <span className="font-semibold" style={{ color: '#10b981' }}>Configured for Client: {zebuStatus.client_code}</span>
+                            {zebuStatus?.configured ? (() => {
+                                const status = zebuStatus.last_import_status;
+                                const badgeColor = status === 'success' ? '#10b981' : status === 'importing' ? '#3b82f6' : status === 'warning' ? '#f59e0b' : status === 'error' ? '#ef4444' : '#64748b';
+                                const badgeLabel = status === 'success' ? 'Success' : status === 'importing' ? 'Importing…' : status === 'warning' ? 'Warning' : status === 'error' ? 'Error' : 'Ready';
+                                return (
+                                    <div className="p-2.5 rounded-xl text-xs flex flex-col gap-1" style={{ background: `${badgeColor}0f`, border: `1px solid ${badgeColor}30` }}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="font-semibold" style={{ color: badgeColor }}>Configured for Client: {zebuStatus.client_code}</span>
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0" style={{ background: `${badgeColor}26`, color: badgeColor, border: `1px solid ${badgeColor}4d` }}>{badgeLabel}</span>
+                                        </div>
                                         {zebuStatus.last_import_at && (
-                                            <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                Last import: {new Date(zebuStatus.last_import_at).toLocaleString()} — {zebuStatus.last_import_status || 'unknown'}
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                Last import: {new Date(zebuStatus.last_import_at).toLocaleString()}
+                                                {status === 'success' && (
+                                                    <> — {zebuStatus.last_import_rows ?? 0} rows written across {zebuStatus.last_import_symbols_found ?? 0}/{zebuStatus.last_import_symbols_total ?? 0} symbols</>
+                                                )}
                                             </span>
                                         )}
                                         {zebuStatus.last_import_error && (
                                             <span style={{ color: '#ef4444' }}>{zebuStatus.last_import_error}</span>
                                         )}
                                     </div>
-                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 uppercase">Ready</span>
-                                </div>
-                            ) : (
+                                );
+                            })() : (
                                 <div className="p-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)', color: '#f59e0b' }}>
                                     Optional. Pulls real EOD candles from your Zebu account to seed the simulator.
                                 </div>
@@ -1216,6 +1224,32 @@ export default function AdminPanelPage() {
         try {
             const { data } = await adminApi.importZebuHistory(90);
             toast.success(data?.message || 'Zebu historical import started');
+
+            // The import runs in the background — poll the credentials/status
+            // endpoint until broker_last_import_status leaves "importing" so
+            // the admin sees a real pass/fail result (with row/symbol counts)
+            // instead of a fire-and-forget toast that says nothing about
+            // whether data actually landed.
+            const POLL_INTERVAL_MS = 3000;
+            const MAX_POLLS = 40; // ~2 minutes
+            for (let i = 0; i < MAX_POLLS; i++) {
+                await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+                const { data: status } = await adminApi.getZebuCredentials();
+                if (status) setZebuStatus(status);
+                if (status?.last_import_status && status.last_import_status !== 'importing') {
+                    if (status.last_import_status === 'success') {
+                        toast.success(
+                            `Zebu import complete: ${status.last_import_rows ?? 0} rows written `
+                            + `across ${status.last_import_symbols_found ?? 0}/${status.last_import_symbols_total ?? 0} symbols.`
+                        );
+                    } else if (status.last_import_status === 'warning') {
+                        toast.error(status.last_import_error || 'Zebu import finished with a warning — check details below.');
+                    } else {
+                        toast.error(status.last_import_error || 'Zebu import failed.');
+                    }
+                    break;
+                }
+            }
         } catch (err) {
             toast.error(parseApiError(err, 'Failed to start Zebu import'));
         } finally {

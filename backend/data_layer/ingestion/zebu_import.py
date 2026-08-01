@@ -94,11 +94,17 @@ def _collapse_to_daily_bars(candles: list) -> Dict[date, dict]:
     return bars
 
 
-async def run_zebu_backfill(client, days: int) -> int:
+async def run_zebu_backfill(client, days: int) -> Dict[str, int]:
     """Given an already-logged-in ZebuClient, resolve tokens for the seed
     symbol universe, pull `days` trailing trading days of real EOD history
-    per symbol, and upsert into price_data. Returns the number of rows
-    written."""
+    per symbol, and upsert into price_data.
+
+    Returns a dict with `rows_written`, `symbols_found` (had a resolvable
+    Zebu instrument token), and `symbols_total` (the full seed universe) —
+    a bare row count alone can't distinguish "0 rows because nothing
+    changed vs. mock data" from "0 rows because token resolution silently
+    found nothing," so callers need all three to show a trustworthy result.
+    """
     from data_layer.ingestion.nse_bhavcopy import _NSE_MOCK_ANCHORS
     from data_layer.ingestion.run_ingestion import save_records_to_db
     from database.connection import async_session
@@ -145,5 +151,12 @@ async def run_zebu_backfill(client, days: int) -> int:
 
         await db.commit()
 
-    logger.info(f"Zebu historical import: {total_written} rows written across {len(token_map)} symbols")
-    return total_written
+    logger.info(
+        f"Zebu historical import: {total_written} rows written across "
+        f"{len(token_map)}/{len(symbols)} symbols (token resolved/total)"
+    )
+    return {
+        "rows_written": total_written,
+        "symbols_found": len(token_map),
+        "symbols_total": len(symbols),
+    }

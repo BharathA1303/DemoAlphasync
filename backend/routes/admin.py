@@ -791,6 +791,9 @@ async def get_zebu_credentials(
         "last_import_at": config.broker_last_import_at.isoformat() if config.broker_last_import_at else None,
         "last_import_status": config.broker_last_import_status,
         "last_import_error": config.broker_last_import_error,
+        "last_import_rows": config.broker_last_import_rows,
+        "last_import_symbols_found": config.broker_last_import_symbols_found,
+        "last_import_symbols_total": config.broker_last_import_symbols_total,
     }
 
 
@@ -895,10 +898,41 @@ async def import_zebu_history(
                 return
             try:
                 logger.info(f"Admin {admin.email}: Zebu historical import starting (days={req.days})...")
-                rows = await run_zebu_backfill(client, req.days)
-                conf.broker_last_import_status = "success"
-                conf.broker_last_import_error = None
-                logger.info(f"Admin {admin.email}: Zebu historical import completed ({rows} rows).")
+                result = await run_zebu_backfill(client, req.days)
+                rows = result["rows_written"]
+                conf.broker_last_import_rows = rows
+                conf.broker_last_import_symbols_found = result["symbols_found"]
+                conf.broker_last_import_symbols_total = result["symbols_total"]
+
+                if result["symbols_found"] == 0:
+                    # Login succeeded but not a single symbol resolved to a
+                    # Zebu instrument token (e.g. NSE symbol master format
+                    # changed, or account lacks market-data entitlement) —
+                    # this is a real failure even though no exception was
+                    # raised, so don't report it as "success".
+                    conf.broker_last_import_status = "error"
+                    conf.broker_last_import_error = (
+                        "Logged in successfully, but 0 of "
+                        f"{result['symbols_total']} symbols resolved to a "
+                        "Zebu instrument token — no data was imported. "
+                        "Check the NSE symbol master format or account "
+                        "market-data entitlement."
+                    )
+                elif rows == 0:
+                    conf.broker_last_import_status = "warning"
+                    conf.broker_last_import_error = (
+                        f"Resolved {result['symbols_found']}/{result['symbols_total']} "
+                        "symbols but wrote 0 rows — Zebu returned no candle "
+                        "data for the requested date range (check TPSeries "
+                        "response / market-data entitlement)."
+                    )
+                else:
+                    conf.broker_last_import_status = "success"
+                    conf.broker_last_import_error = None
+                logger.info(
+                    f"Admin {admin.email}: Zebu historical import completed "
+                    f"({rows} rows, {result['symbols_found']}/{result['symbols_total']} symbols)."
+                )
 
                 # Already-open simulator sessions are pinned to whatever
                 # price_data version was current at subscribe-time and won't

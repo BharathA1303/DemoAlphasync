@@ -60,6 +60,13 @@ class DataFeedConfig(Base):
     broker_last_import_at = Column(DateTime(timezone=True), nullable=True)
     broker_last_import_status = Column(String(50), nullable=True)
     broker_last_import_error = Column(Text, nullable=True)
+    # Verifiable proof-of-work for the last import, surfaced in the admin
+    # panel so "success" means something concrete rather than just a status
+    # string — how many rows were actually written and for how many of the
+    # requested symbols a Zebu instrument token was even found.
+    broker_last_import_rows = Column(Integer, nullable=True)
+    broker_last_import_symbols_found = Column(Integer, nullable=True)
+    broker_last_import_symbols_total = Column(Integer, nullable=True)
 
     # ── Admin Zebu OAuth & Time-Delayed Feed Configuration ───────────────
     # Separate from `base_url` above (which belongs to the QuickAuth

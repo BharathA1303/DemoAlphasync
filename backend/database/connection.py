@@ -315,6 +315,10 @@ async def init_db():
                     "ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) "
                     "DEFAULT 'https://go.mynt.in';"
                 ))
+            if "broker_last_import_rows" not in dfc_cols:
+                await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_rows INTEGER;"))
+                await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_found INTEGER;"))
+                await conn.execute(text("ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_total INTEGER;"))
             await conn.execute(text("""
                 UPDATE data_feed_configs
                 SET base_url = 'https://go.mynt.in/NorenWClientTP'
@@ -621,6 +625,17 @@ async def init_db():
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_at TIMESTAMPTZ;
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_status VARCHAR(50);
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_error TEXT;
+                    END IF;
+
+                    -- Verifiable proof-of-work columns for the last import
+                    -- (row/symbol counts), added after the block above.
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_rows'
+                    ) THEN
+                        ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_rows INTEGER;
+                        ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_found INTEGER;
+                        ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_total INTEGER;
                     END IF;
 
                     -- Zebu OAuth & Time-Delayed Feed columns
