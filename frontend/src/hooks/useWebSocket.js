@@ -17,7 +17,7 @@ import {
     COMMODITY_SYMBOLS,
 } from '../utils/constants';
 import { marketSessionManager } from '../market/MarketSessionManager';
-import { shouldUseRealtimePrices } from '../market/utils/marketSessionUtils';
+import { shouldUseRealtimePrices, markLiveTickReceived } from '../market/utils/marketSessionUtils';
 import { notifyLiveTickReceived, scheduleWsIdleReconciliation } from '../market/EODReconciliationEngine';
 import { quoteSyncEngine } from '../market-v2/QuoteSynchronizationEngine';
 import { TICKER_HOT_SYMBOLS } from '../market-v2/tickerHotSymbols';
@@ -86,6 +86,13 @@ export function useWebSocket() {
 
     const applyIncomingQuote = useCallback((symbol, data = {}) => {
         if (!symbol) return;
+        // Record this as proof a feed is actively live BEFORE the session gate
+        // check below — otherwise a momentarily-wrong "closed" snapshot (a
+        // failed/slow session poll, startup race, or real IST off-hours on a
+        // platform that is always a simulator) drops every tick forever with
+        // no path back to "open" until the next 30-60s poll happens to
+        // succeed. See shouldUseRealtimePrices()'s live-tick override.
+        markLiveTickReceived();
         const normalizedSymbol = normalizeSymbol(symbol);
         // Use live session snapshot (not a stale ref) — equity ticks only when market is open.
         const symKey = normalizedSymbol || symbol;

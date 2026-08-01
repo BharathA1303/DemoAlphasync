@@ -15,6 +15,26 @@ const DEFAULT_SNAPSHOT = {
 
 let _snapshot = { ...DEFAULT_SNAPSHOT, ...computeLocalNseSession(), canPlaceOrders: false, isTradingHours: false };
 
+// Live-tick override: if the WS is actively delivering quote ticks right
+// now, that is itself proof a feed is live, regardless of what the last
+// polled session snapshot says. Without this, any window where the polled
+// snapshot incorrectly reports "closed" (a failed/slow /market/session
+// fetch, a startup race, or simply real IST wall-clock hours on a platform
+// that is ALWAYS a simulator with no real broker) causes shouldUseRealtimePrices()
+// to silently drop every incoming tick until the next successful poll —
+// exactly the "frozen until page refresh" bug. The session snapshot poll
+// (30-60s interval) is too coarse to be the sole gate on a per-message basis.
+const LIVE_TICK_OVERRIDE_WINDOW_MS = 10_000;
+let _lastLiveTickAt = 0;
+
+export function markLiveTickReceived() {
+  _lastLiveTickAt = Date.now();
+}
+
+function hasRecentLiveTick() {
+  return _lastLiveTickAt > 0 && Date.now() - _lastLiveTickAt < LIVE_TICK_OVERRIDE_WINDOW_MS;
+}
+
 export function setMarketSessionSnapshot(session = {}) {
   const merged = mergeSessionWithLocalTruth(session);
   const state = String(merged.state || 'closed').toLowerCase();
@@ -41,7 +61,7 @@ export function isMarketSessionOpen() {
 }
 
 export function shouldUseRealtimePrices() {
-  return _snapshot.isOpen;
+  return _snapshot.isOpen || hasRecentLiveTick();
 }
 
 /** True when session is not live trading (holiday, weekend, closed, etc.). */

@@ -413,7 +413,12 @@ class InternalSimProvider(MarketProvider):
         subscribed = 0
         for replay_date_str in _eligible_dates():
             replay_date = datetime.strptime(replay_date_str, "%Y-%m-%d").date()
-            session_state = await create_replay_session(replay_date, replay_speed=1)
+            # 5 virtual seconds of ticks delivered per real second (still one
+            # broadcast per ~1s loop iteration, see SimulatorManager.run_loop)
+            # so the feed reads closer to a real broker's tick density instead
+            # of one price point per second. A full 09:15-15:30 session then
+            # plays out in ~75 real minutes instead of ~6h15m.
+            session_state = await create_replay_session(replay_date, replay_speed=5)
             self._session_id = session_state["session_id"]
 
             if not symbols:

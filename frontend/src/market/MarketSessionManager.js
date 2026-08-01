@@ -103,11 +103,18 @@ export const marketSessionManager = {
   start() {
     if (_started) return;
     _started = true;
-    import('./utils/marketSessionUtils').then(({ setMarketSessionSnapshot }) => {
-      import('./nseSessionCalendar').then(({ computeLocalNseSession }) => {
-        setMarketSessionSnapshot(computeLocalNseSession());
-      });
-    });
+    // marketSessionUtils.js already seeds _snapshot from computeLocalNseSession()
+    // at module load (see its `let _snapshot = ...` initializer) - re-seeding it
+    // here via a second async import chain raced against refreshSession() below
+    // with no ordering guarantee. If this resolved AFTER refreshSession() (e.g.
+    // under real network/module-load timing), it would silently clobber the
+    // correct backend-reported snapshot (simulation_mode: true -> always "open")
+    // with a local-wall-clock-only snapshot carrying neither `simulation_mode`
+    // nor `live_feed_active`, which mergeSessionWithLocalTruth then evaluates as
+    // "not a replay feed" and falls back to real IST hours - silently freezing
+    // every live tick outside 09:15-15:30 IST until the next 30-60s poll
+    // happened to fire refreshSession() again. The module-load seed is already
+    // sufficient for the brief window before refreshSession() resolves.
     refreshSession().then(() => {
       schedulePoll();
       if (!getMarketSessionSnapshot().isOpen) {
