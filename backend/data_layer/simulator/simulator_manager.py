@@ -106,12 +106,25 @@ class SimulatorManager:
                 )
                 result = await db.execute(stmt)
                 eod_data = result.scalars().first()
-                success = await ensure_ticks_cached(db, exchange, segment, symbol, target_date, eod_data=eod_data)
-                if success:
-                    raw = await get_cached_response(cache_key)
+                resolved_eod = await ensure_ticks_cached(db, exchange, segment, symbol, target_date, eod_data=eod_data)
+                if resolved_eod:
+                    # ensure_ticks_cached resolves (and caches ticks under)
+                    # ITS OWN eod_data when the exact-version row above
+                    # wasn't found - that can have a different .version than
+                    # the one this function was called with (e.g. the
+                    # session's pinned version no longer matches the
+                    # currently-eligible row). Re-deriving cache_key from
+                    # resolved_eod.version (not the original, possibly-stale
+                    # `version` param) is required to read back what was
+                    # actually just written - see ensure_ticks_cached's own
+                    # docstring, which documents exactly this pitfall.
+                    resolved_cache_key = tick_cache_key(
+                        exchange, segment, symbol, target_date, resolved_eod.version
+                    )
+                    raw = await get_cached_response(resolved_cache_key)
                     if raw:
                         ticks = json.loads(raw)
-                        self.tick_data_cache[cache_key] = ticks
+                        self.tick_data_cache[resolved_cache_key] = ticks
                         return ticks
             except Exception as e:
                 logger.error(f"Error pre-generating ticks for background manager: {e}")
