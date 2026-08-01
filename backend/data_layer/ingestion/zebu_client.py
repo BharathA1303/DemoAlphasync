@@ -121,8 +121,13 @@ class ZebuClient:
         """Authenticate and return the session token (`susertoken`).
         Raises ZebuAuthError on failure."""
         pwd_hash = hashlib.sha256(self.password.encode("utf-8")).hexdigest()
+        # Per Zebu's docs ("appkey: Sha256 of uid|App_key"), this hashes the
+        # App Key Zebu issues in its developer portal — a value distinct
+        # from the App Secret. Using api_secret here (an earlier revision of
+        # this code did) produces "Invalid App Key" from QuickAuth even with
+        # otherwise-correct credentials.
         app_key_hash = hashlib.sha256(
-            f"{self.client_code}|{self.api_secret}".encode("utf-8")
+            f"{self.client_code}|{self.api_key}".encode("utf-8")
         ).hexdigest()
 
         payload_obj = {
