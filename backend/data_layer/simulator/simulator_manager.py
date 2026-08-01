@@ -271,6 +271,7 @@ class SimulatorManager:
                 message = {
                     "type": "tick_update",
                     "session_id": session_id,
+                    "date": date_str,
                     "virtual_time": next_v_time_str,
                     "status": state["status"],
                     "ticks": tick_payload

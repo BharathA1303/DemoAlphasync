@@ -193,15 +193,39 @@ def _build_quote_from_candles(
     if close is None:
         return None
 
+    # normalized[-2] is only a valid "previous close" if it's genuinely the
+    # adjacent prior trading day. price_data can legitimately have gaps
+    # (un-ingested days — see InternalSimProvider._eligible_dates' own
+    # docstring), so a naive "second-to-last row in the returned range" can
+    # be many days/weeks removed from `last`, producing a nonsensical
+    # change_percent (e.g. a real incident: RELIANCE showing +59721% because
+    # the picked "previous" row was an unrelated, much older/lower-priced
+    # candle). Require the two rows be within a small calendar-day window
+    # (tolerates a normal weekend/holiday gap) before trusting the pair.
+    MAX_PREV_CLOSE_GAP_DAYS = 4
     prev_close = None
     if len(normalized) >= 2:
-        prev_close = _safe_float(normalized[-2].get("close"))
+        candidate = _safe_float(normalized[-2].get("close"))
+        last_ts = _safe_float(last.get("time"))
+        prev_ts = _safe_float(normalized[-2].get("time"))
+        if candidate is not None and last_ts is not None and prev_ts is not None:
+            gap_days = abs(last_ts - prev_ts) / 86400.0
+            if gap_days <= MAX_PREV_CLOSE_GAP_DAYS:
+                prev_close = candidate
 
     change = None
     change_percent = None
     if prev_close:
         change = round(close - prev_close, 2)
-        change_percent = round((change / prev_close) * 100.0, 2)
+        computed_pct = round((change / prev_close) * 100.0, 2)
+        # Defense-in-depth sanity clamp: even a same-week adjacent row
+        # shouldn't legitimately produce a triple-digit-percent single-day
+        # move on this simulated data. Discard rather than display garbage.
+        if abs(computed_pct) <= 100.0:
+            change_percent = computed_pct
+        else:
+            change = None
+            prev_close = None
 
     ts = last.get("time")
     if ts is not None:

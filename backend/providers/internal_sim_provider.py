@@ -492,11 +492,59 @@ class InternalSimProvider(MarketProvider):
             if msg_type != "tick_update":
                 return
 
+            session_date_str = data.get("date")
+            session_date = None
+            if session_date_str:
+                try:
+                    session_date = datetime.strptime(session_date_str, "%Y-%m-%d").date()
+                except ValueError:
+                    session_date = None
+
             ticks_by_symbol: Dict[str, list] = data.get("ticks", {}) or {}
             for sim_symbol, ticks in ticks_by_symbol.items():
                 canonical_symbol = _sim_symbol_to_canonical(sim_symbol)
                 for tick in ticks:
                     self._last_tick_at = time.time()
+                    tick_time_str = data.get("virtual_time") or tick.get("t")
+                    # Combine the session's actual (compliance-delayed) replay
+                    # date with the tick's virtual time-of-day into a real
+                    # epoch timestamp. Previously only the bare "HH:MM:SS"
+                    # string was sent — the frontend's Date.parse() then
+                    # stamped it with TODAY's real calendar date, producing a
+                    # timestamp days off from the session's true date. That
+                    # broke both the chart's staleness check (fresh ticks
+                    # judged "too old"/"in the future" and silently dropped)
+                    # and its candle-bucketing forward-gap guard (bucketTime
+                    # vs. the historical candles' true date differed by days,
+                    # exceeding maxForwardGap and dropping the tick) — the
+                    # exact mechanism behind ticks not updating the chart and
+                    # the header/chart price mismatch.
+                    epoch_ts: Optional[int] = None
+                    if session_date and tick_time_str:
+                        try:
+                            # Tick "HH:MM:SS" strings are IST wall-clock times
+                            # with no date component (see
+                            # brownian_bridge.py's TIME_STRINGS, 09:15:00-
+                            # 15:30:00) — anchor midnight-IST-as-UTC-offset the
+                            # same way _build_intraday_candles above does for
+                            # historical candles, so live ticks land in the
+                            # exact same epoch space as the history the chart
+                            # already has loaded. Using a different timezone
+                            # basis here (e.g. treating the time as UTC) would
+                            # offset every live tick from history by 5.5
+                            # hours, re-creating the same bucketing mismatch
+                            # this fix is meant to eliminate.
+                            _IST_OFFSET_SECONDS = 5 * 3600 + 30 * 60
+                            h, m, s = (int(part) for part in tick_time_str.split(":"))
+                            midnight_ist_epoch = int(
+                                datetime.combine(session_date, datetime.min.time(), tzinfo=timezone.utc).timestamp()
+                            ) - _IST_OFFSET_SECONDS
+                            epoch_ts = midnight_ist_epoch + (h * 3600 + m * 60 + s)
+                        except (ValueError, TypeError):
+                            epoch_ts = None
+                    if epoch_ts is None:
+                        epoch_ts = int(time.time())
+
                     mapped_tick = {
                         "symbol": canonical_symbol,
                         "exchange": "NSE",
@@ -507,7 +555,7 @@ class InternalSimProvider(MarketProvider):
                         "bid_qty": tick.get("bidQty"),
                         "ask_qty": tick.get("askQty"),
                         "oi": tick.get("oi"),
-                        "timestamp": data.get("virtual_time") or tick.get("t"),
+                        "timestamp": epoch_ts,
                     }
                     await market_publisher.publish_tick(mapped_tick)
         except Exception as e:

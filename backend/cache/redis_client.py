@@ -72,11 +72,26 @@ def _safe_float(value) -> Optional[float]:
     return parsed if parsed == parsed else None
 
 
+MAX_PLAUSIBLE_DAY_CHANGE_PERCENT = 100.0
+
+
 def _enrich_frozen_day_change_payload(quote: dict) -> dict:
     """Ensure frozen Redis quotes always carry prev_close, change, and change_percent.
 
   Intraday/history snapshots often persist LTP only; this derives day change from
   fields already on the payload without overwriting valid values.
+
+    IMPORTANT: this function used to unconditionally trust and re-persist any
+    pre-existing (change, change_percent, prev_close) triple found on the
+    incoming payload, on every call. That meant a single bad value written
+    once (e.g. from a stale/non-adjacent prev_close computed elsewhere - see
+    the real incident where RELIANCE showed +59721% change) would keep
+    re-validating and re-writing itself back to Redis forever on every
+    subsequent set_price/set_authoritative_close, since this function never
+    re-derived from a trusted source once all three fields were present.
+    Every branch below now clamps the resulting change_percent to a
+    plausible range for simulated daily data, discarding rather than
+    perpetuating an implausible value.
     """
     if not quote or not isinstance(quote, dict):
         return quote
@@ -115,6 +130,16 @@ def _enrich_frozen_day_change_payload(quote: dict) -> dict:
         if close_field and close_field > 0 and abs(close_field - price) > 0.004:
             prev_close = close_field
 
+    def _discard_implausible_change(payload: dict) -> dict:
+        """Strip change/change_percent/prev_close if the percent move is
+        implausible for simulated daily data, rather than letting it persist."""
+        pct = payload.get("change_percent")
+        if pct is not None and abs(pct) > MAX_PLAUSIBLE_DAY_CHANGE_PERCENT:
+            payload.pop("change", None)
+            payload.pop("change_percent", None)
+            payload.pop("prev_close", None)
+        return payload
+
     if (
         change is not None
         and change_pct is not None
@@ -124,7 +149,7 @@ def _enrich_frozen_day_change_payload(quote: dict) -> dict:
         out["change"] = round(change, 2)
         out["change_percent"] = round(change_pct, 2)
         out["prev_close"] = round(prev_close, 2)
-        return out
+        return _discard_implausible_change(out)
 
     if prev_close is not None and prev_close > 0:
         derived_change = round(price - prev_close, 2)
@@ -138,7 +163,7 @@ def _enrich_frozen_day_change_payload(quote: dict) -> dict:
             out["change_percent"] = derived_pct
         else:
             out["change_percent"] = round(change_pct, 2)
-        return out
+        return _discard_implausible_change(out)
 
     if change is not None and change_pct is not None:
         denominator = 1.0 + (float(change_pct) / 100.0)
@@ -148,7 +173,7 @@ def _enrich_frozen_day_change_payload(quote: dict) -> dict:
                 out["prev_close"] = round(derived_prev, 2)
                 out["change"] = round(change, 2)
                 out["change_percent"] = round(change_pct, 2)
-        return out
+        return _discard_implausible_change(out)
 
     # BSE/index ticks often carry only pc (percent change) without absolute change.
     # Derive prev_close and change so closed-market quotes always display correctly.
@@ -160,7 +185,7 @@ def _enrich_frozen_day_change_payload(quote: dict) -> dict:
                 out["prev_close"] = round(derived_prev, 2)
                 out["change"] = round(price - derived_prev, 2)
                 out["change_percent"] = round(change_pct, 2)
-        return out
+        return _discard_implausible_change(out)
 
     if change is not None and change_pct is None:
         out["change"] = round(change, 2)

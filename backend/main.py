@@ -393,6 +393,7 @@ from routes.options import router as options_router
 from routes.mentor import router as mentor_router
 from routes.bug_reports import router as bug_reports_router
 from routes.feedback import router as feedback_router
+from routes.academy import router as academy_router
 
 # ── Data Layer Routers (Local Dedicated Feed) ──────────────────────
 from data_layer.api.routes_auth import router as data_layer_auth_router
@@ -418,6 +419,7 @@ app.include_router(options_router)
 app.include_router(mentor_router)
 app.include_router(bug_reports_router)
 app.include_router(feedback_router)
+app.include_router(academy_router)
 
 # Include data layer routes
 app.include_router(data_layer_auth_router)

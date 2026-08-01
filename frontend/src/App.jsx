@@ -37,6 +37,9 @@ import BugReportPage from './pages/BugReportPage';
 import AdminBugReportsPage from './pages/AdminBugReportsPage';
 import DataFeedPanel from './pages/DataFeedPanel';
 import ChartEmbed from './pages/ChartEmbed';
+import AcademyDashboardPage from './academy/AcademyDashboardPage';
+import AcademyAnalyticsPage from './academy/AcademyAnalyticsPage';
+import AcademyMentorPage from './academy/AcademyMentorPage';
 
 export default function App() {
     useEffect(() => {
@@ -107,6 +110,9 @@ export default function App() {
                             <Route path="/auto-alpha" element={<ZeroLossPage />} />
                             <Route path="/settings" element={<SettingsPage />} />
                             <Route path="/bug-report" element={<BugReportPage />} />
+                            <Route path="/academy" element={<AcademyDashboardPage />} />
+                            <Route path="/academy/analytics" element={<AcademyAnalyticsPage />} />
+                            <Route path="/academy/mentor" element={<AcademyMentorPage />} />
                         </Route>
 
                         <Route path="*" element={<Navigate to="/" replace />} />

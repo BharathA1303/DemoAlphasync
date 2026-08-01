@@ -23,6 +23,9 @@ import {
   FlipHorizontal2,
   Lightbulb,
   Link2,
+  GraduationCap,
+  Brain,
+  MessagesSquare,
 } from "lucide-react";
 
 /* ─── Avatar helpers ─────────────────────────────────────── */
@@ -109,6 +112,14 @@ const NAV_SECTIONS = [
       { to: "/algo", icon: Bot, label: "Algo Trading" },
       { to: "/auto-alpha", icon: Shield, label: "Alpha Auto" },
       { to: "/mentor", icon: Lightbulb, label: "AI Mentor" },
+    ],
+  },
+  {
+    label: "Academy",
+    items: [
+      { to: "/academy", icon: GraduationCap, label: "Academy Dashboard" },
+      { to: "/academy/analytics", icon: Brain, label: "Learning Analytics" },
+      { to: "/academy/mentor", icon: MessagesSquare, label: "Academy AI Mentor" },
     ],
   },
 ];

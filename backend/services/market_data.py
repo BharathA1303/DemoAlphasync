@@ -871,6 +871,15 @@ def _normalize_quote(quote: Optional[dict]) -> Optional[dict]:
     elif change_percent is not None:
         change_percent = round(float(change_percent), 2)
 
+    # Sanity clamp: a triple-digit-percent single-day move is not plausible
+    # for this simulated data and is a strong signal prev_close was derived
+    # from (or itself already carries) a bad/non-adjacent reference price
+    # (see the RELIANCE +59721% incident). Discard rather than pass through.
+    if change_percent is not None and abs(change_percent) > 100.0:
+        change_percent = None
+        change = None
+        prev_close = None
+
     # Extract optional fields
     open_price = _first_present("open", "o")
     try:
@@ -1633,9 +1642,20 @@ async def _previous_daily_close(symbol: str, session_ts: Any = None) -> Optional
                 if close and close > 0:
                     return round(close, 2)
 
-        close = _safe_float(normalized[-2].get("close"))
-        if close and close > 0:
-            return round(close, 2)
+        # Unfiltered fallback (no session_date, or filtering found nothing):
+        # only trust normalized[-2] as "previous close" if it's genuinely
+        # adjacent to the last candle. price_data can have gaps (un-ingested
+        # days), so a naive "second-to-last row" can be many days removed
+        # from "today" and produce a nonsensical implied change_percent at
+        # the caller. See market_eod_reconciliation._build_quote_from_candles
+        # for the same fix and the real incident (RELIANCE +59721%) that
+        # motivated it.
+        last_ts = _safe_float(normalized[-1].get("time") or normalized[-1].get("timestamp"))
+        prev_ts = _safe_float(normalized[-2].get("time") or normalized[-2].get("timestamp"))
+        if last_ts is not None and prev_ts is not None and abs(last_ts - prev_ts) / 86400.0 <= 4:
+            close = _safe_float(normalized[-2].get("close"))
+            if close and close > 0:
+                return round(close, 2)
 
     return None
 

@@ -1358,18 +1358,27 @@ const LiveChart = memo(function LiveChart({
             if (lastQuoteAt > 0 && (Date.now() - lastQuoteAt) > 300_000) return;
         }
 
+        // quoteTs is a real epoch timestamp for the tick's SIMULATED session
+        // date+time (see InternalSimProvider._handle_sim_message on the
+        // backend) — used below only for candle bucketing (which 5m/15m/etc.
+        // bar this tick belongs to). It is NOT close to real Date.now(): the
+        // replay session's date is a compliance-delayed date days in the
+        // past. An earlier version of this code compared quoteTs against
+        // Date.now() for staleness (`nowSec - quoteTs > maxAgeSeconds`),
+        // which — back when the backend only sent a bare "HH:MM:SS" string
+        // that Date.parse() stamped with today's real date — happened to be
+        // roughly comparable, but was never correct even before that: any
+        // real epoch value representing an intentionally-past simulated date
+        // would always fail an "is this recent in wall-clock time" check.
+        // `lastQuoteAt` above is the correct real-wall-clock staleness
+        // signal (set by the frontend itself at message-receipt time) — no
+        // second staleness check against the simulated clock belongs here.
         const quoteTs = isolateLivePrice
             ? Math.floor(Date.now() / 1000)
             : parseQuoteEpochSeconds(
                 liveQuote?.last_trade_time ?? liveQuote?.timestamp ?? liveQuote?.ft
             );
         if (quoteTs == null) return;
-
-        const nowSec = Math.floor(Date.now() / 1000);
-        if (quoteTs > nowSec + 120) return;
-
-        const maxAgeSeconds = Math.max(LIVE_QUOTE_MAX_AGE_SECONDS, getIntervalSeconds(period) * 3);
-        if ((nowSec - quoteTs) > maxAgeSeconds) return;
 
         pendingLiveQuoteRef.current = {
             ltp,
@@ -1465,6 +1474,24 @@ const LiveChart = memo(function LiveChart({
                     volume: nextVolume,
                 };
                 candlesRef.current.push(updated);
+
+                // Re-apply auto-scroll/bar-spacing on every genuinely NEW
+                // candle (not on every intra-candle tick update below) — the
+                // initial-load effect above only sets this once when history
+                // is first fetched. At faster replay speeds (or just over a
+                // long-running session) many candles accumulate past that
+                // one-time visibleBars/barSpacing calculation without this,
+                // so the view stops auto-following and candles increasingly
+                // cram into a stale fixed window instead of staying readable.
+                if (isIntradayPeriod && chartRef.current) {
+                    const totalBars = candlesRef.current.length;
+                    const visibleBars = Math.min(240, totalBars);
+                    chartRef.current.timeScale().applyOptions({
+                        rightOffset: 5,
+                        barSpacing: Math.max(4, Math.min(10, (chartContainerRef.current?.clientWidth || 800) / visibleBars)),
+                    });
+                    chartRef.current.timeScale().scrollToRealTime();
+                }
             } else {
                 // Update current in-progress candle.
                 updated = { ...lastCandle };
@@ -1523,7 +1550,7 @@ const LiveChart = memo(function LiveChart({
                 title: '',
             });
         });
-    }, [livePriceForEffect, wsStatus, lastQuoteAt, periodCfg?.interval, isolateLivePrice, marketLive, marketSessionTick]);
+    }, [livePriceForEffect, wsStatus, lastQuoteAt, periodCfg?.interval, isolateLivePrice, marketLive, marketSessionTick, isIntradayPeriod]);
 
     // ── Indicator overlays ────────────────────────────────────────
     useEffect(() => {

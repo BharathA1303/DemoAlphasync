@@ -128,6 +128,7 @@ async def init_db():
         from models.symbol_master import SymbolMaster  # noqa
         from models.raw_ticks import RawTick  # noqa
         from models.bulk_file_index import BulkFileIndex  # noqa
+        from models import academy as academy_models  # noqa — AlphaSync Academy (LMS) tables
 
         await conn.run_sync(Base.metadata.create_all)
 
@@ -277,6 +278,10 @@ async def init_db():
             )
             await _ensure_users_column(
                 "admin_assigned_at", "admin_assigned_at DATETIME"
+            )
+            # AlphaSync Academy (LMS) role — see models/user.py's academy_role
+            await _ensure_users_column(
+                "academy_role", "academy_role VARCHAR(20) DEFAULT 'student'"
             )
 
             # ZeroLoss strategy columns for per-user isolation
@@ -451,6 +456,14 @@ async def init_db():
                         WHERE table_name = 'users' AND column_name = 'admin_assigned_at'
                     ) THEN
                         ALTER TABLE users ADD COLUMN admin_assigned_at TIMESTAMPTZ;
+                    END IF;
+
+                    -- AlphaSync Academy (LMS) role — see models/user.py's academy_role
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'users' AND column_name = 'academy_role'
+                    ) THEN
+                        ALTER TABLE users ADD COLUMN academy_role VARCHAR(20) DEFAULT 'student';
                     END IF;
                 EXCEPTION WHEN others THEN
                     RAISE NOTICE 'Admin migration note: %', SQLERRM;

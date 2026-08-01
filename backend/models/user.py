@@ -54,6 +54,17 @@ class User(Base):
     avatar_url = Column(String(500), nullable=True)
     phone = Column(String(20), nullable=True)
 
+    # ── AlphaSync Academy (LMS) role ──────────────────────────────────
+    # "student" (default, only value used in Phase 1) | "faculty" |
+    # "institution_admin" | "super_admin" — added now so the later roles
+    # slot in without another schema migration. Independent of `role`/
+    # `admin_level` above (the trading-platform's own role system) — a
+    # user can be a trading-platform "admin" and an academy "student"
+    # simultaneously, or any other combination.
+    academy_role = Column(
+        String(20), default="student", nullable=True, server_default=text("'student'")
+    )
+
     # ── Admin hierarchy ────────────────────────────────────────────
     # "root" = super admin (only one, set via ROOT_ADMIN_EMAIL config)
     # "manage" = full user management access
