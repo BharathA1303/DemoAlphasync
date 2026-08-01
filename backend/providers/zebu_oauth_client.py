@@ -70,8 +70,11 @@ class ZebuOAuthClient:
                 data="jData=" + json.dumps(payload),
                 headers={"Content-Type": "application/json"},
             )
-            response.raise_for_status()
-            res_json = _parse_json_response(response, context="GenAcsTok")
+            try:
+                res_json = _parse_json_response(response, context="GenAcsTok")
+            except ValueError:
+                response.raise_for_status()
+                raise
 
             stat = res_json.get("stat") or res_json.get("status")
             if stat and stat.lower() == "not_ok":
@@ -103,8 +106,11 @@ class ZebuOAuthClient:
                 data="jData=" + json.dumps(payload),
                 headers={"Content-Type": "application/json"},
             )
-            response.raise_for_status()
-            res_json = _parse_json_response(response, context="RefreshToken")
+            try:
+                res_json = _parse_json_response(response, context="RefreshToken")
+            except ValueError:
+                response.raise_for_status()
+                raise
 
             stat = res_json.get("stat") or res_json.get("status")
             if stat and stat.lower() == "not_ok":

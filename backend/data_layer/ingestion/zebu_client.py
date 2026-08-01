@@ -143,8 +143,15 @@ class ZebuClient:
             headers={"Content-Type": "application/json"},
             timeout=_TIMEOUT,
         )
-        resp.raise_for_status()
-        data = _parse_json_response(resp, context="QuickAuth login")
+        # Parse the body BEFORE raise_for_status(): Zebu returns its actual
+        # {"stat":"Not_Ok","emsg":"..."} error payload with a 4xx status on
+        # bad credentials, and raise_for_status() would discard that body
+        # in favor of a generic "400 Bad Request for url: ..." message.
+        try:
+            data = _parse_json_response(resp, context="QuickAuth login")
+        except ZebuApiError:
+            resp.raise_for_status()
+            raise
 
         if str(data.get("stat", "")).lower() != "ok" or not data.get("susertoken"):
             raise ZebuAuthError(f"Zebu login failed: {data.get('emsg') or data}")
@@ -163,8 +170,11 @@ class ZebuClient:
             headers={"Content-Type": "application/json"},
             timeout=_TIMEOUT,
         )
-        resp.raise_for_status()
-        data = _parse_json_response(resp, context=path)
+        try:
+            data = _parse_json_response(resp, context=path)
+        except ZebuApiError:
+            resp.raise_for_status()
+            raise
         if isinstance(data, dict) and str(data.get("stat", "")).lower() == "not_ok":
             raise ZebuApiError(f"Zebu API error on {path}: {data.get('emsg') or data}")
         return data
