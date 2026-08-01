@@ -60,6 +60,8 @@ export default function LoginPage() {
   const [searchParams]     = useSearchParams();
   const adminIntent        = (searchParams.get("intent") || "").toLowerCase() === "admin";
 
+  const FACULTY_ACADEMY_ROLES = ["faculty", "institution_admin", "super_admin"];
+
   const routeByAccountStatus = (profile) => {
     const status   = (profile?.account_status || "active").toLowerCase();
     const isActive = status === "active" && profile?.is_active !== false;
@@ -75,6 +77,10 @@ export default function LoginPage() {
       }
       localStorage.setItem("alphasync_trading_mode", "demo");
       localStorage.setItem("alphasync_onboarded", "1");
+      if (FACULTY_ACADEMY_ROLES.includes((profile?.academy_role || "").toLowerCase())) {
+        navigate("/academy/faculty");
+        return;
+      }
       navigate("/dashboard");
     } else {
       navigate("/account-status");

@@ -9,6 +9,7 @@ import { ResponsiveHardeningRoot } from './responsive/hardening';
 import AppShell from './components/layout/AppShell';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
+import FacultyRoute from './components/FacultyRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import { useAuthStore } from './stores/useAuthStore';
 
@@ -40,6 +41,7 @@ import ChartEmbed from './pages/ChartEmbed';
 import AcademyDashboardPage from './academy/AcademyDashboardPage';
 import AcademyAnalyticsPage from './academy/AcademyAnalyticsPage';
 import AcademyMentorPage from './academy/AcademyMentorPage';
+import AcademyFacultyDashboardPage from './academy/AcademyFacultyDashboardPage';
 
 export default function App() {
     useEffect(() => {
@@ -113,6 +115,9 @@ export default function App() {
                             <Route path="/academy" element={<AcademyDashboardPage />} />
                             <Route path="/academy/analytics" element={<AcademyAnalyticsPage />} />
                             <Route path="/academy/mentor" element={<AcademyMentorPage />} />
+                            <Route path="/academy/faculty" element={
+                                <FacultyRoute><AcademyFacultyDashboardPage /></FacultyRoute>
+                            } />
                         </Route>
 
                         <Route path="*" element={<Navigate to="/" replace />} />

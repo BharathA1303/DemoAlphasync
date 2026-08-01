@@ -91,6 +91,10 @@ const adminApi = {
         return api.post(`/admin/users/${safeUserId(userId)}/set-duration`, { duration_days: durationDays });
     },
 
+    setAcademyRole(userId, academyRole) {
+        return api.post(`/admin/users/${safeUserId(userId)}/academy-role`, { academy_role: academyRole });
+    },
+
     setUserGroup(userId, groupId) {
         return api.post(`/admin/users/${safeUserId(userId)}/group`, { group_id: groupId || null });
     },

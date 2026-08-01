@@ -14,6 +14,13 @@ import adminApi from '../services/adminApi';
 
 const DEFAULT_ACTION_STATE = { durationDays: 30, reason: '' };
 
+const ACADEMY_ROLE_OPTIONS = [
+    { value: 'student', label: 'Student' },
+    { value: 'faculty', label: 'Faculty' },
+    { value: 'institution_admin', label: 'Institution Admin' },
+    { value: 'super_admin', label: 'Super Admin' },
+];
+
 const DEFAULT_USERS_DATA = {
     users: [],
     total: 0,
@@ -318,6 +325,19 @@ function ManageUserModal({ user: selectedUser, userDetail, detailLoading, action
                             <label className="label-text">Deactivation Reason</label>
                             <input className="input-field" value={actionState.reason} placeholder="Optional reason" maxLength={500}
                                 onChange={(e) => setActionState((p) => ({ ...p, reason: e.target.value }))} />
+                        </div>
+                        <div>
+                            <label className="label-text">Academy Role</label>
+                            <select
+                                className="input-field"
+                                value={selectedUser.academy_role || 'student'}
+                                disabled={actionLoading}
+                                onChange={(e) => onAction('set-academy-role', { academyRole: e.target.value })}
+                            >
+                                {ACADEMY_ROLE_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-2 pt-1">
@@ -1576,7 +1596,7 @@ export default function AdminPanelPage() {
 
     const [actionLoading, setActionLoading] = useState(false);
 
-    async function runUserAction(actionName) {
+    async function runUserAction(actionName, payload) {
         if (!modalUser) { toast.error('Select a user first'); return; }
         if (actionLoading) return;
         const durationDays = Number(actionState.durationDays);
@@ -1585,6 +1605,10 @@ export default function AdminPanelPage() {
             if (actionName === 'approve') { await adminApi.approveUser(modalUser.id, durationDays); toast.success('User approved'); }
             else if (actionName === 'reactivate') { await adminApi.reactivateUser(modalUser.id, durationDays); toast.success('User reactivated'); }
             else if (actionName === 'set-duration') { await adminApi.setDuration(modalUser.id, durationDays); toast.success('Duration updated'); }
+            else if (actionName === 'set-academy-role') {
+                await adminApi.setAcademyRole(modalUser.id, payload?.academyRole);
+                toast.success('Academy role updated');
+            }
             else if (actionName === 'deactivate') {
                 await adminApi.deactivateUser(modalUser.id, actionState.reason?.trim() || null);
                 toast.success('User deactivated');

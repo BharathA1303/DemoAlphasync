@@ -41,6 +41,13 @@ class Course(Base):
     # Strengths vs Weaknesses / Time Spent by Topic on the analytics page.
     category = Column(String(100), nullable=False, index=True)
     total_lessons = Column(Integer, nullable=False, default=0)
+    # Faculty who teaches this course, for the Faculty Dashboard (Phase 2).
+    # Nullable — Phase 1's fixed demo catalog has no instructor assigned
+    # until a faculty user first opens their dashboard (see
+    # academy_seed.ensure_faculty_teaching_data).
+    instructor_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(
         DateTime(timezone=True), default=_utcnow, server_default=text("CURRENT_TIMESTAMP")
     )

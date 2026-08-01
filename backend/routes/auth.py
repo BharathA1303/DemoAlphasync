@@ -356,6 +356,7 @@ def _user_profile(user: User) -> dict:
         "is_verified": user.is_verified,
         "auth_provider": user.auth_provider,
         "account_status": getattr(user, "account_status", "active"),
+        "academy_role": getattr(user, "academy_role", None) or "student",
     }
 
 

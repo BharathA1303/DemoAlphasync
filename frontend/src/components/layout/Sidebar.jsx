@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/useAuthStore";
 import { useTheme } from "../../context/ThemeContext";
@@ -26,6 +27,7 @@ import {
   GraduationCap,
   Brain,
   MessagesSquare,
+  Users2,
 } from "lucide-react";
 
 /* ─── Avatar helpers ─────────────────────────────────────── */
@@ -120,9 +122,18 @@ const NAV_SECTIONS = [
       { to: "/academy", icon: GraduationCap, label: "Academy Dashboard", end: true },
       { to: "/academy/analytics", icon: Brain, label: "Learning Analytics" },
       { to: "/academy/mentor", icon: MessagesSquare, label: "Academy AI Mentor" },
+      // Faculty-tier academy_role only — hidden for students who can't access it.
+      { to: "/academy/faculty", icon: Users2, label: "Faculty Dashboard", roles: ["faculty", "institution_admin", "super_admin"] },
     ],
   },
 ];
+
+function visibleNavSections(academyRole) {
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => !item.roles || item.roles.includes(academyRole)),
+  })).filter((section) => section.items.length > 0);
+}
 
 /* ─── Reusable nav item ──────────────────────────────────── */
 function SidebarItem({ to, icon: Icon, label, collapsed, onNavigate, end = false }) {
@@ -191,6 +202,7 @@ export default function Sidebar({ collapsed, onToggle }) {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const collapsedLogoSrc = theme === "dark" ? "/white-logo.png" : "/dark-logo.png";
+  const navSections = useMemo(() => visibleNavSections(user?.academy_role), [user?.academy_role]);
 
   const closeMobileDrawer = () => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024 && !collapsed) {
@@ -299,12 +311,12 @@ export default function Sidebar({ collapsed, onToggle }) {
         <nav className={cn("flex-1 px-2 overflow-y-auto overflow-x-hidden", collapsed && "pt-1.5")}>
           {collapsed ? (
             <div className="space-y-1">
-              {NAV_SECTIONS.flatMap((section) => section.items).map((item) => (
+              {navSections.flatMap((section) => section.items).map((item) => (
                 <SidebarItem key={item.to} {...item} collapsed={collapsed} onNavigate={closeMobileDrawer} />
               ))}
             </div>
           ) : (
-            NAV_SECTIONS.map((section) => (
+            navSections.map((section) => (
               <div key={section.label}>
                 <SectionLabel label={section.label} collapsed={collapsed} />
                 <div className="space-y-0.5">

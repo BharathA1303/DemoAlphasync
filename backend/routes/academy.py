@@ -16,7 +16,7 @@ from typing import Any, Literal, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.academy_ai_config import academy_ai_config
@@ -24,7 +24,9 @@ from database.connection import get_db
 from models.academy import Course, Enrollment, QuizAttempt, SkillMastery, StudyActivity
 from models.user import User
 from routes.auth import get_current_user
-from services.academy_seed import ensure_user_academy_data
+from services.academy_seed import ensure_faculty_teaching_data, ensure_user_academy_data
+
+FACULTY_ACADEMY_ROLES = {"faculty", "institution_admin", "super_admin"}
 
 logger = logging.getLogger(__name__)
 
@@ -528,3 +530,110 @@ async def chat_with_academy_mentor(
     except Exception as exc:
         logger.error("Unexpected academy mentor error: %s", exc)
         return AcademyMentorResponse(reply=_ensure_disclaimer(_build_fallback_reply(user_message)), success=True)
+
+
+# ── Faculty Dashboard (Phase 2) ─────────────────────────────────────────
+
+def _require_faculty(current_user: User) -> None:
+    if (current_user.academy_role or "student") not in FACULTY_ACADEMY_ROLES:
+        raise HTTPException(status_code=403, detail="Faculty access required")
+
+
+@router.get("/faculty/dashboard")
+async def get_faculty_dashboard(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_faculty(current_user)
+    await ensure_faculty_teaching_data(db, current_user.id)
+
+    courses_result = await db.execute(
+        select(Course).where(Course.instructor_id == current_user.id).order_by(Course.title)
+    )
+    courses = list(courses_result.scalars().all())
+    course_ids = [c.id for c in courses]
+
+    if not course_ids:
+        return {
+            "stats": {"total_students": 0, "active_courses": 0, "avg_class_progress": 0, "avg_quiz_score": 0},
+            "courses": [],
+            "roster": [],
+        }
+
+    # Per-course enrolled-student count + average progress.
+    enrollment_agg_result = await db.execute(
+        select(
+            Enrollment.course_id,
+            func.count(Enrollment.id),
+            func.avg(Enrollment.progress_percent),
+        )
+        .where(Enrollment.course_id.in_(course_ids))
+        .group_by(Enrollment.course_id)
+    )
+    enrollment_agg = {
+        row[0]: {"student_count": row[1], "avg_progress": round(float(row[2] or 0))}
+        for row in enrollment_agg_result.all()
+    }
+
+    # Per-course average quiz score.
+    quiz_agg_result = await db.execute(
+        select(QuizAttempt.course_id, func.avg(QuizAttempt.score_percent))
+        .where(QuizAttempt.course_id.in_(course_ids))
+        .group_by(QuizAttempt.course_id)
+    )
+    quiz_agg = {row[0]: round(float(row[1] or 0)) for row in quiz_agg_result.all()}
+
+    course_payload = []
+    for course in courses:
+        agg = enrollment_agg.get(course.id, {"student_count": 0, "avg_progress": 0})
+        course_payload.append({
+            "course_id": str(course.id),
+            "title": course.title,
+            "category": course.category,
+            "total_lessons": course.total_lessons,
+            "student_count": agg["student_count"],
+            "avg_progress": agg["avg_progress"],
+            "avg_quiz_score": quiz_agg.get(course.id, 0),
+        })
+
+    total_students_result = await db.execute(
+        select(func.count(func.distinct(Enrollment.user_id))).where(Enrollment.course_id.in_(course_ids))
+    )
+    total_students = total_students_result.scalar_one() or 0
+
+    progresses = [c["avg_progress"] for c in course_payload if c["student_count"] > 0]
+    avg_class_progress = round(sum(progresses) / len(progresses)) if progresses else 0
+    quiz_scores = [c["avg_quiz_score"] for c in course_payload if c["avg_quiz_score"] > 0]
+    avg_quiz_score = round(sum(quiz_scores) / len(quiz_scores)) if quiz_scores else 0
+
+    # Student roster: Enrollment joined to User, across all of this
+    # faculty's courses.
+    roster_result = await db.execute(
+        select(Enrollment, User, Course)
+        .join(User, User.id == Enrollment.user_id)
+        .join(Course, Course.id == Enrollment.course_id)
+        .where(Enrollment.course_id.in_(course_ids))
+        .order_by(Enrollment.last_activity_at.desc().nullslast())
+        .limit(200)
+    )
+    roster = [
+        {
+            "student_name": user.full_name or user.username,
+            "student_email": user.email,
+            "course_title": course.title,
+            "progress_percent": enrollment.progress_percent,
+            "last_activity_at": enrollment.last_activity_at.isoformat() if enrollment.last_activity_at else None,
+        }
+        for enrollment, user, course in roster_result.all()
+    ]
+
+    return {
+        "stats": {
+            "total_students": total_students,
+            "active_courses": len(courses),
+            "avg_class_progress": avg_class_progress,
+            "avg_quiz_score": avg_quiz_score,
+        },
+        "courses": course_payload,
+        "roster": roster,
+    }

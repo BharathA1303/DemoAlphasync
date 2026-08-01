@@ -916,6 +916,49 @@ async def set_access_duration(
     return {"success": True, "user": _serialize_user(user)}
 
 
+_ACADEMY_ROLES = ("student", "faculty", "institution_admin", "super_admin")
+
+
+async def set_academy_role(
+    db: AsyncSession,
+    admin_user: User,
+    target_user_id: str,
+    academy_role: str,
+    ip: str = None,
+) -> dict:
+    """Update a user's AlphaSync Academy role (independent of the trading
+    platform's own role/admin_level system — a user can be a trading admin
+    and an academy student, or any other combination)."""
+    if academy_role not in _ACADEMY_ROLES:
+        return {"success": False, "error": f"Invalid academy role: {academy_role}"}
+
+    target_uuid = _coerce_uuid(target_user_id)
+    if not target_uuid:
+        return {"success": False, "error": "Invalid user ID"}
+
+    result = await db.execute(select(User).where(User.id == target_uuid))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"success": False, "error": "User not found"}
+
+    old_role = user.academy_role
+    user.academy_role = academy_role
+
+    await _write_audit(
+        db,
+        admin_user,
+        "set_academy_role",
+        target_user_id=user.id,
+        details={"old_role": old_role, "new_role": academy_role},
+        ip=ip,
+    )
+
+    logger.info(
+        f"Admin {admin_user.email} changed {user.email} academy_role: {old_role} → {academy_role}"
+    )
+    return {"success": True, "user": _serialize_user(user)}
+
+
 async def force_logout_user(
     db: AsyncSession,
     admin_user: User,
@@ -1215,6 +1258,7 @@ def _serialize_user(user: User) -> dict:
             str(user.admin_assigned_by) if user.admin_assigned_by else None
         ),
         "admin_assigned_at": _safe_iso(user.admin_assigned_at),
+        "academy_role": getattr(user, "academy_role", None) or "student",
         "created_at": _safe_iso(user.created_at),
         "updated_at": _safe_iso(user.updated_at),
     }

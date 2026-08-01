@@ -284,6 +284,18 @@ async def init_db():
                 "academy_role", "academy_role VARCHAR(20) DEFAULT 'student'"
             )
 
+            # AlphaSync Academy (LMS) — Course.instructor_id (Phase 2, Faculty
+            # Dashboard), added after academy_courses already existed in prod.
+            async def _ensure_academy_courses_column(column_name: str, ddl: str):
+                res = await conn.execute(text("PRAGMA table_info(academy_courses);"))
+                cols = [row[1] for row in res.fetchall()]
+                if column_name not in cols:
+                    await conn.execute(text(f"ALTER TABLE academy_courses ADD COLUMN {ddl};"))
+
+            await _ensure_academy_courses_column(
+                "instructor_id", "instructor_id CHAR(36)"
+            )
+
             # ZeroLoss strategy columns for per-user isolation
             async def _ensure_zeroloss_signal_column(column_name: str, ddl: str):
                 cols = await _sqlite_columns("zeroloss_signals")
@@ -464,6 +476,14 @@ async def init_db():
                         WHERE table_name = 'users' AND column_name = 'academy_role'
                     ) THEN
                         ALTER TABLE users ADD COLUMN academy_role VARCHAR(20) DEFAULT 'student';
+                    END IF;
+
+                    -- AlphaSync Academy (LMS) — Course.instructor_id (Phase 2)
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'academy_courses' AND column_name = 'instructor_id'
+                    ) THEN
+                        ALTER TABLE academy_courses ADD COLUMN instructor_id UUID REFERENCES users(id) ON DELETE SET NULL;
                     END IF;
                 EXCEPTION WHEN others THEN
                     RAISE NOTICE 'Admin migration note: %', SQLERRM;

@@ -132,6 +132,12 @@ class UpdateAdminLevelRequest(BaseModel):
     admin_level: str = Field(..., pattern=r"^(max|manage|view_only)$")
 
 
+class SetAcademyRoleRequest(BaseModel):
+    academy_role: str = Field(
+        ..., pattern=r"^(student|faculty|institution_admin|super_admin)$"
+    )
+
+
 class CreateGroupRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=60)
 
@@ -627,6 +633,25 @@ async def set_duration(
     ip = request.client.host if request.client else None
     result = await admin_service.set_access_duration(
         db, admin, normalized_user_id, req.duration_days, ip
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@router.post("/users/{user_id}/academy-role")
+async def set_academy_role(
+    user_id: str,
+    req: SetAcademyRoleRequest,
+    request: Request,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set a user's AlphaSync Academy role (student/faculty/institution_admin/super_admin)."""
+    normalized_user_id = _normalize_user_id(user_id)
+    ip = request.client.host if request.client else None
+    result = await admin_service.set_academy_role(
+        db, admin, normalized_user_id, req.academy_role, ip
     )
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])

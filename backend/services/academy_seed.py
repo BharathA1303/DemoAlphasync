@@ -161,3 +161,36 @@ async def ensure_user_academy_data(db: AsyncSession, user_id: uuid.UUID) -> None
 
     await db.commit()
     logger.info(f"Academy: seeded demo data for user {user_id}")
+
+
+async def ensure_faculty_teaching_data(db: AsyncSession, faculty_user_id: uuid.UUID) -> None:
+    """Assign this faculty user as instructor of 2-3 catalog courses, if they
+    aren't already teaching anything. Deterministic (same seed pattern as
+    ensure_user_academy_data) so the same faculty account always gets the
+    same courses. Does NOT fabricate students/enrollments — the roster on
+    the Faculty Dashboard reflects real Enrollment rows created when actual
+    students visit their own dashboard; an empty roster for a freshly
+    assigned course is expected, not a bug."""
+    already_teaching = await db.execute(
+        select(Course.id).where(Course.instructor_id == faculty_user_id).limit(1)
+    )
+    if already_teaching.scalar_one_or_none() is not None:
+        return  # Already teaching something — never overwrite.
+
+    courses = await ensure_academy_catalog(db)
+    if not courses:
+        return
+
+    rng_seed = _seed_for_user(faculty_user_id)
+    num_courses = 2 + (rng_seed % 2)  # 2 or 3
+    ordered = sorted(courses, key=lambda c: str(c.id))
+    start = rng_seed % len(ordered)
+    assigned = [ordered[(start + i) % len(ordered)] for i in range(num_courses)]
+
+    for course in assigned:
+        # Don't poach a course another faculty member is already teaching.
+        if course.instructor_id is None:
+            course.instructor_id = faculty_user_id
+
+    await db.commit()
+    logger.info(f"Academy: assigned {len(assigned)} course(s) to faculty {faculty_user_id}")
