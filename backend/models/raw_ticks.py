@@ -27,7 +27,8 @@ class RawTick(Base):
     volume = Column(BigInteger, nullable=True)
     best_bid = Column(Numeric(12, 4), nullable=True)
     best_ask = Column(Numeric(12, 4), nullable=True)
-    real_timestamp = Column(DateTime(timezone=True), nullable=False, primary_key=True)
+    real_timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+
     ingested_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
     __table_args__ = (

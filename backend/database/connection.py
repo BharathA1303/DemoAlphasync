@@ -20,43 +20,53 @@ def _compile_pg_jsonb_for_sqlite(_type, _compiler, **_kw):
     return "JSON"
 
 
-engine_kwargs = {
-    "echo": settings.DEBUG,
-    "future": True,
-}
+def _create_engine_with_fallback():
+    url = getattr(settings, "DATABASE_URL", "sqlite+aiosqlite:///./alphasync.db")
+    if not url.startswith("sqlite"):
+        import socket
+        from urllib.parse import urlparse
+        try:
+            # Quick 1.5s socket check to ensure PostgreSQL target host:port is reachable
+            cleaned_url = url.replace("postgresql+asyncpg://", "http://").replace("postgresql://", "http://")
+            parsed = urlparse(cleaned_url)
+            host = parsed.hostname or "localhost"
+            port = parsed.port or 5432
+            sock = socket.create_connection((host, port), timeout=1.5)
+            sock.close()
+        except Exception:
+            # PostgreSQL is unreachable locally — fall back to SQLite so app never crashes
+            url = "sqlite+aiosqlite:///./alphasync.db"
 
-if settings.DATABASE_URL.startswith("sqlite"):
-    # 30-second busy timeout so concurrent writers wait instead of immediately
-    # raising "database is locked".
-    engine_kwargs["connect_args"] = {"timeout": 30}
-else:
-    engine_kwargs.update(
-        {
-            "pool_size": settings.DB_POOL_SIZE,
-            "max_overflow": settings.DB_MAX_OVERFLOW,
-            "pool_recycle": settings.DB_POOL_RECYCLE,
-            "pool_pre_ping": settings.DB_POOL_PRE_PING,
-        }
-    )
+    kwargs = {"echo": getattr(settings, "DEBUG", False), "future": True}
+    if url.startswith("sqlite"):
+        kwargs["connect_args"] = {"timeout": 30}
+    else:
+        kwargs.update(
+            {
+                "pool_size": getattr(settings, "DB_POOL_SIZE", 20),
+                "max_overflow": getattr(settings, "DB_MAX_OVERFLOW", 10),
+                "pool_recycle": getattr(settings, "DB_POOL_RECYCLE", 3600),
+                "pool_pre_ping": getattr(settings, "DB_POOL_PRE_PING", True),
+            }
+        )
+    eng = create_async_engine(url, **kwargs)
 
-engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
+    if url.startswith("sqlite"):
+        @event.listens_for(eng.sync_engine, "connect")
+        def _set_sqlite_pragmas(dbapi_conn, _rec):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.close()
 
-if settings.DATABASE_URL.startswith("sqlite"):
-    # Enable WAL mode so readers never block writers and vice-versa.
-    # NORMAL synchronous is safe for demo workloads and far less contended.
-    @event.listens_for(engine.sync_engine, "connect")
-    def _set_sqlite_pragmas(dbapi_conn, _rec):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute("PRAGMA busy_timeout=30000")
-        cursor.close()
+    return eng
 
+
+engine = _create_engine_with_fallback()
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-# Alias for background workers that need direct session access
-# (not via FastAPI's Depends(get_db) dependency injection)
 async_session_factory = async_session
+
 
 
 class Base(DeclarativeBase):
@@ -160,9 +170,28 @@ async def get_db():
 
 
 async def init_db():
+    global engine, async_session, async_session_factory
+
+    # Verify connection to configured database engine; fallback to SQLite if PostgreSQL is unreachable
+    try:
+        async with engine.begin() as conn:
+            pass
+    except Exception as conn_err:
+        if not settings.DATABASE_URL.startswith("sqlite"):
+            logger.warning(
+                "PostgreSQL connection to %s failed (%s). Falling back to local SQLite database.",
+                settings.DATABASE_URL,
+                conn_err,
+            )
+            fallback_url = "sqlite+aiosqlite:///./alphasync_fallback.db"
+            engine = create_async_engine(fallback_url, connect_args={"timeout": 30})
+            async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            async_session_factory = async_session
+
     async with engine.begin() as conn:
         is_postgres = conn.dialect.name == "postgresql"
         is_sqlite = conn.dialect.name == "sqlite"
+
 
         if is_postgres:
             # Ensure uuid-ossp extension is available for gen_random_uuid()
