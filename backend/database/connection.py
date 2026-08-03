@@ -226,8 +226,58 @@ async def init_db():
 
         await conn.run_sync(Base.metadata.create_all)
 
-        # ── PostgreSQL Row-Level Security (RLS) Policies ─────────────
+        # ── PostgreSQL Schema Migrations & Row-Level Security (RLS) Policies ──
         if is_postgres:
+            # First ensure tenants table exists so foreign keys can reference it
+            await conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS tenants (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        name VARCHAR(200) NOT NULL,
+                        slug VARCHAR(100) UNIQUE NOT NULL,
+                        domain VARCHAR(255),
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        max_users INTEGER DEFAULT 1000,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+                    """
+                )
+            )
+
+            # Idempotently add tenant_id column to all existing PostgreSQL tables
+            for tbl in RLS_TABLES:
+                try:
+                    await conn.execute(
+                        text(
+                            f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE;"
+                        )
+                    )
+                except Exception:
+                    pass
+
+            # Idempotently add any missing user admin/status columns in PostgreSQL
+            user_pg_columns = [
+                ("account_status", "VARCHAR(30) NOT NULL DEFAULT 'active'"),
+                ("access_expires_at", "TIMESTAMPTZ"),
+                ("access_duration_days", "INTEGER"),
+                ("approved_at", "TIMESTAMPTZ"),
+                ("approved_by", "UUID"),
+                ("deactivation_reason", "VARCHAR(500)"),
+                ("admin_level", "VARCHAR(20)"),
+                ("admin_assigned_by", "UUID"),
+                ("admin_assigned_at", "TIMESTAMPTZ"),
+                ("academy_role", "VARCHAR(20) DEFAULT 'student'"),
+            ]
+            for col_name, col_type in user_pg_columns:
+                try:
+                    await conn.execute(
+                        text(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_type};")
+                    )
+                except Exception:
+                    pass
+
             for tbl in RLS_TABLES:
                 try:
                     await conn.execute(text(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY;"))
@@ -250,6 +300,7 @@ async def init_db():
                     )
                 except Exception as rls_err:
                     pass
+
 
 
 
