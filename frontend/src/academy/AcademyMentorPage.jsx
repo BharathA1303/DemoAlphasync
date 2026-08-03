@@ -4,11 +4,13 @@
 // Chat history is kept locally per browser session only (stateless backend),
 // same design as the existing AIMentorPage.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
     Bot, Send, Loader2, MessageSquarePlus, Trash2, Sparkles,
     BookOpen, Code2, Calculator, LineChart, Lightbulb, FileQuestion,
     UserRound, Search,
 } from 'lucide-react';
+
 import { useAuthStore } from '../stores/useAuthStore';
 import { cn } from '../utils/cn';
 import academyApi from './api';
@@ -71,6 +73,7 @@ function formatTime(ts) {
 }
 
 export default function AcademyMentorPage() {
+    const location = useLocation();
     const user = useAuthStore((s) => s.user);
     const storageKey = useMemo(() => `academy-mentor-history:${user?.id || 'anon'}`, [user?.id]);
 
@@ -81,6 +84,13 @@ export default function AcademyMentorPage() {
     const [query, setQuery] = useState('');
     const hasInitialized = useRef('');
     const listRef = useRef(null);
+
+    useEffect(() => {
+        if (location.state?.initialPrompt) {
+            setInput(location.state.initialPrompt);
+        }
+    }, [location.state]);
+
 
     useLayoutEffect(() => { window.dispatchEvent(new Event('resize')); }, []);
 

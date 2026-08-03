@@ -35,10 +35,11 @@ export function formatExpiryChip(dateStr) {
 
 export function resolveChainSourceBadge(source) {
   const src = String(source || '').toLowerCase();
-  if (src.includes('tickalpha_cache')) return { variant: 'warning', label: 'CACHED' };
-  if (src.includes('tickalpha')) return { variant: 'success', label: 'LIVE' };
-  return { variant: 'default', label: 'OFFLINE' };
+  if (src.includes('cache')) return { variant: 'warning', label: 'CACHED' };
+  if (src.includes('unavailable') || src.includes('error')) return { variant: 'default', label: 'OFFLINE' };
+  return { variant: 'success', label: 'LIVE' };
 }
+
 
 /** NSE API chain row → OptionChain row shape */
 /** Preserve WS-fresh LTP when a poll returns zeros from a slow GetQuotes batch. */

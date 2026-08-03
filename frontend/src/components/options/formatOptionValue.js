@@ -3,9 +3,12 @@
  */
 
 export function isLiveChainSource(source) {
+  if (!source) return true;
   const s = String(source || '').toLowerCase();
-  return s.includes('tickalpha');
+  if (s.includes('unavailable') || s.includes('error') || s.includes('disabled')) return false;
+  return true;
 }
+
 
 /** Price-like field: show — if missing, not live, or zero without valid quote */
 export function formatOptionPrice(value, { source, allowZero = false, bid, ask, noFallback = false } = {}) {

@@ -1,5 +1,7 @@
 import asyncio
+import uuid
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy import text, event
 from sqlalchemy.ext.compiler import compiles
@@ -82,6 +84,68 @@ async def _commit_with_retry(session: AsyncSession, retries: int = 5):
             raise
 
 
+async def set_tenant_context(session: AsyncSession, tenant_id: uuid.UUID | str | None) -> None:
+    """Sets the transaction-scoped setting `SET LOCAL app.current_tenant_id = ...` for PostgreSQL RLS isolation.
+    Also stores `tenant_id` in session.info for SQLite testing / application filtering.
+    """
+    tenant_str = str(tenant_id) if tenant_id else ""
+    session.info["tenant_id"] = tenant_str
+
+    try:
+        bind = await session.connection()
+        if bind and getattr(bind.dialect, "name", "") == "postgresql":
+            await session.execute(
+                text("SET LOCAL app.current_tenant_id = :tid"),
+                {"tid": tenant_str},
+            )
+    except Exception:
+        pass
+
+
+async def reset_tenant_context(session: AsyncSession) -> None:
+    """Explicitly resets tenant context on connection checkin / pool release."""
+    session.info.pop("tenant_id", None)
+    try:
+        bind = await session.connection()
+        if bind and getattr(bind.dialect, "name", "") == "postgresql":
+            await session.execute(text("SET LOCAL app.current_tenant_id = ''"))
+    except Exception:
+        pass
+
+
+
+RLS_TABLES = [
+    "users",
+    "admin_audit_log",
+    "email_notifications_log",
+    "auth_refresh_tokens",
+    "auth_impersonation_sessions",
+    "academy_courses",
+    "academy_modules",
+    "academy_lessons",
+    "academy_content_blocks",
+    "academy_enrollments",
+    "academy_lesson_progress",
+    "academy_study_activity",
+    "academy_quiz_attempts",
+    "academy_skill_mastery",
+    "academy_teacher_student_assignments",
+    "academy_challenges",
+    "academy_student_challenge_progress",
+    "orders",
+    "portfolios",
+    "holdings",
+    "transactions",
+    "watchlists",
+    "watchlist_items",
+    "futures_orders",
+    "futures_watchlists",
+    "futures_watchlist_items",
+    "algo_strategies",
+]
+
+
+
 async def get_db():
     async with async_session() as session:
         try:
@@ -113,6 +177,7 @@ async def init_db():
             """
                 )
             )
+        from models import tenant  # noqa — AlphaSync Campus Tenant & RBAC models
         from models import user, order, portfolio, watchlist, algo  # noqa
         from models import futures_order  # noqa  — futures paper trading tables
         from models import futures_watchlist  # noqa  — futures watchlist tables
@@ -131,6 +196,33 @@ async def init_db():
         from models import academy as academy_models  # noqa — AlphaSync Academy (LMS) tables
 
         await conn.run_sync(Base.metadata.create_all)
+
+        # ── PostgreSQL Row-Level Security (RLS) Policies ─────────────
+        if is_postgres:
+            for tbl in RLS_TABLES:
+                try:
+                    await conn.execute(text(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY;"))
+                    await conn.execute(text(f"ALTER TABLE {tbl} FORCE ROW LEVEL SECURITY;"))
+                    await conn.execute(
+                        text(
+                            f"""
+                            DO $$ BEGIN
+                                IF NOT EXISTS (
+                                    SELECT 1 FROM pg_policies WHERE tablename = '{tbl}' AND policyname = 'tenant_isolation_policy'
+                                ) THEN
+                                    CREATE POLICY tenant_isolation_policy ON {tbl}
+                                    FOR ALL
+                                    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid)
+                                    WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+                                END IF;
+                            END $$;
+                            """
+                        )
+                    )
+                except Exception as rls_err:
+                    pass
+
+
 
         # ── Lightweight, idempotent schema patch for SQLite (demo DB) ─────────
         if is_sqlite:

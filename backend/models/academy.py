@@ -1,15 +1,10 @@
 # models/academy.py - AlphaSync Academy (LMS) domain models.
-#
-# Additive, new subsystem living alongside the trading-platform models in
-# this same file (users, orders, portfolio, ...). Reuses the same User
-# table (see models/user.py's `academy_role` column) rather than a
-# separate account system, and the same UUID-PK / Base declarative style
-# used across the rest of backend/models/.
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column,
     String,
+    Boolean,
     Integer,
     Numeric,
     Date,
@@ -19,6 +14,7 @@ from sqlalchemy import (
     Text,
     text,
 )
+
 from sqlalchemy.dialects.postgresql import UUID
 from database.connection import Base
 
@@ -28,28 +24,28 @@ def _utcnow():
 
 
 class Course(Base):
-    """A learnable subject/topic. Phase 1 has a small fixed demo catalog
-    (see academy_seed.py) — no course-authoring UI yet."""
+    """A learnable subject/topic."""
 
     __tablename__ = "academy_courses"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     title = Column(String(150), nullable=False)
-    slug = Column(String(150), unique=True, nullable=False, index=True)
+    slug = Column(String(150), nullable=False, index=True)
     description = Column(Text, nullable=True)
-    # Category doubles as the "skill" name shown in Skill Mastery Breakdown /
-    # Strengths vs Weaknesses / Time Spent by Topic on the analytics page.
     category = Column(String(100), nullable=False, index=True)
     total_lessons = Column(Integer, nullable=False, default=0)
-    # Faculty who teaches this course, for the Faculty Dashboard (Phase 2).
-    # Nullable — Phase 1's fixed demo catalog has no instructor assigned
-    # until a faculty user first opens their dashboard (see
-    # academy_seed.ensure_faculty_teaching_data).
     instructor_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at = Column(
         DateTime(timezone=True), default=_utcnow, server_default=text("CURRENT_TIMESTAMP")
+    )
+
+    __table_args__ = (
+        Index("ix_academy_course_tenant_slug", "tenant_id", "slug", unique=True),
     )
 
 
@@ -59,6 +55,9 @@ class Enrollment(Base):
     __tablename__ = "academy_enrollments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     course_id = Column(UUID(as_uuid=True), ForeignKey("academy_courses.id", ondelete="CASCADE"), nullable=False)
     progress_percent = Column(Integer, nullable=False, default=0)
@@ -72,19 +71,40 @@ class Enrollment(Base):
     )
 
 
+class LessonProgress(Base):
+    """Tracks completion of specific lessons within a course."""
+
+    __tablename__ = "academy_lesson_progress"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    course_id = Column(UUID(as_uuid=True), ForeignKey("academy_courses.id", ondelete="CASCADE"), nullable=False)
+    lesson_id = Column(String(100), nullable=False)
+    completed = Column(Boolean, default=False, nullable=False, server_default=text("false"))
+
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_academy_lesson_user_course", "user_id", "course_id", "lesson_id", unique=True),
+    )
+
+
 class StudyActivity(Base):
-    """Row-level daily study time, the base data the analytics dashboard
-    aggregates into the activity heatmap, time-by-topic donut, and the
-    progress-over-time line."""
+    """Daily study time log."""
 
     __tablename__ = "academy_study_activity"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     course_id = Column(UUID(as_uuid=True), ForeignKey("academy_courses.id", ondelete="SET NULL"), nullable=True)
     activity_date = Column(Date, nullable=False)
     minutes_spent = Column(Integer, nullable=False, default=0)
-    # "study" | "quiz" | "assignment"
     activity_type = Column(String(20), nullable=False, default="study")
 
     __table_args__ = (
@@ -93,12 +113,14 @@ class StudyActivity(Base):
 
 
 class QuizAttempt(Base):
-    """A single scored quiz attempt — feeds Average Quiz Score and the
-    quiz-performance-improving insight."""
+    """A single scored quiz attempt."""
 
     __tablename__ = "academy_quiz_attempts"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     course_id = Column(UUID(as_uuid=True), ForeignKey("academy_courses.id", ondelete="SET NULL"), nullable=True)
     score_percent = Column(Numeric(5, 2), nullable=False)
@@ -112,11 +134,14 @@ class QuizAttempt(Base):
 
 
 class SkillMastery(Base):
-    """Per-user, per-skill (== Course.category) mastery percentage."""
+    """Per-user, per-skill mastery percentage."""
 
     __tablename__ = "academy_skill_mastery"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     skill_name = Column(String(100), nullable=False)
     mastery_percent = Column(Integer, nullable=False, default=0)
@@ -130,8 +155,6 @@ class SkillMastery(Base):
 
     @property
     def level(self) -> str:
-        """Beginner/Intermediate/Advanced, derived from mastery_percent —
-        not stored, so it always stays consistent with the percent."""
         if self.mastery_percent >= 80:
             return "Advanced"
         if self.mastery_percent >= 60:
@@ -145,6 +168,9 @@ class TeacherStudentAssignment(Base):
     __tablename__ = "academy_teacher_student_assignments"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     teacher_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     student_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     assigned_at = Column(
@@ -164,11 +190,14 @@ class Challenge(Base):
     __tablename__ = "academy_challenges"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=False)
-    category = Column(String(100), nullable=False, default="Trading & Risk") # Risk Management, Algo Strategy, Options, Prompting
-    difficulty = Column(String(20), nullable=False, default="Beginner") # Beginner, Intermediate, Advanced
-    target_metric = Column(String(50), nullable=False, default="pnl") # pnl, win_rate, max_drawdown, sharpe, quiz_score
+    category = Column(String(100), nullable=False, default="Trading & Risk")
+    difficulty = Column(String(20), nullable=False, default="Beginner")
+    target_metric = Column(String(50), nullable=False, default="pnl")
     target_value = Column(Numeric(14, 2), nullable=False, default=1000.0)
     reward_points = Column(Integer, nullable=False, default=100)
     creator_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -183,9 +212,12 @@ class StudentChallengeProgress(Base):
     __tablename__ = "academy_student_challenge_progress"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     challenge_id = Column(UUID(as_uuid=True), ForeignKey("academy_challenges.id", ondelete="CASCADE"), nullable=False)
-    status = Column(String(20), nullable=False, default="in_progress") # in_progress, completed, failed
+    status = Column(String(20), nullable=False, default="in_progress")
     current_value = Column(Numeric(14, 2), nullable=False, default=0.0)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(
@@ -195,4 +227,3 @@ class StudentChallengeProgress(Base):
     __table_args__ = (
         Index("ix_academy_student_challenge", "user_id", "challenge_id", unique=True),
     )
-

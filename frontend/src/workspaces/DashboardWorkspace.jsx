@@ -467,19 +467,25 @@ export default function DashboardWorkspace() {
             </div>
 
             {/* Welcome Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-display font-semibold text-heading">
-                        Welcome, {user?.full_name?.split(' ')[0] || user?.username || 'Trader'}
+                        Welcome, {user?.full_name?.split(' ')[0] || user?.username || 'Trader'} 👋
                     </h1>
+                    <p className="text-xs text-text-secondary">Simulated Trading Workspace & AI Strategy Terminal</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                    <Link to="/academy" className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-emerald-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold hover:bg-amber-500/30 transition-all flex items-center gap-1.5 shadow-md">
+                        <Zap className="h-4 w-4 text-amber-400" />
+                        <span>AI Curiosity Hub & Challenges</span>
+                    </Link>
                     <LeaderboardButton />
                     <Link to="/terminal" className="btn-primary text-sm hidden sm:inline-flex items-center gap-2" aria-label="Open trading terminal">
                         Trade Now <ArrowRight className="w-4 h-4" />
                     </Link>
                 </div>
             </div>
+
 
             {/* KPI Bar */}
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">

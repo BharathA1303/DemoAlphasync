@@ -1,0 +1,49 @@
+name: AlphaSync Campus CI - Blocking Tenant & AI Safety Gates
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  tenant-isolation-and-ai-gates:
+    name: Tenant Isolation & AI Safety Constraints Gate
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: alphasync_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio aiosqlite psycopg2-binary
+
+      - name: Run Blocking Tenant RLS & AI Safety Gate Test Suites
+        env:
+          DATABASE_URL: "postgresql+asyncpg://postgres:postgrespassword@localhost:5432/alphasync_test"
+        run: |
+          python -m pytest backend/tests/test_tenant_rls_isolation.py backend/tests/test_ai_mentor_gates.py backend/tests/test_ai_mentor_adversarial.py backend/tests/test_academic_platform.py -v --durations=0

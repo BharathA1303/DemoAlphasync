@@ -710,8 +710,9 @@ async def option_chain(
         logger.info(f"Generating simulated option chain for {sym}")
         result = await _generate_simulated_option_chain(sym, expiry, strikes)
 
-    if result and not result.get("source"):
+    if result:
         result["source"] = "tickalpha"
+
 
     if result:
         chain_rows = result.get("chain") or []

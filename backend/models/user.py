@@ -26,6 +26,10 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+
     firebase_uid = Column(String(128), unique=True, nullable=True, index=True)  # legacy, unused
     auth_provider = Column(
         String(30),
@@ -103,7 +107,10 @@ class User(Base):
     )
 
     # Relationships
+    tenant = relationship("Tenant", back_populates="users")
+    tenant_roles = relationship("UserTenantRole", back_populates="user", cascade="all, delete-orphan")
     portfolio = relationship(
+
         "Portfolio", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     orders = relationship("Order", back_populates="user", cascade="all, delete-orphan")
@@ -160,7 +167,11 @@ class AdminAuditLog(Base):
     __tablename__ = "admin_audit_log"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     admin_user_id = Column(
+
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
