@@ -15,20 +15,23 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "candles_1m",
-        sa.Column("exchange", sa.String(length=10), nullable=False),
-        sa.Column("token", sa.String(length=20), nullable=False),
-        sa.Column("symbol", sa.String(length=50), nullable=False),
-        sa.Column("bucket_start", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("open", sa.Numeric(precision=12, scale=4), nullable=False),
-        sa.Column("high", sa.Numeric(precision=12, scale=4), nullable=False),
-        sa.Column("low", sa.Numeric(precision=12, scale=4), nullable=False),
-        sa.Column("close", sa.Numeric(precision=12, scale=4), nullable=False),
-        sa.Column("volume", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
-        sa.PrimaryKeyConstraint("exchange", "token", "bucket_start"),
-    )
-    op.create_index("ix_candles_1m_sym_bucket", "candles_1m", ["symbol", "exchange", "bucket_start"])
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if "candles_1m" not in insp.get_table_names():
+        op.create_table(
+            "candles_1m",
+            sa.Column("exchange", sa.String(length=10), nullable=False),
+            sa.Column("token", sa.String(length=20), nullable=False),
+            sa.Column("symbol", sa.String(length=50), nullable=False),
+            sa.Column("bucket_start", sa.DateTime(timezone=True), nullable=False),
+            sa.Column("open", sa.Numeric(precision=12, scale=4), nullable=False),
+            sa.Column("high", sa.Numeric(precision=12, scale=4), nullable=False),
+            sa.Column("low", sa.Numeric(precision=12, scale=4), nullable=False),
+            sa.Column("close", sa.Numeric(precision=12, scale=4), nullable=False),
+            sa.Column("volume", sa.BigInteger(), nullable=False, server_default=sa.text("0")),
+            sa.PrimaryKeyConstraint("exchange", "token", "bucket_start"),
+        )
+        op.create_index("ix_candles_1m_sym_bucket", "candles_1m", ["symbol", "exchange", "bucket_start"])
 
 
 def downgrade() -> None:

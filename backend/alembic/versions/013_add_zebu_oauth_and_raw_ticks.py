@@ -16,79 +16,93 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    tables = insp.get_table_names()
+
     # 1. New columns on data_feed_configs
-    op.add_column("data_feed_configs", sa.Column("oauth_base_url", sa.String(length=500), nullable=True, server_default=sa.text("'https://go.mynt.in'")))
-    op.add_column("data_feed_configs", sa.Column("oauth_client_id", sa.String(length=100), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("oauth_secret_key_enc", sa.Text(), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("oauth_redirect_url", sa.String(length=500), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("oauth_access_token_enc", sa.Text(), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("oauth_refresh_token_enc", sa.Text(), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("oauth_token_expires_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("oauth_connection_status", sa.String(length=50), nullable=True, server_default=sa.text("'disconnected'")))
-    op.add_column("data_feed_configs", sa.Column("oauth_last_error", sa.Text(), nullable=True))
-    op.add_column("data_feed_configs", sa.Column("feed_delay_seconds", sa.Integer(), nullable=False, server_default=sa.text("900")))
-    op.add_column("data_feed_configs", sa.Column("redis_active_market_hours_only", sa.Boolean(), nullable=False, server_default=sa.text("true")))
-    op.add_column("data_feed_configs", sa.Column("broker_live_feed_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")))
+    if "data_feed_configs" in tables:
+        existing_cols = {c["name"] for c in insp.get_columns("data_feed_configs")}
+        cols_to_add = [
+            ("oauth_base_url", sa.Column("oauth_base_url", sa.String(length=500), nullable=True, server_default=sa.text("'https://go.mynt.in'"))),
+            ("oauth_client_id", sa.Column("oauth_client_id", sa.String(length=100), nullable=True)),
+            ("oauth_secret_key_enc", sa.Column("oauth_secret_key_enc", sa.Text(), nullable=True)),
+            ("oauth_redirect_url", sa.Column("oauth_redirect_url", sa.String(length=500), nullable=True)),
+            ("oauth_access_token_enc", sa.Column("oauth_access_token_enc", sa.Text(), nullable=True)),
+            ("oauth_refresh_token_enc", sa.Column("oauth_refresh_token_enc", sa.Text(), nullable=True)),
+            ("oauth_token_expires_at", sa.Column("oauth_token_expires_at", sa.DateTime(timezone=True), nullable=True)),
+            ("oauth_connection_status", sa.Column("oauth_connection_status", sa.String(length=50), nullable=True, server_default=sa.text("'disconnected'"))),
+            ("oauth_last_error", sa.Column("oauth_last_error", sa.Text(), nullable=True)),
+            ("feed_delay_seconds", sa.Column("feed_delay_seconds", sa.Integer(), nullable=False, server_default=sa.text("900"))),
+            ("redis_active_market_hours_only", sa.Column("redis_active_market_hours_only", sa.Boolean(), nullable=False, server_default=sa.text("true"))),
+            ("broker_live_feed_enabled", sa.Column("broker_live_feed_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false"))),
+        ]
+        for col_name, col_obj in cols_to_add:
+            if col_name not in existing_cols:
+                op.add_column("data_feed_configs", col_obj)
 
     # 2. symbol_master table
-    op.create_table(
-        "symbol_master",
-        sa.Column("exchange", sa.String(length=10), nullable=False),
-        sa.Column("token", sa.String(length=20), nullable=False),
-        sa.Column("symbol", sa.String(length=50), nullable=False),
-        sa.Column("trading_symbol", sa.String(length=100), nullable=False),
-        sa.Column("instrument_type", sa.String(length=20), nullable=False),
-        sa.Column("lot_size", sa.Integer(), nullable=False, server_default=sa.text("1")),
-        sa.Column("tick_size", sa.Numeric(precision=10, scale=4), nullable=False, server_default=sa.text("0.05")),
-        sa.Column("expiry", sa.Date(), nullable=True),
-        sa.Column("strike", sa.Numeric(precision=12, scale=2), nullable=True),
-        sa.Column("option_type", sa.String(length=2), nullable=True),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        sa.Column("synced_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.PrimaryKeyConstraint("exchange", "token"),
-    )
-    op.create_index("ix_symbol_master_symbol", "symbol_master", ["symbol", "exchange"])
-    op.create_index("ix_symbol_master_active", "symbol_master", ["is_active"])
-    op.create_index("ix_symbol_master_trading_symbol", "symbol_master", ["trading_symbol"])
+    if "symbol_master" not in tables:
+        op.create_table(
+            "symbol_master",
+            sa.Column("exchange", sa.String(length=10), nullable=False),
+            sa.Column("token", sa.String(length=20), nullable=False),
+            sa.Column("symbol", sa.String(length=50), nullable=False),
+            sa.Column("trading_symbol", sa.String(length=100), nullable=False),
+            sa.Column("instrument_type", sa.String(length=20), nullable=False),
+            sa.Column("lot_size", sa.Integer(), nullable=False, server_default=sa.text("1")),
+            sa.Column("tick_size", sa.Numeric(precision=10, scale=4), nullable=False, server_default=sa.text("0.05")),
+            sa.Column("expiry", sa.Date(), nullable=True),
+            sa.Column("strike", sa.Numeric(precision=12, scale=2), nullable=True),
+            sa.Column("option_type", sa.String(length=2), nullable=True),
+            sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
+            sa.Column("synced_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+            sa.PrimaryKeyConstraint("exchange", "token"),
+        )
+        op.create_index("ix_symbol_master_symbol", "symbol_master", ["symbol", "exchange"])
+        op.create_index("ix_symbol_master_active", "symbol_master", ["is_active"])
+        op.create_index("ix_symbol_master_trading_symbol", "symbol_master", ["trading_symbol"])
 
     # 3. bulk_file_index table
-    op.create_table(
-        "bulk_file_index",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
-        sa.Column("file_path", sa.String(length=500), nullable=False),
-        sa.Column("exchange", sa.String(length=10), nullable=False),
-        sa.Column("segment", sa.String(length=20), nullable=False),
-        sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("row_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("start_ts", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("end_ts", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_bulk_file_index_ex_date", "bulk_file_index", ["exchange", "segment", "date"])
+    if "bulk_file_index" not in tables:
+        op.create_table(
+            "bulk_file_index",
+            sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
+            sa.Column("file_path", sa.String(length=500), nullable=False),
+            sa.Column("exchange", sa.String(length=10), nullable=False),
+            sa.Column("segment", sa.String(length=20), nullable=False),
+            sa.Column("date", sa.Date(), nullable=False),
+            sa.Column("row_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
+            sa.Column("start_ts", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("end_ts", sa.DateTime(timezone=True), nullable=True),
+            sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_bulk_file_index_ex_date", "bulk_file_index", ["exchange", "segment", "date"])
 
     # 4. raw_ticks table (RANGE Partitioned by real_timestamp)
-    op.execute(
-        """
-        CREATE TABLE raw_ticks (
-            id              BIGSERIAL,
-            exchange        VARCHAR(10) NOT NULL,
-            token           VARCHAR(20) NOT NULL,
-            symbol          VARCHAR(50) NOT NULL,
-            ltp             NUMERIC(12,4) NOT NULL,
-            open            NUMERIC(12,4),
-            high            NUMERIC(12,4),
-            low             NUMERIC(12,4),
-            close           NUMERIC(12,4),
-            volume          BIGINT,
-            best_bid        NUMERIC(12,4),
-            best_ask        NUMERIC(12,4),
-            real_timestamp  TIMESTAMPTZ NOT NULL,
-            ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-            PRIMARY KEY (id, real_timestamp)
-        ) PARTITION BY RANGE (real_timestamp);
-        """
-    )
+    if "raw_ticks" not in tables:
+        op.execute(
+            """
+            CREATE TABLE IF NOT EXISTS raw_ticks (
+                id              BIGSERIAL,
+                exchange        VARCHAR(10) NOT NULL,
+                token           VARCHAR(20) NOT NULL,
+                symbol          VARCHAR(50) NOT NULL,
+                ltp             NUMERIC(12,4) NOT NULL,
+                open            NUMERIC(12,4),
+                high            NUMERIC(12,4),
+                low             NUMERIC(12,4),
+                close           NUMERIC(12,4),
+                volume          BIGINT,
+                best_bid        NUMERIC(12,4),
+                best_ask        NUMERIC(12,4),
+                real_timestamp  TIMESTAMPTZ NOT NULL,
+                ingested_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+                PRIMARY KEY (id, real_timestamp)
+            ) PARTITION BY RANGE (real_timestamp);
+            """
+        )
 
     # Initial migration-time partitions (today, tomorrow, and subsequent day)
     now_utc = datetime.now(timezone.utc)
