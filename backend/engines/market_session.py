@@ -154,6 +154,13 @@ class MarketSessionEngine:
             MarketState.CLOSING,
         )
 
+    def is_open_ish(self) -> bool:
+        """Are we during active market session (Pre-market, Open, Closing)?"""
+        if self.allow_after_hours_trading or self.simulation_mode:
+            return True
+        state = self.get_current_state()
+        return state in (MarketState.PRE_MARKET, MarketState.OPEN, MarketState.CLOSING)
+
     def can_place_orders(self) -> bool:
         """Can new orders be submitted?
 

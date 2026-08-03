@@ -80,6 +80,45 @@ class DelayedFeedProvider(MarketProvider):
                 res[s] = q
         return res
 
+    async def get_historical_data(
+        self, symbol: str, period: str = "1mo", interval: str = "1d"
+    ) -> list:
+        from market_data.replay.delayed_candle_builder import DelayedCandleBuilder
+        from datetime import timedelta
+
+        clean_sym = symbol.upper()
+        ex = "NSE"
+        if "." in clean_sym:
+            parts = clean_sym.split(".")
+            clean_sym = parts[0]
+            ex = "BSE" if parts[1] == "BO" else "NSE"
+
+        async with async_session_factory() as session:
+            delay_seconds = await DelayEngine.get_current_delay_seconds(session)
+            cutoff = DelayEngine.get_visible_cutoff(delay_seconds)
+            start_time = cutoff - timedelta(days=30)
+            ticks = await DelayEngine.fetch_raw_ticks_until_cutoff(
+                session, clean_sym, ex, start_time=start_time, delay_seconds=delay_seconds
+            )
+
+            if not ticks:
+                # If raw_ticks database has no ticks stored yet, fall back to ReplayProvider's initial candle generator
+                from providers.replay_provider import ReplayProvider
+                replay = ReplayProvider()
+                return await replay.get_historical_data(symbol, period=period, interval=interval)
+
+            tf_mins = 1
+            if interval == "5m":
+                tf_mins = 5
+            elif interval == "15m":
+                tf_mins = 15
+            elif interval in ("1h", "60m"):
+                tf_mins = 60
+            elif interval == "1d":
+                tf_mins = 1440
+
+            return DelayedCandleBuilder.build_candles_from_ticks(ticks, timeframe_minutes=tf_mins)
+
     async def health(self) -> ProviderHealth:
         uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds() if self._start_time else 0.0
         return ProviderHealth(
@@ -92,3 +131,4 @@ class DelayedFeedProvider(MarketProvider):
 
     def get_subscribed_symbols(self) -> set[str]:
         return set(self._subscribed_symbols)
+

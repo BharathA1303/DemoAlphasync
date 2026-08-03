@@ -92,6 +92,7 @@ class DataFeedConfig(Base):
     oauth_last_error = Column(Text, nullable=True)
     feed_delay_seconds = Column(Integer, nullable=False, default=300, server_default=text("300"))
     redis_active_market_hours_only = Column(Boolean, nullable=False, default=True, server_default=text("true"))
+    broker_live_feed_enabled = Column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, server_default=text("CURRENT_TIMESTAMP"))
 

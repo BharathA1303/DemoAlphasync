@@ -1430,3 +1430,19 @@ async def resync_symbols(
     return {"status": "success", "synced_counts": summary}
 
 
+@router.get("/data-feed/bulk-files")
+async def get_bulk_files(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """List recent CSV bulk files indexed for contracts and options."""
+    from models.bulk_file_index import BulkFileIndex
+    from sqlalchemy import select
+
+    stmt = select(BulkFileIndex).order_by(BulkFileIndex.created_at.desc()).limit(100)
+    res = await db.execute(stmt)
+    files = res.scalars().all()
+    return {"files": [f.to_dict() for f in files]}
+
+
+

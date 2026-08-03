@@ -136,6 +136,20 @@ class ZebuOAuthClient:
             res.raise_for_status()
             return res.content
 
+    async def get_quotes(self, access_token: str, exchange: str, token: str) -> dict:
+        """Fetch REST snapshot quotes for an instrument using GetQuotes endpoint."""
+        url = f"{self.base_url}/NorenWClientAPI/GetQuotes"
+        payload = {
+            "uid": self.client_code if hasattr(self, "client_code") else "",
+            "exch": exchange,
+            "token": token,
+        }
+        headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(url, data="jData=" + json.dumps(payload), headers=headers)
+            return _parse_json_response(res, context="GetQuotes")
+
 
 class ZebuLiveFeed:
     """Async WebSocket client for Zebu live tick ingestion (NorenWSTP)."""
