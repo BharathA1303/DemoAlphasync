@@ -10,6 +10,7 @@ are left untouched.
 """
 
 from alembic import op
+import sqlalchemy as sa
 
 revision = "009_clear_broker_credentials"
 down_revision = "008_admin_2fa"
