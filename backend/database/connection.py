@@ -378,6 +378,18 @@ async def init_db():
                 if column_name not in cols:
                     await conn.execute(text(f"ALTER TABLE users ADD COLUMN {ddl};"))
 
+            # Ensure tenant_id column exists on all existing SQLite tables
+            async def _ensure_table_column(table_name: str, column_name: str, ddl: str):
+                try:
+                    cols = await _sqlite_columns(table_name)
+                    if column_name not in cols:
+                        await conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {ddl};"))
+                except Exception:
+                    pass
+
+            for tbl in RLS_TABLES:
+                await _ensure_table_column(tbl, "tenant_id", "tenant_id CHAR(36)")
+
             await _ensure_users_column(
                 "account_status", "account_status VARCHAR(30) NOT NULL DEFAULT 'active'"
             )
@@ -404,6 +416,7 @@ async def init_db():
             await _ensure_users_column(
                 "academy_role", "academy_role VARCHAR(20) DEFAULT 'student'"
             )
+
 
             # AlphaSync Academy (LMS) — Course.instructor_id (Phase 2, Faculty
             # Dashboard), added after academy_courses already existed in prod.

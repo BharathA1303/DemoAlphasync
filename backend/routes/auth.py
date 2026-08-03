@@ -344,6 +344,7 @@ async def get_current_user_optional(
 
 
 def _user_profile(user: User) -> dict:
+    vc = getattr(user, "virtual_capital", None)
     return {
         "id": str(user.id),
         "email": user.email,
@@ -351,13 +352,14 @@ def _user_profile(user: User) -> dict:
         "full_name": user.full_name,
         "phone": user.phone,
         "role": user.role,
-        "virtual_capital": float(user.virtual_capital),
+        "virtual_capital": float(vc) if vc is not None else 1000000.0,
         "avatar_url": user.avatar_url,
         "is_verified": user.is_verified,
         "auth_provider": user.auth_provider,
         "account_status": getattr(user, "account_status", "active"),
         "academy_role": getattr(user, "academy_role", None) or "student",
     }
+
 
 
 def _apply_admin_allowlist_promotion(user: User) -> None:
@@ -528,40 +530,55 @@ async def login(
     """Log in with username or email + password."""
     identifier = req.username.strip()
 
-    result = await db.execute(
-        select(User).where(or_(User.username == identifier, User.email == identifier.lower()))
-    )
-    user = result.scalar_one_or_none()
-
-    if not user or not verify_password(req.password, user.password_hash or ""):
-        raise HTTPException(status_code=401, detail="Invalid username/email or password.")
-
-    if _is_admin_allowlisted(user.email):
-        _apply_admin_allowlist_promotion(user)
-
-    user.updated_at = datetime.now(timezone.utc)
-
-    token = create_access_token(str(user.id))
-    await _upsert_user_session(db, user, request, token)
-    await db.commit()
-    await db.refresh(user)
-
-    uid = str(user.id)
-    event_bus.emit_nowait(
-        Event(
-            type=EventType.USER_LOGIN,
-            data={"user_id": uid, "email": user.email, "action": "login", "provider": "local"},
-            user_id=uid,
-            source="auth",
+    try:
+        result = await db.execute(
+            select(User).where(or_(User.username == identifier, User.email == identifier.lower()))
         )
-    )
+        user = result.scalar_one_or_none()
 
-    return {
-        "message": "Login successful",
-        "is_new_user": False,
-        "token": token,
-        "user": _user_profile(user),
-    }
+        if not user or not verify_password(req.password, user.password_hash or ""):
+            raise HTTPException(status_code=401, detail="Invalid username/email or password.")
+
+        if _is_admin_allowlisted(user.email):
+            _apply_admin_allowlist_promotion(user)
+
+        user.updated_at = datetime.now(timezone.utc)
+
+        token = create_access_token(str(user.id))
+        try:
+            await _upsert_user_session(db, user, request, token)
+        except Exception as sess_err:
+            logger.warning("UserSession upsert failed during login: %s", sess_err)
+
+        await db.commit()
+        await db.refresh(user)
+
+        uid = str(user.id)
+        try:
+            event_bus.emit_nowait(
+                Event(
+                    type=EventType.USER_LOGIN,
+                    data={"user_id": uid, "email": user.email, "action": "login", "provider": "local"},
+                    user_id=uid,
+                    source="auth",
+                )
+            )
+        except Exception:
+            pass
+
+        return {
+            "message": "Login successful",
+            "is_new_user": False,
+            "token": token,
+            "user": _user_profile(user),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error during login for %s: %s", identifier, e)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Login failed: {type(e).__name__}: {str(e)}")
+
 
 
 def _normalise_phone(raw: str):
