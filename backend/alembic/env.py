@@ -49,13 +49,8 @@ def do_run_migrations(connection):
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
-        version_num_dim=128,
     )
     with context.begin_transaction():
-        try:
-            connection.exec_driver_sql("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128);")
-        except Exception:
-            pass
         context.run_migrations()
 
 

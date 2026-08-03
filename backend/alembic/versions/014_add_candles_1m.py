@@ -8,8 +8,8 @@ Create Date: 2026-08-03 00:00:00.000000
 from alembic import op
 import sqlalchemy as sa
 
-revision = "014_add_candles_1m"
-down_revision = "013_add_zebu_oauth_and_raw_ticks"
+revision = "014_candles_1m"
+down_revision = "013_zebu_oauth"
 branch_labels = None
 depends_on = None
 

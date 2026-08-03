@@ -12,7 +12,7 @@ from sqlalchemy import inspect as sa_inspect
 
 
 # revision identifiers, used by Alembic.
-revision = "002_order_type_bracket_take_profit"
+revision = "002_bracket_orders"
 down_revision = "001_firebase_auth"
 branch_labels = None
 depends_on = None

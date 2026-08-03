@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 from datetime import datetime, timezone, timedelta
 
-revision = "013_add_zebu_oauth_and_raw_ticks"
+revision = "013_zebu_oauth"
 down_revision = "012_local_password_auth"
 branch_labels = None
 depends_on = None
