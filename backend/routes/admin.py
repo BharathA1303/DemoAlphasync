@@ -1353,22 +1353,36 @@ async def get_data_feed_status(
     from workers.live_feed_ingestion_worker import live_ingestion_worker
     from sqlalchemy import select, func
 
-    cfg_stmt = select(DataFeedConfig).limit(1)
-    cfg_res = await db.execute(cfg_stmt)
-    config = cfg_res.scalar_one_or_none()
+    config = None
+    try:
+        cfg_stmt = select(DataFeedConfig).limit(1)
+        cfg_res = await db.execute(cfg_stmt)
+        config = cfg_res.scalar_one_or_none()
+    except Exception as e:
+        logger.warning(f"DataFeedConfig table/column read failed in get_data_feed_status: {e}")
 
-    active_symbols_cnt = await db.scalar(select(func.count()).select_from(SymbolMaster).where(SymbolMaster.is_active.is_(True))) or 0
+    active_symbols_cnt = 0
+    try:
+        active_symbols_cnt = await db.scalar(
+            select(func.count()).select_from(SymbolMaster).where(SymbolMaster.is_active.is_(True))
+        ) or 0
+    except Exception as e:
+        logger.warning(f"SymbolMaster table read failed in get_data_feed_status (run migration): {e}")
 
-    worker_status = live_ingestion_worker.get_status()
+    worker_status = {"status": "STOPPED", "ticks_today": 0, "subscribed_symbols_count": 0}
+    try:
+        worker_status = live_ingestion_worker.get_status()
+    except Exception as e:
+        logger.warning(f"Worker status query failed: {e}")
 
     return {
-        "connection_status": config.oauth_connection_status if config else "disconnected",
-        "client_id": config.oauth_client_id if config else None,
-        "feed_delay_seconds": config.feed_delay_seconds if config else 300,
-        "redis_active_market_hours_only": config.redis_active_market_hours_only if config else True,
+        "connection_status": getattr(config, "oauth_connection_status", "disconnected") if config else "disconnected",
+        "client_id": getattr(config, "oauth_client_id", None) if config else None,
+        "feed_delay_seconds": getattr(config, "feed_delay_seconds", 300) if config else 300,
+        "redis_active_market_hours_only": getattr(config, "redis_active_market_hours_only", True) if config else True,
         "active_symbols_count": active_symbols_cnt,
         "worker": worker_status,
-        "token_expires_at": config.oauth_token_expires_at.isoformat() if (config and config.oauth_token_expires_at) else None,
+        "token_expires_at": config.oauth_token_expires_at.isoformat() if (config and getattr(config, "oauth_token_expires_at", None)) else None,
     }
 
 
@@ -1447,10 +1461,14 @@ async def get_bulk_files(
     from models.bulk_file_index import BulkFileIndex
     from sqlalchemy import select
 
-    stmt = select(BulkFileIndex).order_by(BulkFileIndex.created_at.desc()).limit(100)
-    res = await db.execute(stmt)
-    files = res.scalars().all()
-    return {"files": [f.to_dict() for f in files]}
+    try:
+        stmt = select(BulkFileIndex).order_by(BulkFileIndex.created_at.desc()).limit(100)
+        res = await db.execute(stmt)
+        files = res.scalars().all()
+        return {"files": [f.to_dict() for f in files]}
+    except Exception as e:
+        logger.warning(f"BulkFileIndex query failed in get_bulk_files: {e}")
+        return {"files": []}
 
 
 
