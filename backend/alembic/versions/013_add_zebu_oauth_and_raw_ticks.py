@@ -115,6 +115,10 @@ def upgrade() -> None:
             f"""
             CREATE TABLE IF NOT EXISTS {p_name} PARTITION OF raw_ticks
             FOR VALUES FROM ('{start_ts}') TO ('{end_ts}');
+            """
+        )
+        op.execute(
+            f"""
             CREATE INDEX IF NOT EXISTS ix_{p_name}_ex_tok_ts ON {p_name} (exchange, token, real_timestamp DESC);
             """
         )
