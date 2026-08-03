@@ -17,22 +17,22 @@ branch_labels = None
 depends_on = None
 
 
-def _has_column(table_name, column_name):
+def upgrade() -> None:
     bind = op.get_bind()
     insp = sa_inspect(bind)
-    if table_name not in insp.get_table_names():
-        return False
-    return column_name in [c["name"] for c in insp.get_columns(table_name)]
-
-
-def upgrade() -> None:
-    if not _has_column("broker_accounts", "credentials_enc"):
-        op.add_column(
-            "broker_accounts",
-            sa.Column("credentials_enc", sa.Text(), nullable=True),
-        )
+    if "broker_accounts" in insp.get_table_names():
+        existing_cols = [c["name"] for c in insp.get_columns("broker_accounts")]
+        if "credentials_enc" not in existing_cols:
+            op.add_column(
+                "broker_accounts",
+                sa.Column("credentials_enc", sa.Text(), nullable=True),
+            )
 
 
 def downgrade() -> None:
-    if _has_column("broker_accounts", "credentials_enc"):
-        op.drop_column("broker_accounts", "credentials_enc")
+    bind = op.get_bind()
+    insp = sa_inspect(bind)
+    if "broker_accounts" in insp.get_table_names():
+        existing_cols = [c["name"] for c in insp.get_columns("broker_accounts")]
+        if "credentials_enc" in existing_cols:
+            op.drop_column("broker_accounts", "credentials_enc")

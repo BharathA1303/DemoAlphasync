@@ -21,6 +21,8 @@ def _has_column(table, column):
     """Check if a column exists in a table (idempotent migrations)."""
     bind = op.get_bind()
     insp = sa_inspect(bind)
+    if table not in insp.get_table_names():
+        return False
     columns = [c["name"] for c in insp.get_columns(table)]
     return column in columns
 
