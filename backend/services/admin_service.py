@@ -916,7 +916,7 @@ async def set_access_duration(
     return {"success": True, "user": _serialize_user(user)}
 
 
-_ACADEMY_ROLES = ("student", "faculty", "institution_admin", "super_admin")
+_ACADEMY_ROLES = ("student", "teacher", "faculty", "institution_admin", "super_admin")
 
 
 async def set_academy_role(

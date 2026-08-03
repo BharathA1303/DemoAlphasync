@@ -42,6 +42,8 @@ import AcademyDashboardPage from './academy/AcademyDashboardPage';
 import AcademyAnalyticsPage from './academy/AcademyAnalyticsPage';
 import AcademyMentorPage from './academy/AcademyMentorPage';
 import AcademyFacultyDashboardPage from './academy/AcademyFacultyDashboardPage';
+import ChallengesPage from './academy/ChallengesPage';
+
 
 export default function App() {
     useEffect(() => {
@@ -113,11 +115,13 @@ export default function App() {
                             <Route path="/settings" element={<SettingsPage />} />
                             <Route path="/bug-report" element={<BugReportPage />} />
                             <Route path="/academy" element={<AcademyDashboardPage />} />
+                            <Route path="/academy/challenges" element={<ChallengesPage />} />
                             <Route path="/academy/analytics" element={<AcademyAnalyticsPage />} />
                             <Route path="/academy/mentor" element={<AcademyMentorPage />} />
                             <Route path="/academy/faculty" element={
                                 <FacultyRoute><AcademyFacultyDashboardPage /></FacultyRoute>
                             } />
+
                         </Route>
 
                         <Route path="*" element={<Navigate to="/" replace />} />

@@ -194,3 +194,72 @@ async def ensure_faculty_teaching_data(db: AsyncSession, faculty_user_id: uuid.U
 
     await db.commit()
     logger.info(f"Academy: assigned {len(assigned)} course(s) to faculty {faculty_user_id}")
+
+
+DEFAULT_CHALLENGES = [
+    {
+        "title": "Risk Guard: Keep Drawdown Below 5%",
+        "description": "Execute paper trades while maintaining a disciplined position sizing strategy to ensure max portfolio drawdown stays strictly under 5%.",
+        "category": "Risk Management",
+        "difficulty": "Beginner",
+        "target_metric": "max_drawdown",
+        "target_value": 5.0,
+        "reward_points": 150,
+    },
+    {
+        "title": "Alpha Accelerator: Profit $5,000",
+        "description": "Utilize momentum & quantitative strategies to generate a cumulative profit of $5,000 with a win rate above 55%.",
+        "category": "Trading & Profitability",
+        "difficulty": "Intermediate",
+        "target_metric": "pnl",
+        "target_value": 5000.0,
+        "reward_points": 300,
+    },
+    {
+        "title": "Options Hedging Mastery",
+        "description": "Construct a delta-neutral or hedged options portfolio (Straddle/Strangle or Delta-hedged futures) to limit risk during high volatility.",
+        "category": "Options & Hedging",
+        "difficulty": "Advanced",
+        "target_metric": "win_rate",
+        "target_value": 65.0,
+        "reward_points": 500,
+    },
+    {
+        "title": "LLM Prompting & Algo Backtest Challenge",
+        "description": "Generate an automated algorithmic strategy using the LLM Financial Tutor and backtest it to achieve a Sharpe ratio > 1.5.",
+        "category": "LLM Strategy",
+        "difficulty": "Intermediate",
+        "target_metric": "sharpe",
+        "target_value": 1.5,
+        "reward_points": 250,
+    },
+]
+
+
+async def ensure_default_challenges(db: AsyncSession) -> None:
+    """Ensure baseline financial & trading challenges exist in the platform catalog."""
+    from models.academy import Challenge
+
+    result = await db.execute(select(Challenge.title))
+    existing_titles = set(result.scalars().all())
+
+    created = False
+    for ch in DEFAULT_CHALLENGES:
+        if ch["title"] not in existing_titles:
+            challenge = Challenge(
+                id=uuid.uuid4(),
+                title=ch["title"],
+                description=ch["description"],
+                category=ch["category"],
+                difficulty=ch["difficulty"],
+                target_metric=ch["target_metric"],
+                target_value=ch["target_value"],
+                reward_points=ch["reward_points"],
+            )
+            db.add(challenge)
+            created = True
+
+    if created:
+        await db.commit()
+        logger.info("Academy: baseline financial challenges seeded.")
+

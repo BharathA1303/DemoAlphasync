@@ -137,8 +137,9 @@ class UpdateAdminLevelRequest(BaseModel):
 
 class SetAcademyRoleRequest(BaseModel):
     academy_role: str = Field(
-        ..., pattern=r"^(student|faculty|institution_admin|super_admin)$"
+        ..., pattern=r"^(student|teacher|faculty|institution_admin|super_admin)$"
     )
+
 
 
 class CreateGroupRequest(BaseModel):
@@ -654,7 +655,7 @@ async def set_academy_role(
     admin: User = Depends(require_manage_level),
     db: AsyncSession = Depends(get_db),
 ):
-    """Set a user's AlphaSync Academy role (student/faculty/institution_admin/super_admin)."""
+    """Set a user's AlphaSync Academy role (student/teacher/faculty/institution_admin/super_admin)."""
     normalized_user_id = _normalize_user_id(user_id)
     ip = request.client.host if request.client else None
     result = await admin_service.set_academy_role(
@@ -663,6 +664,122 @@ async def set_academy_role(
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["error"])
     return result
+
+
+class AssignTeacherStudentRequest(BaseModel):
+    teacher_id: str
+    student_id: str
+    notes: Optional[str] = None
+
+
+@router.post("/assign-teacher-student")
+async def assign_teacher_to_student(
+    req: AssignTeacherStudentRequest,
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin route to explicitly pair a Teacher and a Student."""
+    from models.academy import TeacherStudentAssignment, User
+
+    try:
+        tid = uuid.UUID(req.teacher_id)
+        sid = uuid.UUID(req.student_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID for teacher or student.")
+
+    teacher_res = await db.execute(select(User).where(User.id == tid))
+    teacher = teacher_res.scalar_one_or_none()
+    student_res = await db.execute(select(User).where(User.id == sid))
+    student = student_res.scalar_one_or_none()
+
+    if not teacher or not student:
+        raise HTTPException(status_code=404, detail="Teacher or Student user not found.")
+
+    # Auto set roles if not set
+    if (teacher.academy_role or "") not in ("teacher", "faculty", "super_admin", "institution_admin"):
+        teacher.academy_role = "teacher"
+    if not student.academy_role:
+        student.academy_role = "student"
+
+    # Check assignment
+    existing_res = await db.execute(
+        select(TeacherStudentAssignment).where(
+            TeacherStudentAssignment.teacher_id == tid,
+            TeacherStudentAssignment.student_id == sid
+        )
+    )
+    existing = existing_res.scalar_one_or_none()
+    if existing:
+        return {"message": "Teacher and Student are already paired.", "assignment_id": str(existing.id)}
+
+    assignment = TeacherStudentAssignment(
+        id=uuid.uuid4(),
+        teacher_id=tid,
+        student_id=sid,
+        notes=req.notes or "Assigned by Admin",
+    )
+    db.add(assignment)
+    await db.commit()
+
+    return {
+        "message": f"Successfully paired Teacher ({teacher.full_name or teacher.email}) with Student ({student.full_name or student.email}).",
+        "assignment_id": str(assignment.id)
+    }
+
+
+@router.get("/teacher-student-matrix")
+async def get_teacher_student_matrix(
+    admin: User = Depends(require_manage_level),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin route to fetch all teachers, students, and assignment matrix."""
+    from models.academy import TeacherStudentAssignment
+
+    all_users_res = await db.execute(select(User).order_by(User.created_at.desc()))
+    all_users = list(all_users_res.scalars().all())
+
+    teachers = []
+    students = []
+
+    for u in all_users:
+        user_role = u.academy_role or "student"
+        user_data = {
+            "id": str(u.id),
+            "full_name": u.full_name or u.username,
+            "email": u.email,
+            "role": user_role,
+            "account_status": u.account_status,
+            "created_at": u.created_at.isoformat() if u.created_at else None,
+        }
+        if user_role in ("teacher", "faculty", "institution_admin"):
+            teachers.append(user_data)
+        elif user_role == "student":
+            students.append(user_data)
+        elif u.role == "admin" or (u.admin_level and u.admin_level != "none"):
+            teachers.append(user_data) # Admins can also teach
+        else:
+            students.append(user_data)
+
+    assignments_res = await db.execute(select(TeacherStudentAssignment))
+    assignments = list(assignments_res.scalars().all())
+
+    matrix = [
+        {
+            "id": str(a.id),
+            "teacher_id": str(a.teacher_id),
+            "student_id": str(a.student_id),
+            "assigned_at": a.assigned_at.isoformat() if a.assigned_at else None,
+            "notes": a.notes,
+        }
+        for a in assignments
+    ]
+
+    return {
+        "teachers": teachers,
+        "students": students,
+        "assignments": matrix,
+    }
+
 
 
 @router.post("/users/{user_id}/force-logout")

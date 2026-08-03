@@ -637,3 +637,381 @@ async def get_faculty_dashboard(
         "courses": course_payload,
         "roster": roster,
     }
+
+
+# ── Teacher-Student Direct Management & Trading Logs ────────────────────
+
+class AddStudentRequest(BaseModel):
+    student_email: Optional[str] = None
+    student_id: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.get("/teacher/students")
+async def get_teacher_assigned_students(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve all students assigned to the current Teacher along with live trading & study performance metrics."""
+    _require_faculty(current_user)
+
+    from models.academy import TeacherStudentAssignment, Enrollment, QuizAttempt, StudyActivity
+    from models.order import Order
+    from models.portfolio import Portfolio
+
+    # Fetch assigned students
+    assignments_stmt = select(TeacherStudentAssignment, User).join(
+        User, User.id == TeacherStudentAssignment.student_id
+    ).where(TeacherStudentAssignment.teacher_id == current_user.id)
+    
+    result = await db.execute(assignments_stmt)
+    rows = result.all()
+
+    assigned_students = []
+    for assignment, student in rows:
+        # Fetch trading stats
+        orders_stmt = select(Order).where(Order.user_id == student.id)
+        orders_res = await db.execute(orders_stmt)
+        orders = list(orders_res.scalars().all())
+
+        filled_orders = [o for o in orders if o.status == "FILLED"]
+        total_trades = len(filled_orders)
+
+        # Portfolio metrics
+        port_stmt = select(Portfolio).where(Portfolio.user_id == student.id)
+        port_res = await db.execute(port_stmt)
+        portfolio = port_res.scalar_one_or_none()
+
+        unrealized_pnl = float(portfolio.unrealized_pnl) if portfolio and portfolio.unrealized_pnl else 0.0
+        realized_pnl = float(portfolio.realized_pnl) if portfolio and portfolio.realized_pnl else 0.0
+        total_pnl = round(unrealized_pnl + realized_pnl, 2)
+        virtual_cap = float(student.virtual_capital) if student.virtual_capital else 1000000.0
+
+        # Quiz & study metrics
+        quiz_stmt = select(func.avg(QuizAttempt.score_percent)).where(QuizAttempt.user_id == student.id)
+        quiz_res = await db.execute(quiz_stmt)
+        avg_quiz = round(float(quiz_res.scalar_one_or_none() or 0.0), 1)
+
+        study_stmt = select(func.sum(StudyActivity.minutes_spent)).where(StudyActivity.user_id == student.id)
+        study_res = await db.execute(study_stmt)
+        total_study_mins = int(study_res.scalar_one_or_none() or 0)
+
+        # Win rate heuristic
+        profitable_trades = [o for o in filled_orders if (o.filled_price or 0) > 0] # Simplified win heuristic
+        win_rate = round((len(profitable_trades) / max(1, total_trades)) * 100, 1) if total_trades > 0 else 0.0
+
+        assigned_students.append({
+            "student_id": str(student.id),
+            "full_name": student.full_name or student.username,
+            "email": student.email,
+            "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+            "notes": assignment.notes,
+            "trading_stats": {
+                "total_trades": total_trades,
+                "total_pnl": total_pnl,
+                "virtual_capital": virtual_cap,
+                "win_rate": win_rate,
+            },
+            "academy_stats": {
+                "avg_quiz_score": avg_quiz,
+                "total_study_minutes": total_study_mins,
+            }
+        })
+
+    return {"students": assigned_students, "total_count": len(assigned_students)}
+
+
+@router.post("/teacher/students/add")
+async def add_student_to_teacher(
+    payload: AddStudentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add/assign a student to the teacher's roster."""
+    _require_faculty(current_user)
+    from models.academy import TeacherStudentAssignment
+
+    student = None
+    if payload.student_id:
+        try:
+            sid = uuid.UUID(payload.student_id)
+            res = await db.execute(select(User).where(User.id == sid))
+            student = res.scalar_one_or_none()
+        except ValueError:
+            pass
+
+    if not student and payload.student_email:
+        res = await db.execute(select(User).where(User.email == payload.student_email.strip()))
+        student = res.scalar_one_or_none()
+
+    if not student:
+        raise HTTPException(status_code=44, detail="Student not found with provided email/ID.")
+
+    # Check existing assignment
+    existing = await db.execute(
+        select(TeacherStudentAssignment).where(
+            TeacherStudentAssignment.teacher_id == current_user.id,
+            TeacherStudentAssignment.student_id == student.id
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        return {"message": "Student is already assigned to your roster.", "student_id": str(student.id)}
+
+    # Ensure student academy role is student
+    if not student.academy_role:
+        student.academy_role = "student"
+
+    assignment = TeacherStudentAssignment(
+        id=uuid.uuid4(),
+        teacher_id=current_user.id,
+        student_id=student.id,
+        notes=payload.notes or "Assigned by Teacher",
+    )
+    db.add(assignment)
+    await db.commit()
+
+    return {"message": f"Successfully added {student.full_name or student.email} to your roster.", "student_id": str(student.id)}
+
+
+@router.delete("/teacher/students/{student_id}")
+async def remove_student_from_teacher(
+    student_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unassign a student from teacher roster."""
+    _require_faculty(current_user)
+    from models.academy import TeacherStudentAssignment
+
+    try:
+        sid = uuid.UUID(student_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid student UUID")
+
+    res = await db.execute(
+        select(TeacherStudentAssignment).where(
+            TeacherStudentAssignment.teacher_id == current_user.id,
+            TeacherStudentAssignment.student_id == sid
+        )
+    )
+    assignment = res.scalar_one_or_none()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Student assignment not found.")
+
+    await db.delete(assignment)
+    await db.commit()
+    return {"message": "Student successfully removed from roster."}
+
+
+@router.get("/teacher/students/{student_id}/logs")
+async def get_student_detailed_logs(
+    student_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inspect detailed execution logs and order history for an assigned student."""
+    _require_faculty(current_user)
+    from models.order import Order
+    from models.academy import StudyActivity, QuizAttempt
+
+    try:
+        sid = uuid.UUID(student_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid student UUID")
+
+    # Verify student exists
+    student_res = await db.execute(select(User).where(User.id == sid))
+    student = student_res.scalar_one_or_none()
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found.")
+
+    # Fetch orders
+    orders_res = await db.execute(
+        select(Order).where(Order.user_id == sid).order_by(Order.created_at.desc()).limit(100)
+    )
+    orders = list(orders_res.scalars().all())
+
+    # Fetch recent study activities
+    activities_res = await db.execute(
+        select(StudyActivity).where(StudyActivity.user_id == sid).order_by(StudyActivity.activity_date.desc()).limit(50)
+    )
+    activities = list(activities_res.scalars().all())
+
+    order_logs = [
+        {
+            "id": str(o.id),
+            "symbol": o.symbol,
+            "order_type": o.order_type,
+            "side": o.side,
+            "quantity": o.quantity,
+            "price": float(o.price or 0.0),
+            "filled_price": float(o.filled_price or 0.0),
+            "status": o.status,
+            "created_at": o.created_at.isoformat() if o.created_at else None,
+        }
+        for o in orders
+    ]
+
+    activity_logs = [
+        {
+            "id": str(a.id),
+            "activity_date": a.activity_date.isoformat() if a.activity_date else None,
+            "activity_type": a.activity_type,
+            "minutes_spent": a.minutes_spent,
+        }
+        for a in activities
+    ]
+
+    return {
+        "student_name": student.full_name or student.username,
+        "student_email": student.email,
+        "orders": order_logs,
+        "activities": activity_logs,
+    }
+
+
+# ── Challenge APIs ──────────────────────────────────────────────────────
+
+class CreateChallengeRequest(BaseModel):
+    title: str
+    description: str
+    category: str = "Trading & Risk"
+    difficulty: str = "Beginner"
+    target_metric: str = "pnl"
+    target_value: float = 1000.0
+    reward_points: int = 100
+
+
+@router.get("/challenges")
+async def list_challenges(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch catalog of challenges along with student's current enrollment/completion status."""
+    from models.academy import Challenge, StudentChallengeProgress
+    from services.academy_seed import ensure_default_challenges
+
+    await ensure_default_challenges(db)
+
+    challenges_res = await db.execute(select(Challenge).order_by(Challenge.created_at.desc()))
+    challenges = list(challenges_res.scalars().all())
+
+    # Get student progress rows
+    progress_res = await db.execute(
+        select(StudentChallengeProgress).where(StudentChallengeProgress.user_id == current_user.id)
+    )
+    user_progress_map = {str(p.challenge_id): p for p in progress_res.scalars().all()}
+
+    challenge_list = []
+    for c in challenges:
+        p = user_progress_map.get(str(c.id))
+        challenge_list.append({
+            "id": str(c.id),
+            "title": c.title,
+            "description": c.description,
+            "category": c.category,
+            "difficulty": c.difficulty,
+            "target_metric": c.target_metric,
+            "target_value": float(c.target_value),
+            "reward_points": c.reward_points,
+            "user_status": p.status if p else "not_started",
+            "user_current_value": float(p.current_value) if p else 0.0,
+            "user_progress_percent": round(min(100.0, (float(p.current_value) / max(1.0, float(c.target_value))) * 100), 1) if p else 0.0,
+        })
+
+    return {"challenges": challenge_list}
+
+
+@router.post("/challenges")
+async def create_challenge(
+    payload: CreateChallengeRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new financial/trading challenge (Teachers & Admins)."""
+    _require_faculty(current_user)
+    from models.academy import Challenge
+
+    challenge = Challenge(
+        id=uuid.uuid4(),
+        title=payload.title,
+        description=payload.description,
+        category=payload.category,
+        difficulty=payload.difficulty,
+        target_metric=payload.target_metric,
+        target_value=payload.target_value,
+        reward_points=payload.reward_points,
+        creator_id=current_user.id,
+    )
+    db.add(challenge)
+    await db.commit()
+    return {"message": "Challenge created successfully.", "challenge_id": str(challenge.id)}
+
+
+@router.post("/challenges/{challenge_id}/enroll")
+async def enroll_in_challenge(
+    challenge_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Enroll or activate a challenge for the current student."""
+    from models.academy import Challenge, StudentChallengeProgress
+
+    try:
+        cid = uuid.UUID(challenge_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid challenge UUID")
+
+    # Check existing progress
+    existing_res = await db.execute(
+        select(StudentChallengeProgress).where(
+            StudentChallengeProgress.user_id == current_user.id,
+            StudentChallengeProgress.challenge_id == cid
+        )
+    )
+    existing = existing_res.scalar_one_or_none()
+    if existing:
+        return {"message": "Already enrolled in challenge.", "status": existing.status}
+
+    progress = StudentChallengeProgress(
+        id=uuid.uuid4(),
+        user_id=current_user.id,
+        challenge_id=cid,
+        status="in_progress",
+        current_value=0.0,
+    )
+    db.add(progress)
+    await db.commit()
+    return {"message": "Successfully enrolled in challenge!", "status": "in_progress"}
+
+
+@router.get("/student/teacher-info")
+async def get_student_assigned_teacher_info(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get details of the teacher assigned to the current student."""
+    from models.academy import TeacherStudentAssignment
+
+    stmt = select(TeacherStudentAssignment, User).join(
+        User, User.id == TeacherStudentAssignment.teacher_id
+    ).where(TeacherStudentAssignment.student_id == current_user.id)
+
+    res = await db.execute(stmt)
+    row = res.first()
+
+    if not row:
+        return {"assigned": False, "teacher": None}
+
+    assignment, teacher = row
+    return {
+        "assigned": True,
+        "teacher": {
+            "id": str(teacher.id),
+            "full_name": teacher.full_name or teacher.username,
+            "email": teacher.email,
+            "notes": assignment.notes,
+            "assigned_at": assignment.assigned_at.isoformat() if assignment.assigned_at else None,
+        }
+    }
+

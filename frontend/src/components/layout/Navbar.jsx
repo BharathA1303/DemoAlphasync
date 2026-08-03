@@ -5,7 +5,9 @@ import { useTheme } from '../../context/ThemeContext';
 import { useMarketStore } from '../../store/useMarketStore';
 import { usePortfolioStore } from '../../store/usePortfolioStore';
 import { useWatchlistStore } from '../../stores/useWatchlistStore';
+import { useAuthStore } from '../../stores/useAuthStore';
 import api from '../../services/api';
+
 import { cn } from '../../utils/cn';
 import { useMarketSession } from '../../hooks/useMarketSession';
 import { formatCurrency, formatPercent, pnlColorClass } from '../../utils/formatters';
@@ -501,7 +503,28 @@ export default function Navbar({ onMenuToggle }) {
 
             {/* Right: market status, WS status, theme, bell */}
             <div className="flex items-center gap-1.5">
+                {/* Active Role Badge */}
+                {(() => {
+                    const user = useAuthStore.getState().user;
+                    const roleTag = user?.role === 'admin' || (user?.admin_level && user?.admin_level !== 'none')
+                        ? 'ADMIN'
+                        : ['teacher', 'faculty', 'institution_admin', 'super_admin'].includes(user?.academy_role)
+                        ? 'TEACHER'
+                        : 'STUDENT';
+                    return (
+                        <span className={cn(
+                            "hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wider border mr-1",
+                            roleTag === 'ADMIN' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                            roleTag === 'TEACHER' ? 'bg-violet-500/15 text-violet-300 border-violet-500/30' :
+                            'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                        )}>
+                            ROLE: {roleTag}
+                        </span>
+                    );
+                })()}
+
                 {/* Total P&L (same logic as Portfolio page) */}
+
                 <div
                     className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-800/40 mr-1"
                     title="Total P&L from portfolio summary + live quote pricing"

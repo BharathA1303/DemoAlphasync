@@ -120,12 +120,14 @@ const NAV_SECTIONS = [
     label: "Academy",
     items: [
       { to: "/academy", icon: GraduationCap, label: "Academy Dashboard", end: true },
+      { to: "/academy/challenges", icon: Trophy, label: "Financial Challenges" },
       { to: "/academy/analytics", icon: Brain, label: "Learning Analytics" },
       { to: "/academy/mentor", icon: MessagesSquare, label: "Academy AI Mentor" },
-      // Faculty-tier academy_role only — hidden for students who can't access it.
-      { to: "/academy/faculty", icon: Users2, label: "Faculty Dashboard", roles: ["faculty", "institution_admin", "super_admin"] },
+      // Faculty/Teacher tier academy_role
+      { to: "/academy/faculty", icon: Users2, label: "Teacher Dashboard", roles: ["teacher", "faculty", "institution_admin", "super_admin"] },
     ],
   },
+
 ];
 
 function visibleNavSections(academyRole) {

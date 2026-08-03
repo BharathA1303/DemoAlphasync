@@ -17,10 +17,12 @@ const DEFAULT_ACTION_STATE = { durationDays: 30, reason: '' };
 
 const ACADEMY_ROLE_OPTIONS = [
     { value: 'student', label: 'Student' },
+    { value: 'teacher', label: 'Teacher' },
     { value: 'faculty', label: 'Faculty' },
     { value: 'institution_admin', label: 'Institution Admin' },
     { value: 'super_admin', label: 'Super Admin' },
 ];
+
 
 const DEFAULT_USERS_DATA = {
     users: [],
