@@ -1230,11 +1230,38 @@ async def configure_zebu_oauth(
 ):
     """Save Zebu OAuth Client ID, Secret Key, and Redirect URL."""
     from models.data_feed_config import DataFeedConfig
-    from sqlalchemy import select
+    from sqlalchemy import select, text
 
-    stmt = select(DataFeedConfig).limit(1)
-    res = await db.execute(stmt)
-    config = res.scalar_one_or_none()
+    try:
+        stmt = select(DataFeedConfig).limit(1)
+        res = await db.execute(stmt)
+        config = res.scalar_one_or_none()
+    except Exception:
+        await db.rollback()
+        for col_def in [
+            "broker_import_progress_done INTEGER",
+            "broker_import_progress_total INTEGER",
+            "oauth_client_id VARCHAR(100)",
+            "oauth_secret_key_enc TEXT",
+            "oauth_redirect_url VARCHAR(500)",
+            "oauth_access_token_enc TEXT",
+            "oauth_refresh_token_enc TEXT",
+            "oauth_token_expires_at TIMESTAMPTZ",
+            "oauth_connection_status VARCHAR(50) DEFAULT 'disconnected'",
+            "oauth_last_error TEXT",
+            "feed_delay_seconds INTEGER DEFAULT 300",
+            "redis_active_market_hours_only BOOLEAN DEFAULT true",
+            "broker_live_feed_enabled BOOLEAN DEFAULT false",
+            "oauth_base_url VARCHAR(500) DEFAULT 'https://go.mynt.in'",
+        ]:
+            try:
+                await db.execute(text(f"ALTER TABLE data_feed_configs ADD COLUMN IF NOT EXISTS {col_def};"))
+            except Exception:
+                pass
+        await db.commit()
+        stmt = select(DataFeedConfig).limit(1)
+        res = await db.execute(stmt)
+        config = res.scalar_one_or_none()
 
     if not config:
         config = DataFeedConfig(broker="zebu")

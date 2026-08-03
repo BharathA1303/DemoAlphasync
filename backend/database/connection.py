@@ -648,62 +648,80 @@ async def init_db():
                 text(
                     """
                 DO $$ BEGIN
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'data_feed_configs' AND column_name = 'broker'
-                    ) THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker VARCHAR(20);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_client_code') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_client_code VARCHAR(100);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_password_enc') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_password_enc TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_totp_secret_enc') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_totp_secret_enc TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_vendor_code') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_vendor_code VARCHAR(100);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_at') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_at TIMESTAMPTZ;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_status') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_status VARCHAR(50);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_error') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_error TEXT;
                     END IF;
-
-                    -- Verifiable proof-of-work columns for the last import
-                    -- (row/symbol counts), added after the block above.
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_rows'
-                    ) THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_rows') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_rows INTEGER;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_symbols_found') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_found INTEGER;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_last_import_symbols_total') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_last_import_symbols_total INTEGER;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_import_progress_done') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_import_progress_done INTEGER;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_import_progress_total') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN broker_import_progress_total INTEGER;
                     END IF;
-
-                    -- Zebu OAuth & Time-Delayed Feed columns
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_client_id'
-                    ) THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_client_id') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_client_id VARCHAR(100);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_secret_key_enc') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_secret_key_enc TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_redirect_url') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_redirect_url VARCHAR(500);
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_access_token_enc') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_access_token_enc TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_refresh_token_enc') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_refresh_token_enc TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_token_expires_at') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_token_expires_at TIMESTAMPTZ;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_connection_status') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_connection_status VARCHAR(50) DEFAULT 'disconnected';
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_last_error') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_last_error TEXT;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'feed_delay_seconds') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN feed_delay_seconds INTEGER NOT NULL DEFAULT 300;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'redis_active_market_hours_only') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN redis_active_market_hours_only BOOLEAN NOT NULL DEFAULT true;
                     END IF;
-
-                    -- oauth_base_url: separate host field from the legacy
-                    -- shared `base_url` column, so saving QuickAuth creds
-                    -- never silently repoints the OAuth flow's host (and
-                    -- vice versa). Added after the block above, so it needs
-                    -- its own existence guard for installs that already had
-                    -- oauth_client_id before this column existed.
-                    IF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_base_url'
-                    ) THEN
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'broker_live_feed_enabled') THEN
+                        ALTER TABLE data_feed_configs ADD COLUMN broker_live_feed_enabled BOOLEAN NOT NULL DEFAULT false;
+                    END IF;
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'data_feed_configs' AND column_name = 'oauth_base_url') THEN
                         ALTER TABLE data_feed_configs ADD COLUMN oauth_base_url VARCHAR(500) DEFAULT 'https://go.mynt.in';
-                        UPDATE data_feed_configs SET oauth_base_url = 'https://go.mynt.in' WHERE oauth_base_url IS NULL;
                     END IF;
 
                     -- Repoint any legacy rows still pointing at the

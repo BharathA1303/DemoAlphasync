@@ -24,6 +24,19 @@ def upgrade() -> None:
     if "data_feed_configs" in tables:
         existing_cols = {c["name"] for c in insp.get_columns("data_feed_configs")}
         cols_to_add = [
+            ("broker", sa.Column("broker", sa.String(length=20), nullable=True)),
+            ("broker_client_code", sa.Column("broker_client_code", sa.String(length=100), nullable=True)),
+            ("broker_password_enc", sa.Column("broker_password_enc", sa.Text(), nullable=True)),
+            ("broker_totp_secret_enc", sa.Column("broker_totp_secret_enc", sa.Text(), nullable=True)),
+            ("broker_vendor_code", sa.Column("broker_vendor_code", sa.String(length=100), nullable=True)),
+            ("broker_last_import_at", sa.Column("broker_last_import_at", sa.DateTime(timezone=True), nullable=True)),
+            ("broker_last_import_status", sa.Column("broker_last_import_status", sa.String(length=50), nullable=True)),
+            ("broker_last_import_error", sa.Column("broker_last_import_error", sa.Text(), nullable=True)),
+            ("broker_last_import_rows", sa.Column("broker_last_import_rows", sa.Integer(), nullable=True)),
+            ("broker_last_import_symbols_found", sa.Column("broker_last_import_symbols_found", sa.Integer(), nullable=True)),
+            ("broker_last_import_symbols_total", sa.Column("broker_last_import_symbols_total", sa.Integer(), nullable=True)),
+            ("broker_import_progress_done", sa.Column("broker_import_progress_done", sa.Integer(), nullable=True)),
+            ("broker_import_progress_total", sa.Column("broker_import_progress_total", sa.Integer(), nullable=True)),
             ("oauth_base_url", sa.Column("oauth_base_url", sa.String(length=500), nullable=True, server_default=sa.text("'https://go.mynt.in'"))),
             ("oauth_client_id", sa.Column("oauth_client_id", sa.String(length=100), nullable=True)),
             ("oauth_secret_key_enc", sa.Column("oauth_secret_key_enc", sa.Text(), nullable=True)),
