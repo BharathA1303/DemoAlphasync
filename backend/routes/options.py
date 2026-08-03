@@ -481,17 +481,25 @@ async def _generate_simulated_option_chain(symbol: str, expiry: Optional[str], s
     # 1. Determine Spot Price
     spot_price = 100.0
     if sym == "NIFTY":
-        spot_price = 22000.0
+        spot_price = 24600.0
     elif sym == "BANKNIFTY":
-        spot_price = 47000.0
+        spot_price = 57700.0
     elif sym == "SENSEX":
-        spot_price = 72000.0
+        spot_price = 80200.0
     elif sym == "FINNIFTY":
-        spot_price = 21000.0
+        spot_price = 24100.0
     elif sym == "RELIANCE":
-        spot_price = 2500.0
+        spot_price = 1310.40
     elif sym == "TCS":
-        spot_price = 3800.0
+        spot_price = 4350.0
+    elif sym == "SBIN":
+        spot_price = 1044.20
+    elif sym == "AXISBANK":
+        spot_price = 1250.30
+    elif sym == "HDFCBANK":
+        spot_price = 753.15
+    elif sym == "ICICIBANK":
+        spot_price = 1445.40
     else:
         random.seed(sym)
         spot_price = random.uniform(100.0, 2000.0)
@@ -500,9 +508,11 @@ async def _generate_simulated_option_chain(symbol: str, expiry: Optional[str], s
     # Try to get live quote from QuoteCoordinator if available
     try:
         from market.quote_coordinator import quote_coordinator
-        quote = await quote_coordinator.get_quote(sym)
-        if quote:
-            spot_price = float(quote.get("price") or quote.get("ltp") or spot_price)
+        for lookup_key in [sym, f"{sym}.NS", f"NSE:EQ:{sym}", f"BSE:EQ:{sym}"]:
+            quote = await quote_coordinator.get_quote(lookup_key)
+            if quote and (quote.get("price") or quote.get("ltp")):
+                spot_price = float(quote.get("price") or quote.get("ltp"))
+                break
     except Exception:
         pass
 

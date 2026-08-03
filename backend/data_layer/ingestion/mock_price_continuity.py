@@ -16,7 +16,7 @@ trading days now sit close to each other in price.
 """
 from datetime import date
 
-_REFERENCE_DATE = date(2024, 1, 1)
+_REFERENCE_DATE = date(2026, 1, 1)
 
 
 def anchor_price_for_date(base_price: float, daily_drift: float, target_date: date) -> float:

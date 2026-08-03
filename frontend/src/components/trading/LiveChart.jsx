@@ -1411,7 +1411,7 @@ const LiveChart = memo(function LiveChart({
             );
             if (!Number.isFinite(bucketTime)) return;
 
-            if (bucketTime < lastCandle.time) return;
+            const effectiveBucketTime = Math.max(lastCandle.time, bucketTime);
 
             // A tick explicitly tagged by the backend as the first tick of a
             // new trading session (see InternalSimProvider._handle_sim_message
@@ -1422,7 +1422,7 @@ const LiveChart = memo(function LiveChart({
             // really does indicate a stale/bad source rather than a genuine
             // session boundary.
             const maxForwardGap = Math.max(pending.intervalSeconds * 12, 30 * 60);
-            if (!pending.sessionRollover && (bucketTime - lastCandle.time) > maxForwardGap) return;
+            if (!pending.sessionRollover && (effectiveBucketTime - lastCandle.time) > maxForwardGap) return;
 
             // Guard against cross-symbol/stale-source jumps creating extreme spikes.
             const baseClose = toFiniteNumber(lastCandle.close);
@@ -1452,7 +1452,7 @@ const LiveChart = memo(function LiveChart({
             let updated;
 
             // Roll into a new candle when timeframe bucket changes.
-            if (bucketTime > lastCandle.time) {
+            if (effectiveBucketTime > lastCandle.time) {
                 let nextVolume = 0;
                 const prevVolState = liveVolumeStateRef.current;
                 if (pending.cumulativeVolume != null && pending.cumulativeVolume >= 0) {

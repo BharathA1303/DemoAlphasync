@@ -170,10 +170,10 @@ def parse_nse_bhavcopy_csv(csv_content: str, target_date: date) -> List[Dict[str
 # services/market_data.py::POPULAR_INDIAN_STOCKS so the watchlist/ticker
 # never falls back to a symbol the simulator has no EOD data for.
 _NSE_MOCK_ANCHORS = {
-    "RELIANCE": (2800.0, 0.0004), "TCS": (3600.0, 0.0003), "HDFCBANK": (1650.0, 0.0003),
-    "INFY": (1500.0, 0.0004), "ICICIBANK": (1050.0, 0.00035), "HINDUNILVR": (2450.0, 0.0002),
-    "SBIN": (600.0, 0.0003), "BHARTIARTL": (1150.0, 0.0004), "ITC": (440.0, 0.0002),
-    "KOTAKBANK": (1750.0, 0.0003), "LT": (3450.0, 0.00035), "AXISBANK": (1050.0, 0.00035),
+    "RELIANCE": (1310.0, 0.0001), "TCS": (4350.0, 0.0001), "HDFCBANK": (753.0, 0.0001),
+    "INFY": (1820.0, 0.0001), "ICICIBANK": (1445.0, 0.0001), "HINDUNILVR": (2450.0, 0.0001),
+    "SBIN": (1044.0, 0.0001), "BHARTIARTL": (1650.0, 0.0001), "ITC": (440.0, 0.0001),
+    "KOTAKBANK": (1750.0, 0.0001), "LT": (3450.0, 0.0001), "AXISBANK": (1250.0, 0.0001),
     "WIPRO": (450.0, 0.0003), "HCLTECH": (1350.0, 0.0003), "TATAMOTORS": (750.0, 0.0004),
     "SUNPHARMA": (1550.0, 0.0003), "MARUTI": (10500.0, 0.0003), "TITAN": (3200.0, 0.0003),
     "BAJFINANCE": (6800.0, 0.0004), "ADANIENT": (2500.0, 0.0005), "ASIANPAINT": (2750.0, 0.0002),
