@@ -67,44 +67,73 @@ def upgrade():
         );
     """)
 
-    # 3. Add tenant_id column to all domain tables
-    for tbl in RLS_TABLES:
-        op.execute(f"""
-            ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE;
-        """)
+    # 3. Add tenant_id column to all domain tables safely in PL/pgSQL
+    op.execute("""
+        DO $$ 
+        DECLARE
+            tbl text;
+            tables text[] := ARRAY[
+                'users', 'admin_audit_log', 'email_notifications_log', 'academy_courses',
+                'academy_enrollments', 'academy_lesson_progress', 'academy_study_activity',
+                'academy_quiz_attempts', 'academy_skill_mastery', 'academy_teacher_student_assignments',
+                'academy_challenges', 'academy_student_challenge_progress', 'orders', 'portfolios',
+                'holdings', 'transactions', 'watchlists', 'watchlist_items', 'futures_orders',
+                'futures_watchlists', 'futures_watchlist_items', 'algo_strategies'
+            ];
+        BEGIN
+            FOREACH tbl IN ARRAY tables LOOP
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+                    EXECUTE format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE;', tbl);
+                END IF;
+            END LOOP;
+        END $$;
+    """)
 
     # 4. Add user management / admin columns to users table
-    user_cols = [
-        ("account_status", "VARCHAR(30) NOT NULL DEFAULT 'active'"),
-        ("access_expires_at", "TIMESTAMPTZ"),
-        ("access_duration_days", "INTEGER"),
-        ("approved_at", "TIMESTAMPTZ"),
-        ("approved_by", "UUID"),
-        ("deactivation_reason", "VARCHAR(500)"),
-        ("admin_level", "VARCHAR(20)"),
-        ("admin_assigned_by", "UUID"),
-        ("admin_assigned_at", "TIMESTAMPTZ"),
-        ("academy_role", "VARCHAR(20) DEFAULT 'student'"),
-    ]
-    for col_name, col_type in user_cols:
-        op.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_type};")
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(30) NOT NULL DEFAULT 'active';
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMPTZ;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS access_duration_days INTEGER;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by UUID;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_reason VARCHAR(500);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_level VARCHAR(20);
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_assigned_by UUID;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_assigned_at TIMESTAMPTZ;
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_role VARCHAR(20) DEFAULT 'student';
+            END IF;
+        END $$;
+    """)
 
     # 5. Enable RLS and FORCE RLS on all tables
-    for tbl in RLS_TABLES:
-        op.execute(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY;")
-        op.execute(f"ALTER TABLE {tbl} FORCE ROW LEVEL SECURITY;")
-        op.execute(f"""
-            DO $$ BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM pg_policies WHERE tablename = '{tbl}' AND policyname = 'tenant_isolation_policy'
-                ) THEN
-                    CREATE POLICY tenant_isolation_policy ON {tbl}
-                    FOR ALL
-                    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid)
-                    WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+    op.execute("""
+        DO $$ 
+        DECLARE
+            tbl text;
+            tables text[] := ARRAY[
+                'users', 'admin_audit_log', 'email_notifications_log', 'academy_courses',
+                'academy_enrollments', 'academy_lesson_progress', 'academy_study_activity',
+                'academy_quiz_attempts', 'academy_skill_mastery', 'academy_teacher_student_assignments',
+                'academy_challenges', 'academy_student_challenge_progress', 'orders', 'portfolios',
+                'holdings', 'transactions', 'watchlists', 'watchlist_items', 'futures_orders',
+                'futures_watchlists', 'futures_watchlist_items', 'algo_strategies'
+            ];
+        BEGIN
+            FOREACH tbl IN ARRAY tables LOOP
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
+                    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
+                    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY;', tbl);
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_policies WHERE tablename = tbl AND policyname = 'tenant_isolation_policy'
+                    ) THEN
+                        EXECUTE format('CREATE POLICY tenant_isolation_policy ON %I FOR ALL USING (tenant_id = NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid) WITH CHECK (tenant_id = NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid);', tbl);
+                    END IF;
                 END IF;
-            END $$;
-        """)
+            END LOOP;
+        END $$;
+    """)
 
 
 def downgrade():
