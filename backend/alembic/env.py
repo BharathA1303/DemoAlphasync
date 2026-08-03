@@ -54,8 +54,6 @@ async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with async engine."""
     configuration = {
         "sqlalchemy.url": settings.DATABASE_URL,
-        "sqlalchemy.pool_size": 5,
-        "sqlalchemy.max_overflow": 0,
     }
     connectable = async_engine_from_config(
         configuration,
