@@ -11,6 +11,7 @@ import {
 
 import { useAuthStore } from '../stores/useAuthStore';
 import adminApi from '../services/adminApi';
+import DataFeedPanel from './DataFeedPanel';
 
 const DEFAULT_ACTION_STATE = { durationDays: 30, reason: '' };
 
@@ -840,249 +841,20 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
     );
 }
 
-/* ── Data Feed Configuration Modal (Root Only) ────────────────────────── */
-function DataFeedModal({ config, draft, setDraft, loading, saving, onSave, onClose,
-    zebuStatus, zebuDraft, setZebuDraft, zebuSaving, zebuImporting, onSaveZebu, onImportZebu,
-    zebuResyncing, onResyncSessions,
-    simStatus, simStatusLoading, onRefreshSimStatus, seeding, onSeedFreeHistory }) {
-    const [activeTab, setActiveTab] = useState('sim');
-    const inputStyle = {
-        width: '100%', padding: '6px 10px', borderRadius: '6px',
-        background: 'var(--bg-muted)', border: '1px solid var(--border)',
-        color: 'var(--text-primary)', fontSize: '12px',
-    };
+/* ── Data Feed Configuration Modal (Zebu OAuth Only) ────────────────────────── */
+function DataFeedModal({ onClose }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
-            <div className="w-full max-w-xl rounded-2xl animate-slide-up admin-card overflow-hidden"
-                style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.5)', border: '1px solid var(--border)' }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+            style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
+            <div className="w-full max-w-6xl rounded-2xl animate-slide-up bg-slate-900 border border-slate-800 overflow-hidden max-h-[92vh] overflow-y-auto p-4 relative shadow-2xl"
                 onClick={(e) => e.stopPropagation()}>
-                {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.12)' }}>
-                            <Activity size={18} style={{ color: '#10b981' }} />
-                        </div>
-                        <div>
-                            <h2 className="text-base font-bold leading-tight" style={{ color: 'var(--text-primary)' }}>Internal Simulation Engine</h2>
-                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Manage tick simulation & live status</p>
-                        </div>
-                    </div>
-                    <button className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/5"
-                        style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={16} /></button>
-                </div>
-
-                <div className="p-4">
-                    {activeTab === 'sim' ? (
-                        <div className="flex flex-col gap-3">
-                            {/* Enable Engine & Status */}
-                            <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
-                                <div className="flex items-center gap-2.5">
-                                    <label className="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" className="sr-only peer" checked={draft.is_enabled}
-                                            onChange={(e) => setDraft(prev => ({ ...prev, is_enabled: e.target.checked }))} />
-                                        <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#10b981]"></div>
-                                    </label>
-                                    <div>
-                                        <span className="text-xs font-bold block" style={{ color: 'var(--text-primary)' }}>Enable Simulation Engine</span>
-                                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Runs entirely in-process — no external service or credentials needed.</span>
-                                    </div>
-                                </div>
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
-                                    style={{
-                                        background: config.connection_status === 'connected' ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.12)',
-                                        color: config.connection_status === 'connected' ? '#10b981' : 'var(--text-muted)',
-                                        border: config.connection_status === 'connected' ? '1px solid rgba(16,185,129,0.22)' : '1px solid var(--border)'
-                                    }}>
-                                    <span className={`w-1.5 h-1.5 rounded-full ${config.connection_status === 'connected' ? 'bg-[#10b981] animate-pulse' : 'bg-[var(--text-muted)]'}`}></span>
-                                    {config.connection_status ? config.connection_status.toUpperCase() : 'DISCONNECTED'}
-                                </span>
-                            </div>
-
-                            {/* Live Tick Status Grid */}
-                            <div className="p-3 rounded-xl text-xs flex flex-col gap-2" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                                <div className="flex justify-between items-center">
-                                    <span className="font-semibold text-[11px] uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Live Tick Engine Status</span>
-                                    <button className="px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors bg-white/5 hover:bg-white/10 text-[var(--text-primary)] border border-white/10 flex items-center gap-1" onClick={onRefreshSimStatus} disabled={simStatusLoading}>
-                                        {simStatusLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={11} />} Refresh
-                                    </button>
-                                </div>
-
-                                {simStatus?.master_provider ? (
-                                    <div className="grid grid-cols-2 gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
-                                            <span>Stream State:</span>
-                                            <span className="font-bold flex items-center gap-1" style={{ color: simStatus.master_provider.is_ticking ? '#10b981' : '#ef4444' }}>
-                                                <span className={`w-1.5 h-1.5 rounded-full ${simStatus.master_provider.is_ticking ? 'bg-[#10b981] animate-pulse' : 'bg-[#ef4444]'}`}></span>
-                                                {simStatus.master_provider.is_ticking ? 'Ticking now' : 'Not ticking'}
-                                            </span>
-                                        </div>
-                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
-                                            <span>Last Tick:</span>
-                                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>
-                                                {simStatus.master_provider.last_tick_age_seconds != null ? `${simStatus.master_provider.last_tick_age_seconds.toFixed(1)}s ago` : 'never'}
-                                            </span>
-                                        </div>
-                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
-                                            <span>Subscribed Symbols:</span>
-                                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{simStatus.master_provider.subscribed_symbols}</span>
-                                        </div>
-                                        <div className="p-2 rounded-lg bg-white/[0.02] border border-white/5 flex items-center justify-between">
-                                            <span>Sim Clock Active:</span>
-                                            <span className="font-bold" style={{ color: 'var(--text-primary)' }}>{simStatus.simulation_clock_active ? 'yes' : 'no'}</span>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="text-[11px] text-[var(--text-muted)]">Click Refresh to fetch live tick status.</div>
-                                )}
-                            </div>
-
-                            {/* Free Historical Seed Bar */}
-                            <div className="p-3 rounded-xl flex items-center justify-between gap-3" style={{ background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.15)' }}>
-                                <div>
-                                    <span className="text-xs font-bold block" style={{ color: 'var(--text-primary)' }}>Free Historical Data (NSE/BSE Bhavcopy)</span>
-                                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Downloads real, free, no-login end-of-day archives (45 days)</span>
-                                </div>
-                                <button className="admin-action-btn admin-action-btn--primary text-xs py-1.5 px-3 shrink-0" onClick={onSeedFreeHistory} disabled={seeding}>
-                                    {seeding ? <><Loader2 size={12} className="animate-spin" /> Seeding...</> : 'Seed Free Data'}
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col gap-2.5">
-                            {/* Zebu Status Banner if configured */}
-                            {zebuStatus?.configured ? (() => {
-                                const status = zebuStatus.last_import_status;
-                                const badgeColor = status === 'success' ? '#10b981' : status === 'importing' ? '#3b82f6' : status === 'warning' ? '#f59e0b' : status === 'error' ? '#ef4444' : '#64748b';
-                                const badgeLabel = status === 'success' ? 'Success' : status === 'importing' ? 'Importing…' : status === 'warning' ? 'Warning' : status === 'error' ? 'Error' : 'Ready';
-                                return (
-                                    <div className="p-2.5 rounded-xl text-xs flex flex-col gap-1" style={{ background: `${badgeColor}0f`, border: `1px solid ${badgeColor}30` }}>
-                                        <div className="flex items-center justify-between">
-                                            <span className="font-semibold" style={{ color: badgeColor }}>Configured for Client: {zebuStatus.client_code}</span>
-                                            <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0" style={{ background: `${badgeColor}26`, color: badgeColor, border: `1px solid ${badgeColor}4d` }}>{badgeLabel}</span>
-                                        </div>
-                                        {status === 'importing' && zebuStatus.import_progress_total ? (
-                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                Fetching symbol {zebuStatus.import_progress_done ?? 0} of {zebuStatus.import_progress_total} from Zebu…
-                                            </span>
-                                        ) : status === 'importing' ? (
-                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                Logging in and resolving symbol tokens… this can take a few minutes for the full symbol universe.
-                                            </span>
-                                        ) : null}
-                                        {zebuStatus.last_import_at && status !== 'importing' && (
-                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                Last import: {new Date(zebuStatus.last_import_at).toLocaleString()}
-                                                {status === 'success' && (
-                                                    <> — {zebuStatus.last_import_rows ?? 0} rows written across {zebuStatus.last_import_symbols_found ?? 0}/{zebuStatus.last_import_symbols_total ?? 0} symbols</>
-                                                )}
-                                            </span>
-                                        )}
-                                        {zebuStatus.last_import_error && (
-                                            <span style={{ color: '#ef4444' }}>{zebuStatus.last_import_error}</span>
-                                        )}
-                                    </div>
-                                );
-                            })() : (
-                                <div className="p-2 rounded-xl text-xs" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.18)', color: '#f59e0b' }}>
-                                    Optional. Pulls real EOD candles from your Zebu account to seed the simulator.
-                                </div>
-                            )}
-
-                            {/* Zebu Developer App Settings (Redirect URL & Server IP) */}
-                            <div className="p-2.5 rounded-xl text-xs flex flex-col gap-1.5" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)' }}>
-                                <div className="flex items-center justify-between">
-                                    <span className="font-semibold text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Broker App Developer Settings</span>
-                                    <span className="text-[10px] text-[#10b981] font-medium">Use in Zebu Developer Portal</span>
-                                </div>
-                                
-                                <div className="grid grid-cols-1 gap-1.5 text-[11px]">
-                                    <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5">
-                                        <div className="truncate mr-2">
-                                            <span className="text-[var(--text-muted)] block text-[9px] uppercase font-semibold">Redirect URL (OAuth Callback)</span>
-                                            <code className="text-[#10b981] font-mono text-[11px] select-all truncate block">
-                                                {`${window.location.origin}/api/admin/broker/zebu/oauth-callback`}
-                                            </code>
-                                        </div>
-                                        <button 
-                                            type="button"
-                                            className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[var(--text-primary)] text-[10px] font-medium border border-white/10 shrink-0 flex items-center gap-1"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(`${window.location.origin}/api/admin/broker/zebu/oauth-callback`);
-                                                toast.success('Redirect URL copied');
-                                            }}>
-                                            <Copy size={11} /> Copy
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-center justify-between p-2 rounded-lg bg-black/20 border border-white/5">
-                                        <div className="truncate mr-2">
-                                            <span className="text-[var(--text-muted)] block text-[9px] uppercase font-semibold">Server IP (Broker Whitelist)</span>
-                                            <code className="text-[#3b82f6] font-mono text-[11px] select-all truncate block">
-                                                95.111.252.225
-                                            </code>
-                                        </div>
-                                        <button 
-                                            type="button"
-                                            className="px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-[var(--text-primary)] text-[10px] font-medium border border-white/10 shrink-0 flex items-center gap-1"
-                                            onClick={() => {
-                                                navigator.clipboard.writeText('95.111.252.225');
-                                                toast.success('Server IP copied');
-                                            }}>
-                                            <Copy size={11} /> Copy
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Credentials Grid */}
-                            <div className="grid grid-cols-2 gap-2">
-                                <input style={inputStyle} placeholder="Client code" value={zebuDraft.client_code}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, client_code: e.target.value }))} />
-                                <input style={inputStyle} placeholder="Vendor code" value={zebuDraft.vendor_code}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, vendor_code: e.target.value }))} />
-                                <input style={inputStyle} type="password" placeholder="Password" value={zebuDraft.password}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, password: e.target.value }))} />
-                                <input style={inputStyle} placeholder="DOB (DD-MM-YYYY) or PAN" value={zebuDraft.factor2}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, factor2: e.target.value }))} />
-                                <input style={inputStyle} placeholder="API key" value={zebuDraft.api_key}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, api_key: e.target.value }))} />
-                                <input style={inputStyle} type="password" placeholder="API secret" value={zebuDraft.api_secret}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, api_secret: e.target.value }))} />
-                                <input style={{ ...inputStyle, gridColumn: 'span 2' }} placeholder="Base URL" value={zebuDraft.base_url}
-                                    onChange={(e) => setZebuDraft(prev => ({ ...prev, base_url: e.target.value }))} />
-                            </div>
-
-                            <div className="flex gap-2 pt-0.5">
-                                <button className="admin-action-btn admin-action-btn--secondary flex-1 text-xs py-1.5" onClick={onSaveZebu} disabled={zebuSaving}>
-                                    {zebuSaving ? 'Saving…' : 'Save Credentials'}
-                                </button>
-                                <button className="admin-action-btn admin-action-btn--primary flex-1 text-xs py-1.5" onClick={onImportZebu}
-                                    disabled={zebuImporting || !zebuStatus?.configured}>
-                                    {zebuImporting ? 'Importing…' : 'Import Real History'}
-                                </button>
-                            </div>
-                            <button className="admin-action-btn admin-action-btn--secondary w-full text-xs py-1.5" onClick={onResyncSessions}
-                                disabled={zebuResyncing}
-                                title="Push already-connected users onto the latest imported data now, instead of waiting for their session's next day-rollover.">
-                                {zebuResyncing ? 'Resyncing…' : 'Resync Live Sessions to Latest Data'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                {/* Footer */}
-                <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.15)' }}>
-                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        {activeTab === 'sim' ? 'In-process simulation engine' : 'Credentials encrypted with AES-256'}
-                    </span>
-                    <div className="flex gap-2">
-                        <button className="admin-action-btn admin-action-btn--secondary text-xs py-1.5 px-3" onClick={onClose} disabled={saving}>Cancel</button>
-                        <button className="admin-action-btn admin-action-btn--primary text-xs py-1.5 px-3" onClick={onSave} disabled={saving || loading}>
-                            {saving ? <><Loader2 size={12} className="animate-spin" /> Saving...</> : 'Save Settings'}
-                        </button>
-                    </div>
-                </div>
+                <button 
+                    onClick={onClose}
+                    className="absolute top-4 right-4 z-10 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:white transition"
+                >
+                    <X size={18} />
+                </button>
+                <DataFeedPanel />
             </div>
         </div>
     );
@@ -2524,14 +2296,7 @@ export default function AdminPanelPage() {
 
             {/* Data Feed Modal (manage/root admins) */}
             {showDataFeedModal && canManage && (
-                <DataFeedModal config={dataFeedConfig} draft={dataFeedDraft} setDraft={setDataFeedDraft}
-                    loading={dataFeedLoading} saving={dataFeedSaving} onSave={handleSaveDataFeed} onClose={() => setShowDataFeedModal(false)}
-                    zebuStatus={zebuStatus} zebuDraft={zebuDraft} setZebuDraft={setZebuDraft}
-                    zebuSaving={zebuSaving} zebuImporting={zebuImporting}
-                    onSaveZebu={handleSaveZebuCredentials} onImportZebu={handleImportZebuHistory}
-                    zebuResyncing={zebuResyncing} onResyncSessions={handleResyncSessions}
-                    simStatus={simStatus} simStatusLoading={simStatusLoading} onRefreshSimStatus={loadSimStatus}
-                    seeding={seedingFreeHistory} onSeedFreeHistory={handleSeedFreeHistory} />
+                <DataFeedModal onClose={() => setShowDataFeedModal(false)} />
             )}
         </div>
     );
