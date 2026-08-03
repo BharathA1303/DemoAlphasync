@@ -845,6 +845,7 @@ async def get_zebu_credentials(
         res = await db.execute(stmt)
         config = res.scalar_one_or_none()
     except Exception as e:
+        await db.rollback()
         logger.warning(f"Error querying DataFeedConfig in get_zebu_credentials: {e}")
         config = None
 
