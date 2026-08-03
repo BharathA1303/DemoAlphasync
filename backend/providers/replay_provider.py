@@ -102,24 +102,24 @@ class ReplayProvider(MarketProvider):
         from datetime import datetime, timedelta, timezone
 
         # Determine base price based on symbol name
-        base_price = 100.0
+        base_price = 1000.0
         sym = symbol.upper().strip()
         if sym == "^NSEI" or "NIFTY" in sym:
-            base_price = 22000.0
+            base_price = 24600.0
         elif sym == "^NSEBANK" or "BANKNIFTY" in sym:
-            base_price = 47000.0
+            base_price = 57700.0
         elif sym == "^BSESN" or "SENSEX" in sym:
-            base_price = 72000.0
+            base_price = 80200.0
         elif "RELIANCE" in sym:
-            base_price = 2500.0
+            base_price = 1310.40
         elif "TCS" in sym:
-            base_price = 3800.0
+            base_price = 4350.0
         elif "HDFCBANK" in sym:
-            base_price = 1450.0
+            base_price = 753.15
         elif "INFY" in sym:
-            base_price = 1500.0
+            base_price = 1820.0
         elif "SBIN" in sym:
-            base_price = 750.0
+            base_price = 1044.20
         elif sym in ("GOLD", "SILVER", "CRUDEOIL"):
             if sym == "GOLD":
                 base_price = 65000.0

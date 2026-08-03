@@ -85,7 +85,25 @@ class DelayEngine:
         sm_res = await session.execute(sm_stmt)
         sm = sm_res.scalar_one_or_none()
 
-        default_price = 100.0  # Base placeholder price
+        # Determine realistic fallback price matching real stock/index prices
+        sym_clean = symbol.upper().replace(".NS", "").replace(".BO", "").replace("NSE:EQ:", "").replace("BSE:EQ:", "").strip()
+        default_price = 1000.0
+        if sym_clean in ("NIFTY", "^NSEI", "NIFTY50", "NSE:IDX:NIFTY50"):
+            default_price = 24600.0
+        elif sym_clean in ("BANKNIFTY", "^NSEBANK", "NSE:IDX:BANKNIFTY"):
+            default_price = 57700.0
+        elif sym_clean in ("FINNIFTY", "NSE:IDX:FINNIFTY"):
+            default_price = 24100.0
+        elif sym_clean in ("SENSEX", "^BSESN", "BSE:IDX:SENSEX"):
+            default_price = 80200.0
+        else:
+            try:
+                from data_layer.ingestion.nse_bhavcopy import _NSE_MOCK_ANCHORS
+                if sym_clean in _NSE_MOCK_ANCHORS:
+                    default_price = float(_NSE_MOCK_ANCHORS[sym_clean][0])
+            except Exception:
+                pass
+
         return {
             "symbol": symbol.upper(),
             "exchange": exchange.upper(),
