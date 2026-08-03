@@ -15,11 +15,14 @@ Admin levels:
 All endpoints under /api/admin/*
 """
 
+import asyncio
 import logging
 from io import BytesIO
 from datetime import datetime
 from uuid import UUID
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -1333,16 +1336,14 @@ async def zebu_oauth_callback(
         # Start live ingestion worker
         asyncio.create_task(live_ingestion_worker.start())
 
-        return {
-            "status": "connected",
-            "message": "Zebu OAuth authorization successful. Live ingestion started.",
-        }
+        return RedirectResponse(url="/admin/panel?zebu_status=connected", status_code=307)
     except Exception as e:
         logger.error(f"Zebu OAuth callback error: {e}")
-        config.oauth_connection_status = "error"
-        config.oauth_last_error = str(e)
-        await db.commit()
-        raise HTTPException(status_code=400, detail=f"OAuth token exchange failed: {e}")
+        if config:
+            config.oauth_connection_status = "error"
+            config.oauth_last_error = str(e)
+            await db.commit()
+        return RedirectResponse(url=f"/admin/panel?zebu_status=error&error={quote(str(e))}", status_code=307)
 
 
 @router.post("/broker/zebu/oauth/disconnect")
