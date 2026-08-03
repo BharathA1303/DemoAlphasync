@@ -20,6 +20,8 @@ depends_on = None
 def _has_column(table_name, column_name):
     bind = op.get_bind()
     insp = sa_inspect(bind)
+    if table_name not in insp.get_table_names():
+        return False
     return column_name in [c["name"] for c in insp.get_columns(table_name)]
 
 

@@ -18,24 +18,27 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
-        UPDATE broker_accounts
-        SET
-            credentials_enc = NULL,
-            broker_user_id = NULL,
-            display_name = NULL,
-            access_token_enc = NULL,
-            refresh_token_enc = NULL,
-            extra_data_enc = NULL,
-            is_active = false,
-            token_expiry = NULL,
-            last_used_at = NULL
-        WHERE credentials_enc IS NOT NULL
-           OR access_token_enc IS NOT NULL
-           OR broker_user_id IS NOT NULL
-        """
-    )
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if "broker_accounts" in insp.get_table_names():
+        op.execute(
+            """
+            UPDATE broker_accounts
+            SET
+                credentials_enc = NULL,
+                broker_user_id = NULL,
+                display_name = NULL,
+                access_token_enc = NULL,
+                refresh_token_enc = NULL,
+                extra_data_enc = NULL,
+                is_active = false,
+                token_expiry = NULL,
+                last_used_at = NULL
+            WHERE credentials_enc IS NOT NULL
+               OR access_token_enc IS NOT NULL
+               OR broker_user_id IS NOT NULL
+            """
+        )
 
 
 def downgrade() -> None:

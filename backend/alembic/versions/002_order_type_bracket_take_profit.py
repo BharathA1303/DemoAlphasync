@@ -21,6 +21,8 @@ depends_on = None
 def _has_column(table, column):
     bind = op.get_bind()
     insp = sa_inspect(bind)
+    if table not in insp.get_table_names():
+        return False
     columns = [c["name"] for c in insp.get_columns(table)]
     return column in columns
 
@@ -28,6 +30,8 @@ def _has_column(table, column):
 def _has_check_constraint(table, constraint_name):
     bind = op.get_bind()
     insp = sa_inspect(bind)
+    if table not in insp.get_table_names():
+        return False
     return any(
         c.get("name") == constraint_name for c in insp.get_check_constraints(table)
     )
