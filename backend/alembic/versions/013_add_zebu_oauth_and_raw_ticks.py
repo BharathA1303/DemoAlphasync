@@ -81,7 +81,12 @@ def upgrade() -> None:
         op.create_index("ix_bulk_file_index_ex_date", "bulk_file_index", ["exchange", "segment", "date"])
 
     # 4. raw_ticks table (RANGE Partitioned by real_timestamp)
-    if "raw_ticks" not in tables:
+    if "raw_ticks" in tables:
+        relkind = bind.execute(sa.text("SELECT relkind FROM pg_class WHERE relname = 'raw_ticks'")).scalar()
+        if relkind != 'p':
+            op.execute("DROP TABLE IF EXISTS raw_ticks CASCADE;")
+
+    if "raw_ticks" not in sa.inspect(bind).get_table_names():
         op.execute(
             """
             CREATE TABLE IF NOT EXISTS raw_ticks (
