@@ -9,6 +9,7 @@ of the trading-focused "Sarah" mentor — see config/academy_ai_config.py.
 
 import json
 import logging
+import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal, Optional
@@ -25,6 +26,7 @@ from models.academy import Course, Enrollment, QuizAttempt, SkillMastery, StudyA
 from models.user import User
 from routes.auth import get_current_user
 from app.kernel.enums.academy_roles import FACULTY_ACADEMY_ROLES, ALL_ACADEMY_ROLES
+from services.academy_seed import ensure_user_academy_data, ensure_default_challenges
 
 logger = logging.getLogger(__name__)
 

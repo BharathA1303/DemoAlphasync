@@ -58,3 +58,13 @@ async def test_student_challenge_progress_model():
     assert progress.user_id == user_id
     assert progress.status == "in_progress"
     assert float(progress.current_value) == 2.5
+
+
+@pytest.mark.asyncio
+async def test_ensure_user_academy_data_import():
+    from services.academy_seed import ensure_user_academy_data, ensure_default_challenges
+    from routes.academy import router
+    assert ensure_user_academy_data is not None
+    assert ensure_default_challenges is not None
+    assert router is not None
+
