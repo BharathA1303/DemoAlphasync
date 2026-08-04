@@ -1617,4 +1617,68 @@ async def get_bulk_files(
         return {"files": []}
 
 
+@router.get("/traders")
+async def get_trader_roster(
+    query: Optional[str] = None,
+    page: int = 1,
+    per_page: int = 25,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_admin_user),
+):
+    """Platform Super Admin view to list and manage all individual traders across single-member tenants."""
+    from sqlalchemy import select, func, or_
+    from models.user import User
+    from models.tenant import Tenant
+    from database.connection import set_super_admin_context
+
+    await set_super_admin_context(db, True)
+
+    stmt = (
+        select(User, Tenant)
+        .outerjoin(Tenant, User.tenant_id == Tenant.id)
+        .where(User.academy_role == "trader")
+    )
+    if query and query.strip():
+        q = f"%{query.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.email.ilike(q),
+                User.username.ilike(q),
+                User.full_name.ilike(q),
+            )
+        )
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_res = await db.execute(count_stmt)
+    total = total_res.scalar() or 0
+
+    stmt = stmt.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    traders = []
+    for user_obj, tenant_obj in rows:
+        traders.append({
+            "id": str(user_obj.id),
+            "email": user_obj.email,
+            "username": user_obj.username,
+            "full_name": user_obj.full_name,
+            "account_status": getattr(user_obj, "account_status", "active"),
+            "virtual_capital": float(getattr(user_obj, "virtual_capital", 1000000.0) or 1000000.0),
+            "created_at": user_obj.created_at.isoformat() if user_obj.created_at else None,
+            "tenant": {
+                "id": str(tenant_obj.id) if tenant_obj else None,
+                "name": tenant_obj.name if tenant_obj else "Individual",
+                "tenant_type": getattr(tenant_obj, "tenant_type", "individual") if tenant_obj else "individual",
+            }
+        })
+
+    return {
+        "traders": traders,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
 

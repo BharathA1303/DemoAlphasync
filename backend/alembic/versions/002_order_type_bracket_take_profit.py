@@ -46,14 +46,15 @@ def upgrade() -> None:
             ),
         )
 
-    if _has_check_constraint("orders", "ck_order_type"):
-        op.drop_constraint("ck_order_type", "orders", type_="check")
+    if op.get_bind().dialect.name == "postgresql":
+        if _has_check_constraint("orders", "ck_order_type"):
+            op.drop_constraint("ck_order_type", "orders", type_="check")
 
-    op.create_check_constraint(
-        "ck_order_type",
-        "orders",
-        "order_type IN ('MARKET', 'LIMIT', 'STOP_LOSS', 'TAKE_PROFIT', 'BRACKET', 'STOP_LOSS_LIMIT')",
-    )
+        op.create_check_constraint(
+            "ck_order_type",
+            "orders",
+            "order_type IN ('MARKET', 'LIMIT', 'STOP_LOSS', 'TAKE_PROFIT', 'BRACKET', 'STOP_LOSS_LIMIT')",
+        )
 
 
 def downgrade() -> None:

@@ -23,8 +23,9 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
 
-    # Enable uuid-ossp extension for gen_random_uuid()
-    bind.execute(sa.text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+    # Enable uuid-ossp extension for gen_random_uuid() on PostgreSQL
+    if bind.dialect.name == "postgresql":
+        bind.execute(sa.text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
 
     # Import ALL models so Base.metadata is populated with every table
     # Order matters: import base models before dependent ones

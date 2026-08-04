@@ -57,27 +57,27 @@ export default function LoginPage() {
   const register    = useAuthStore((s) => s.register);
   const existingUser = useAuthStore((s) => s.user);
   const navigate           = useNavigate();
-  const [searchParams]     = useSearchParams();
-  const adminIntent        = (searchParams.get("intent") || "").toLowerCase() === "admin";
 
-  const FACULTY_ACADEMY_ROLES = ["faculty", "institution_admin", "super_admin"];
+  const FACULTY_ACADEMY_ROLES = ["teacher", "faculty", "institution_admin", "super_admin"];
 
   const routeByAccountStatus = (profile) => {
     const status   = (profile?.account_status || "active").toLowerCase();
     const isActive = status === "active" && profile?.is_active !== false;
     if (isActive) {
-      if (adminIntent) {
-        if ((profile?.role || "").toLowerCase() === "admin") {
-          navigate("/admin/panel");
-        } else {
-          toast.error(`Signed in as ${profile?.email || "this account"}, but it is not an admin account.`);
-          navigate("/admin");
-        }
-        return;
-      }
       localStorage.setItem("alphasync_trading_mode", "demo");
       localStorage.setItem("alphasync_onboarded", "1");
-      if (FACULTY_ACADEMY_ROLES.includes((profile?.academy_role || "").toLowerCase())) {
+      const platRole = (profile?.role || "").toLowerCase();
+      const acadRole = (profile?.academy_role || "student").toLowerCase();
+
+      if (platRole === "admin") {
+        navigate("/admin/panel");
+        return;
+      }
+      if (acadRole === "trader") {
+        navigate("/terminal");
+        return;
+      }
+      if (FACULTY_ACADEMY_ROLES.includes(acadRole)) {
         navigate("/academy/faculty");
         return;
       }
@@ -97,10 +97,10 @@ export default function LoginPage() {
   };
 
   useEffect(() => {
-    if (!existingUser || adminIntent) return;
+    if (!existingUser) return;
     if (!hasUserSessionCookie()) return;
     handleAuthSuccess(existingUser);
-  }, [existingUser, adminIntent]);
+  }, [existingUser]);
 
   const handleLogin = async (e) => {
     e.preventDefault();

@@ -24,9 +24,7 @@ from database.connection import get_db
 from models.academy import Course, Enrollment, QuizAttempt, SkillMastery, StudyActivity
 from models.user import User
 from routes.auth import get_current_user
-from services.academy_seed import ensure_faculty_teaching_data, ensure_user_academy_data
-
-FACULTY_ACADEMY_ROLES = {"faculty", "institution_admin", "super_admin"}
+from app.kernel.enums.academy_roles import FACULTY_ACADEMY_ROLES, ALL_ACADEMY_ROLES
 
 logger = logging.getLogger(__name__)
 

@@ -95,6 +95,10 @@ const adminApi = {
         return api.post(`/admin/users/${safeUserId(userId)}/academy-role`, { academy_role: academyRole });
     },
 
+    getTraders(params = {}) {
+        return api.get('/admin/traders', { params });
+    },
+
     setUserGroup(userId, groupId) {
         return api.post(`/admin/users/${safeUserId(userId)}/group`, { group_id: groupId || null });
     },

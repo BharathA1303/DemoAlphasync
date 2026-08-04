@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 
 from database.connection import get_db
 from models.user import User, UserSession, AdminAuditLog
+from models.tenant import Tenant, UserTenantRole, TenantRole
 from models.portfolio import Portfolio
 from services.auth_service import hash_password, verify_password, create_access_token, decode_access_token
 from services import admin_group_service
@@ -415,6 +416,16 @@ async def register(
     effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or is_first_user
 
     try:
+        # Self-serve individual tenant provisioning
+        ind_tenant = Tenant(
+            name=f"{(req.full_name or username).strip()}'s Individual Workspace",
+            slug=f"ind-{username.lower()}-{hashlib.md5(email.encode()).hexdigest()[:8]}",
+            tenant_type="individual",
+            is_active=True,
+        )
+        db.add(ind_tenant)
+        await db.flush()
+
         user = User(
             email=email,
             username=username,
@@ -424,6 +435,8 @@ async def register(
             virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
             is_verified=admin_allowlisted,
             role=("admin" if admin_allowlisted else "user"),
+            academy_role=("super_admin" if is_first_user else "trader"),
+            tenant_id=ind_tenant.id,
             admin_level=("root" if is_first_user else None),
             account_status=(
                 "active"
@@ -453,6 +466,15 @@ async def register(
         )
         db.add(user)
         await db.flush()
+
+        # Tenant-scoped RBAC mapping
+        tenant_role_enum = TenantRole.SUPER_ADMIN if is_first_user else TenantRole.TRADER
+        user_tenant_role = UserTenantRole(
+            tenant_id=ind_tenant.id,
+            user_id=user.id,
+            role=tenant_role_enum,
+        )
+        db.add(user_tenant_role)
 
         portfolio = Portfolio(
             user_id=user.id,

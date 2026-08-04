@@ -20,12 +20,12 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.alter_column(
-        "users",
-        "auth_provider",
-        existing_type=sa.String(30),
-        server_default=sa.text("'local'"),
-    )
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.alter_column(
+            "auth_provider",
+            existing_type=sa.String(30),
+            server_default=sa.text("'local'"),
+        )
 
 
 def downgrade() -> None:

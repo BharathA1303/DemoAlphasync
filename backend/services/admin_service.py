@@ -13,8 +13,9 @@ from typing import Optional
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, update, func, and_, case
 from sqlalchemy.exc import SQLAlchemyError
+from app.kernel.enums.academy_roles import ALL_ACADEMY_ROLES
 
 from models.user import User, AdminAuditLog, UserSession
 from models.feedback import UserFeedback
@@ -916,7 +917,7 @@ async def set_access_duration(
     return {"success": True, "user": _serialize_user(user)}
 
 
-_ACADEMY_ROLES = ("student", "teacher", "faculty", "institution_admin", "super_admin")
+_ACADEMY_ROLES = ALL_ACADEMY_ROLES
 
 
 async def set_academy_role(
@@ -943,6 +944,25 @@ async def set_academy_role(
 
     old_role = user.academy_role
     user.academy_role = academy_role
+
+    # Atomically sync UserTenantRole mapping to prevent drift
+    from models.tenant import UserTenantRole
+    stmt_utr = select(UserTenantRole).where(UserTenantRole.user_id == user.id)
+    if user.tenant_id:
+        stmt_utr = stmt_utr.where(UserTenantRole.tenant_id == user.tenant_id)
+    res_utr = await db.execute(stmt_utr)
+    utr_obj = res_utr.scalars().first()
+    if utr_obj:
+        utr_obj.role = academy_role
+    elif user.tenant_id:
+        db.add(UserTenantRole(tenant_id=user.tenant_id, user_id=user.id, role=academy_role))
+
+    # Invalidate existing active sessions so token re-authenticates with updated role
+    await db.execute(
+        update(UserSession)
+        .where(UserSession.user_id == user.id)
+        .values(is_active=False)
+    )
 
     await _write_audit(
         db,

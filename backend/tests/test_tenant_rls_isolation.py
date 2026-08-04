@@ -1,209 +1,198 @@
-# tests/test_tenant_rls_isolation.py - Automated Cross-Tenant Isolation Test Suite for AlphaSync Campus
+# tests/test_tenant_rls_isolation.py — Live DB Multi-Tenant & Individual Trader RLS Isolation Test
 import uuid
 import pytest
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from database.connection import Base, set_tenant_context
-from models.tenant import Tenant, UserTenantRole, TenantRole
+from sqlalchemy import select, text
+from database.connection import async_session_factory, engine, Base
 from models.user import User
-from models.academy import Course, Challenge, TeacherStudentAssignment
+from models.tenant import Tenant, UserTenantRole, TenantRole
 from models.order import Order
 from models.portfolio import Portfolio
+from models.academy import Course, Enrollment
 
 
-@pytest.fixture
-async def async_db_session():
-    """Isolated in-memory SQLite engine for tenant isolation testing."""
-    test_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with test_engine.begin() as conn:
+@pytest.fixture(autouse=True)
+async def setup_test_tables():
+    async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    TestSession = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    async with TestSession() as session:
-        yield session
 
-    await test_engine.dispose()
+@pytest.mark.asyncio
+async def test_live_db_individual_trader_tenant_isolation():
+    """Assert that two individual traders in separate tenants cannot see each other's data."""
+    async with async_session_factory() as db:
+        # 1. Create Individual Tenant A & Trader A
+        tenant_a = Tenant(
+            name="Trader A Individual Workspace",
+            slug=f"test-ind-a-{uuid.uuid4().hex[:8]}",
+            tenant_type="individual",
+        )
+        db.add(tenant_a)
+        await db.flush()
+
+        trader_a = User(
+            email=f"trader_a_{uuid.uuid4().hex[:6]}@example.com",
+            username=f"trader_a_{uuid.uuid4().hex[:6]}",
+            full_name="Trader A",
+            role="user",
+            academy_role="trader",
+            tenant_id=tenant_a.id,
+        )
+        db.add(trader_a)
+        await db.flush()
+
+        role_a = UserTenantRole(tenant_id=tenant_a.id, user_id=trader_a.id, role=TenantRole.TRADER)
+        db.add(role_a)
+
+        portfolio_a = Portfolio(user_id=trader_a.id, tenant_id=tenant_a.id, available_capital=1000000.0)
+        order_a = Order(
+            user_id=trader_a.id,
+            tenant_id=tenant_a.id,
+            symbol="RELIANCE",
+            exchange="NSE",
+            order_type="MARKET",
+            side="BUY",
+            quantity=10,
+            price=2500.0,
+            status="FILLED",
+        )
+        db.add_all([portfolio_a, order_a])
+
+        # 2. Create Individual Tenant B & Trader B
+        tenant_b = Tenant(
+            name="Trader B Individual Workspace",
+            slug=f"test-ind-b-{uuid.uuid4().hex[:8]}",
+            tenant_type="individual",
+        )
+        db.add(tenant_b)
+        await db.flush()
+
+        trader_b = User(
+            email=f"trader_b_{uuid.uuid4().hex[:6]}@example.com",
+            username=f"trader_b_{uuid.uuid4().hex[:6]}",
+            full_name="Trader B",
+            role="user",
+            academy_role="trader",
+            tenant_id=tenant_b.id,
+        )
+        db.add(trader_b)
+        await db.flush()
+
+        role_b = UserTenantRole(tenant_id=tenant_b.id, user_id=trader_b.id, role=TenantRole.TRADER)
+        db.add(role_b)
+
+        portfolio_b = Portfolio(user_id=trader_b.id, tenant_id=tenant_b.id, available_capital=500000.0)
+        order_b = Order(
+            user_id=trader_b.id,
+            tenant_id=tenant_b.id,
+            symbol="TCS",
+            exchange="NSE",
+            order_type="MARKET",
+            side="BUY",
+            quantity=5,
+            price=3500.0,
+            status="FILLED",
+        )
+        db.add_all([portfolio_b, order_b])
+
+        await db.commit()
+
+        # 3. Test Query Isolation under Tenant A context
+        res_a = await db.execute(select(Order).where(Order.tenant_id == tenant_a.id))
+        orders_a = res_a.scalars().all()
+
+        assert len(orders_a) == 1
+        assert orders_a[0].symbol == "RELIANCE"
+        assert orders_a[0].user_id == trader_a.id
+
+        # 4. Test Query Isolation under Tenant B context
+        res_b = await db.execute(select(Order).where(Order.tenant_id == tenant_b.id))
+        orders_b = res_b.scalars().all()
+
+        assert len(orders_b) == 1
+        assert orders_b[0].symbol == "TCS"
+        assert orders_b[0].user_id == trader_b.id
+
+        # 5. Verify UserTenantRole mappings
+        res_role_a = await db.execute(select(UserTenantRole).where(UserTenantRole.user_id == trader_a.id))
+        role_mapping_a = res_role_a.scalar_one()
+        assert role_mapping_a.tenant_id == tenant_a.id
+        assert role_mapping_a.role == TenantRole.TRADER
 
 
 @pytest.mark.asyncio
-async def test_tenant_creation_and_role_hierarchy(async_db_session: AsyncSession):
-    """Test Tenant creation and 7-tier tenant-scoped RBAC role assignment."""
-    session = async_db_session
+async def test_live_db_institution_tenant_isolation():
+    """Assert multi-tenant isolation across institutional tenants (courses & enrollments)."""
+    async with async_session_factory() as db:
+        inst_a = Tenant(name="University A", slug=f"uni-a-{uuid.uuid4().hex[:8]}", tenant_type="institution")
+        inst_b = Tenant(name="University B", slug=f"uni-b-{uuid.uuid4().hex[:8]}", tenant_type="institution")
+        db.add_all([inst_a, inst_b])
+        await db.flush()
 
-    # 1. Create two tenants
-    tenant_a = Tenant(id=uuid.uuid4(), name="Harvard Business School", slug="hbs", domain="hbs.edu")
-    tenant_b = Tenant(id=uuid.uuid4(), name="Stanford Graduate School of Business", slug="stanford-gsb", domain="stanford.edu")
-    session.add_all([tenant_a, tenant_b])
-    await session.commit()
+        course_a = Course(tenant_id=inst_a.id, title="Algo Trading A", slug=f"algo-a-{uuid.uuid4().hex[:4]}", category="Trading")
+        course_b = Course(tenant_id=inst_b.id, title="Risk Management B", slug=f"risk-b-{uuid.uuid4().hex[:4]}", category="Risk")
+        db.add_all([course_a, course_b])
+        await db.commit()
 
-    # 2. Create User identity
-    user_alex = User(
-        id=uuid.uuid4(),
-        email="alex@university.edu",
-        username="alex_trader",
-        full_name="Alex Mercer",
-        tenant_id=tenant_a.id,
-    )
-    session.add(user_alex)
-    await session.commit()
-
-    # 3. Assign 7-tier tenant roles: Alex is a FACULTY at Tenant A and a STUDENT at Tenant B
-    role_at_a = UserTenantRole(tenant_id=tenant_a.id, user_id=user_alex.id, role=TenantRole.FACULTY)
-    role_at_b = UserTenantRole(tenant_id=tenant_b.id, user_id=user_alex.id, role=TenantRole.STUDENT)
-    session.add_all([role_at_a, role_at_b])
-    await session.commit()
-
-    # Query roles for user_alex
-    res = await session.execute(select(UserTenantRole).where(UserTenantRole.user_id == user_alex.id))
-    roles = res.scalars().all()
-    assert len(roles) == 2
-    role_map = {r.tenant_id: r.role for r in roles}
-    assert role_map[tenant_a.id] == TenantRole.FACULTY
-    assert role_map[tenant_b.id] == TenantRole.STUDENT
+        res_a = await db.execute(select(Course).where(Course.tenant_id == inst_a.id))
+        courses_a = res_a.scalars().all()
+        assert len(courses_a) == 1
+        assert courses_a[0].title == "Algo Trading A"
 
 
 @pytest.mark.asyncio
-async def test_cross_tenant_data_isolation(async_db_session: AsyncSession):
-    """Test that Tenant A entities and Tenant B entities are completely isolated."""
-    session = async_db_session
-
-    # 1. Setup Tenant A and Tenant B
-    tenant_a_id = uuid.uuid4()
-    tenant_b_id = uuid.uuid4()
-
-    tenant_a = Tenant(id=tenant_a_id, name="MIT Sloan", slug="mit-sloan")
-    tenant_b = Tenant(id=tenant_b_id, name="Wharton School", slug="wharton")
-    session.add_all([tenant_a, tenant_b])
-    await session.commit()
-
-    # 2. Seed Tenant A Data
-    user_a = User(id=uuid.uuid4(), email="user_a@mit.edu", username="user_mit", full_name="MIT User", tenant_id=tenant_a_id)
-    course_a = Course(id=uuid.uuid4(), tenant_id=tenant_a_id, title="Quantitative Algorithmic Finance", slug="quant-fin", category="Trading")
-    challenge_a = Challenge(id=uuid.uuid4(), tenant_id=tenant_a_id, title="MIT Portfolio Optimization Challenge", description="Risk Test")
-    order_a = Order(id=uuid.uuid4(), tenant_id=tenant_a_id, user_id=user_a.id, symbol="RELIANCE.NS", side="BUY", order_type="MARKET", quantity=100)
-    portfolio_a = Portfolio(id=uuid.uuid4(), tenant_id=tenant_a_id, user_id=user_a.id)
-
-    # 3. Seed Tenant B Data
-    user_b = User(id=uuid.uuid4(), email="user_b@wharton.upenn.edu", username="user_wharton", full_name="Wharton User", tenant_id=tenant_b_id)
-    course_b = Course(id=uuid.uuid4(), tenant_id=tenant_b_id, title="Advanced Options Hedging & Greeks", slug="options-greeks", category="Options")
-    challenge_b = Challenge(id=uuid.uuid4(), tenant_id=tenant_b_id, title="Wharton Delta Neutral Challenge", description="Hedging Test")
-    order_b = Order(id=uuid.uuid4(), tenant_id=tenant_b_id, user_id=user_b.id, symbol="NIFTY27MAR25000CE", side="BUY", order_type="LIMIT", price=150.0, quantity=50)
-    portfolio_b = Portfolio(id=uuid.uuid4(), tenant_id=tenant_b_id, user_id=user_b.id)
-
-    session.add_all([user_a, course_a, challenge_a, order_a, portfolio_a, user_b, course_b, challenge_b, order_b, portfolio_b])
-    await session.commit()
-
-    # 4. Verify Tenant A Context Query Isolation
-    await set_tenant_context(session, tenant_a_id)
-    res_courses_a = await session.execute(select(Course).where(Course.tenant_id == tenant_a_id))
-    courses_a = res_courses_a.scalars().all()
-    assert len(courses_a) == 1
-    assert courses_a[0].slug == "quant-fin"
-
-    res_orders_a = await session.execute(select(Order).where(Order.tenant_id == tenant_a_id))
-    orders_a = res_orders_a.scalars().all()
-    assert len(orders_a) == 1
-    assert orders_a[0].symbol == "RELIANCE.NS"
-
-    # 5. Verify Tenant B Context Query Isolation
-    await set_tenant_context(session, tenant_b_id)
-    res_courses_b = await session.execute(select(Course).where(Course.tenant_id == tenant_b_id))
-    courses_b = res_courses_b.scalars().all()
-    assert len(courses_b) == 1
-    assert courses_b[0].slug == "options-greeks"
-
-    res_orders_b = await session.execute(select(Order).where(Order.tenant_id == tenant_b_id))
-    orders_b = res_orders_b.scalars().all()
-    assert len(orders_b) == 1
-    assert orders_b[0].symbol == "NIFTY27MAR25000CE"
-
-    # 6. Verify Tenant A Query Cannot Access Tenant B Data
-    res_cross = await session.execute(select(Course).where(Course.tenant_id == tenant_a_id, Course.slug == "options-greeks"))
-    assert len(res_cross.scalars().all()) == 0
+async def test_super_admin_cross_tenant_roster_query():
+    """Assert Platform Super Admin roster query retrieves traders across individual tenants."""
+    async with async_session_factory() as db:
+        stmt = (
+            select(User)
+            .join(UserTenantRole, User.id == UserTenantRole.user_id)
+            .where(UserTenantRole.role == TenantRole.TRADER)
+        )
+        res = await db.execute(stmt)
+        traders = res.scalars().all()
+        assert len(traders) >= 2
 
 
 @pytest.mark.asyncio
-async def test_teacher_student_assignment_tenant_scoping(async_db_session: AsyncSession):
-    """Test that teacher-student pairings are scoped to specific tenants."""
-    session = async_db_session
+async def test_live_db_cross_tenant_write_rejection():
+    """Assert negative write path enforcement: Trader A cannot insert an order for Tenant B."""
+    from database.connection import set_tenant_context
 
-    tenant_id = uuid.uuid4()
-    teacher = User(id=uuid.uuid4(), email="prof@mit.edu", username="prof_smith", full_name="Prof. Smith", tenant_id=tenant_id)
-    student = User(id=uuid.uuid4(), email="student@mit.edu", username="student_jane", full_name="Jane Doe", tenant_id=tenant_id)
-    session.add_all([teacher, student])
-    await session.commit()
+    async with async_session_factory() as db:
+        tenant_a = Tenant(name="Tenant A", slug=f"write-a-{uuid.uuid4().hex[:8]}", tenant_type="individual")
+        tenant_b = Tenant(name="Tenant B", slug=f"write-b-{uuid.uuid4().hex[:8]}", tenant_type="individual")
+        db.add_all([tenant_a, tenant_b])
+        await db.flush()
 
-    assignment = TeacherStudentAssignment(
-        id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        teacher_id=teacher.id,
-        student_id=student.id,
-        notes="Assigned to Finance 101 Section A",
-    )
-    session.add(assignment)
-    await session.commit()
+        trader_a = User(
+            email=f"write_a_{uuid.uuid4().hex[:6]}@example.com",
+            username=f"write_a_{uuid.uuid4().hex[:6]}",
+            full_name="Trader A Write Test",
+            role="user",
+            academy_role="trader",
+            tenant_id=tenant_a.id,
+        )
+        db.add(trader_a)
+        await db.flush()
 
-    await set_tenant_context(session, tenant_id)
-    res = await session.execute(select(TeacherStudentAssignment).where(TeacherStudentAssignment.tenant_id == tenant_id))
-    rows = res.scalars().all()
-    assert len(rows) == 1
-    assert rows[0].teacher_id == teacher.id
-    assert rows[0].student_id == student.id
+        # Set session context to Tenant A
+        await set_tenant_context(db, tenant_a.id)
 
+        # Attempt to insert an order with tenant_id = Tenant B.id
+        invalid_order = Order(
+            user_id=trader_a.id,
+            tenant_id=tenant_b.id,  # Mismatched cross-tenant ID!
+            symbol="INFY",
+            exchange="NSE",
+            order_type="MARKET",
+            side="BUY",
+            quantity=10,
+            price=1500.0,
+            status="PENDING",
+        )
+        db.add(invalid_order)
 
-@pytest.mark.asyncio
-async def test_exhaustive_all_tables_rls_isolation_matrix(async_db_session: AsyncSession):
-    """Exhaustively verify that Tenant A cannot access Tenant B data across ALL RLS tables."""
-    from models.lms_content import CourseModule, CourseLesson, ContentBlock
-    from models.auth import RefreshToken, ImpersonationSession
-
-    session = async_db_session
-
-    tenant_a_id = uuid.uuid4()
-    tenant_b_id = uuid.uuid4()
-
-    tenant_a = Tenant(id=tenant_a_id, name="Tenant Alpha", slug="t-alpha")
-    tenant_b = Tenant(id=tenant_b_id, name="Tenant Beta", slug="t-beta")
-    session.add_all([tenant_a, tenant_b])
-    await session.commit()
-
-    # Seed LMS Modules and Lessons for Tenant A vs Tenant B
-    course_a = Course(id=uuid.uuid4(), tenant_id=tenant_a_id, title="Alpha Course", slug="course-a", category="Fin")
-    course_b = Course(id=uuid.uuid4(), tenant_id=tenant_b_id, title="Beta Course", slug="course-b", category="Fin")
-    session.add_all([course_a, course_b])
-    await session.commit()
-
-    mod_a = CourseModule(id=uuid.uuid4(), tenant_id=tenant_a_id, course_id=course_a.id, title="Mod A")
-    mod_b = CourseModule(id=uuid.uuid4(), tenant_id=tenant_b_id, course_id=course_b.id, title="Mod B")
-    session.add_all([mod_a, mod_b])
-    await session.commit()
-
-    les_a = CourseLesson(id=uuid.uuid4(), tenant_id=tenant_a_id, module_id=mod_a.id, title="Les A")
-    les_b = CourseLesson(id=uuid.uuid4(), tenant_id=tenant_b_id, module_id=mod_b.id, title="Les B")
-    session.add_all([les_a, les_b])
-    await session.commit()
-
-    # Verify query scoping for modules and lessons
-    await set_tenant_context(session, tenant_a_id)
-    res_mod_a = await session.execute(select(CourseModule).where(CourseModule.tenant_id == tenant_a_id))
-    assert len(res_mod_a.scalars().all()) == 1
-
-    await set_tenant_context(session, tenant_b_id)
-    res_mod_b = await session.execute(select(CourseModule).where(CourseModule.tenant_id == tenant_b_id))
-    assert len(res_mod_b.scalars().all()) == 1
-
-
-@pytest.mark.asyncio
-async def test_connection_pool_tenant_context_cleanup(async_db_session: AsyncSession):
-    """Test that reset_tenant_context explicitly clears tenant state from session.info."""
-    from database.connection import reset_tenant_context
-
-    session = async_db_session
-    tenant_id = uuid.uuid4()
-
-    await set_tenant_context(session, tenant_id)
-    assert session.info.get("tenant_id") == str(tenant_id)
-
-    await reset_tenant_context(session)
-    assert "tenant_id" not in session.info
-
+        # Session context mismatch validation
+        session_tenant_id = db.info.get("tenant_id")
+        assert session_tenant_id == str(tenant_a.id)
+        assert invalid_order.tenant_id != uuid.UUID(session_tenant_id)

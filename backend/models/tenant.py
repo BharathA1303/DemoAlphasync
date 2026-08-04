@@ -23,13 +23,14 @@ def _utcnow():
 
 
 class TenantRole(str, enum.Enum):
-    """7-tier tenant role hierarchy as specified in AlphaSync Campus design docs."""
+    """Tenant role hierarchy for AlphaSync Campus & Individual Traders."""
     SUPER_ADMIN = "super_admin"
     INSTITUTION_ADMIN = "institution_admin"
     DEPT_HEAD = "dept_head"
     FACULTY = "faculty"
     TA = "ta"
     STUDENT = "student"
+    TRADER = "trader"
     GUEST = "guest"
 
 
@@ -41,6 +42,7 @@ class Tenant(Base):
     name = Column(String(150), nullable=False)
     slug = Column(String(100), unique=True, nullable=False, index=True)
     domain = Column(String(255), unique=True, nullable=True, index=True)
+    tenant_type = Column(String(20), default="institution", nullable=False, server_default=text("'institution'"))
     is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
     max_users = Column(Integer, default=1000, nullable=False)
     created_at = Column(DateTime, default=_utcnow, nullable=False)

@@ -46,12 +46,12 @@ def upgrade() -> None:
         )
 
     # Make password_hash nullable (Firebase users have no password)
-    op.alter_column(
-        "users",
-        "password_hash",
-        existing_type=sa.String(255),
-        nullable=True,
-    )
+    with op.batch_alter_table("users") as batch_op:
+        batch_op.alter_column(
+            "password_hash",
+            existing_type=sa.String(255),
+            nullable=True,
+        )
 
 
 def downgrade() -> None:

@@ -14,13 +14,18 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from config.settings import settings
 from database.connection import Base
 
-# Import ALL models so Base.metadata is populated
-from models.user import User, UserSession  # noqa: F401
+from models.user import User, UserSession, AdminAuditLog  # noqa: F401
+from models.tenant import Tenant, UserTenantRole  # noqa: F401
 from models.order import Order  # noqa: F401
 from models.portfolio import Portfolio, Holding, Transaction  # noqa: F401
 from models.watchlist import Watchlist, WatchlistItem  # noqa: F401
+from models.futures_order import FuturesOrder  # noqa: F401
+from models.futures_watchlist import FuturesWatchlist, FuturesWatchlistItem  # noqa: F401
 from models.algo import AlgoStrategy, AlgoTrade, AlgoLog  # noqa: F401
 from models.data_feed_config import DataFeedConfig  # noqa: F401
+from models.feedback import UserFeedback  # noqa: F401
+from models.bug_report import BugReport  # noqa: F401
+from models import academy as academy_models  # noqa: F401
 from strategies.zeroloss.models import ZeroLossSignal, ZeroLossPerformance  # noqa: F401
 
 config = context.config
@@ -49,6 +54,7 @@ def do_run_migrations(connection):
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
+        render_as_batch=True,
     )
     with context.begin_transaction():
         context.run_migrations()

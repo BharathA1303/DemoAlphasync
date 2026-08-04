@@ -93,13 +93,13 @@ def upgrade() -> None:
         )
         op.create_index("ix_bulk_file_index_ex_date", "bulk_file_index", ["exchange", "segment", "date"])
 
-    # 4. raw_ticks table (RANGE Partitioned by real_timestamp)
-    if "raw_ticks" in tables:
+    # 4. raw_ticks table (RANGE Partitioned by real_timestamp on PostgreSQL)
+    if bind.dialect.name == 'postgresql' and "raw_ticks" in tables:
         relkind = bind.execute(sa.text("SELECT relkind FROM pg_class WHERE relname = 'raw_ticks'")).scalar()
         if relkind != 'p':
             op.execute("DROP TABLE IF EXISTS raw_ticks CASCADE;")
 
-    if "raw_ticks" not in sa.inspect(bind).get_table_names():
+    if bind.dialect.name == 'postgresql' and "raw_ticks" not in sa.inspect(bind).get_table_names():
         op.execute(
             """
             CREATE TABLE IF NOT EXISTS raw_ticks (
@@ -122,24 +122,23 @@ def upgrade() -> None:
             """
         )
 
-    # Initial migration-time partitions (today, tomorrow, and subsequent day)
-    now_utc = datetime.now(timezone.utc)
-    for i in range(-1, 3):
-        p_date = (now_utc + timedelta(days=i)).date()
-        p_name = f"raw_ticks_{p_date.strftime('%Y_%m_%d')}"
-        start_ts = f"{p_date.strftime('%Y-%m-%d')} 00:00:00+00"
-        end_ts = f"{(p_date + timedelta(days=1)).strftime('%Y-%m-%d')} 00:00:00+00"
-        op.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {p_name} PARTITION OF raw_ticks
-            FOR VALUES FROM ('{start_ts}') TO ('{end_ts}');
-            """
-        )
-        op.execute(
-            f"""
-            CREATE INDEX IF NOT EXISTS ix_{p_name}_ex_tok_ts ON {p_name} (exchange, token, real_timestamp DESC);
-            """
-        )
+        now_utc = datetime.now(timezone.utc)
+        for i in range(-1, 3):
+            p_date = (now_utc + timedelta(days=i)).date()
+            p_name = f"raw_ticks_{p_date.strftime('%Y_%m_%d')}"
+            start_ts = f"{p_date.strftime('%Y-%m-%d')} 00:00:00+00"
+            end_ts = f"{(p_date + timedelta(days=1)).strftime('%Y-%m-%d')} 00:00:00+00"
+            op.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {p_name} PARTITION OF raw_ticks
+                FOR VALUES FROM ('{start_ts}') TO ('{end_ts}');
+                """
+            )
+            op.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS ix_{p_name}_ex_tok_ts ON {p_name} (exchange, token, real_timestamp DESC);
+                """
+            )
 
 
 def downgrade() -> None:

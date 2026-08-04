@@ -17,6 +17,7 @@ const DEFAULT_ACTION_STATE = { durationDays: 30, reason: '' };
 
 const ACADEMY_ROLE_OPTIONS = [
     { value: 'student', label: 'Student' },
+    { value: 'trader', label: 'Trader (Individual)' },
     { value: 'teacher', label: 'Teacher' },
     { value: 'faculty', label: 'Faculty' },
     { value: 'institution_admin', label: 'Institution Admin' },
@@ -1128,6 +1129,25 @@ export default function AdminPanelPage() {
         }
     }, []);
 
+    const [adminTab, setAdminTab] = useState('all_users');
+    const [tradersList, setTradersList] = useState([]);
+    const [tradersTotal, setTradersTotal] = useState(0);
+    const [tradersLoading, setTradersLoading] = useState(false);
+    const [traderSearchQuery, setTraderSearchQuery] = useState('');
+
+    const loadTraders = useCallback(async (query = '') => {
+        setTradersLoading(true);
+        try {
+            const { data } = await adminApi.getTraders({ query: query || undefined });
+            setTradersList(data?.traders || []);
+            setTradersTotal(data?.total || 0);
+        } catch (err) {
+            toast.error(parseApiError(err, 'Failed to load trader roster'));
+        } finally {
+            setTradersLoading(false);
+        }
+    }, []);
+
     const loadUsers = useCallback(async () => {
         setUsersLoading(true);
         try {
@@ -1908,7 +1928,98 @@ export default function AdminPanelPage() {
                         </section>
                     )}
 
-                    {/* User Accounts Table */}
+                    {/* Navigation Tabs Bar */}
+                    <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+                        <button
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${adminTab === 'all_users' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'text-slate-400 hover:text-white'}`}
+                            onClick={() => setAdminTab('all_users')}
+                        >
+                            <Users size={14} className="inline mr-1.5" /> All User Accounts ({usersData.total})
+                        </button>
+                        <button
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${adminTab === 'traders' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' : 'text-slate-400 hover:text-white'}`}
+                            onClick={() => {
+                                setAdminTab('traders');
+                                loadTraders(traderSearchQuery);
+                            }}
+                        >
+                            <Zap size={14} className="inline mr-1.5" /> Individual Trader Roster ({tradersTotal})
+                        </button>
+                    </div>
+
+                    {adminTab === 'traders' ? (
+                        <section className="admin-card p-4 sm:p-5">
+                            <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+                                <div>
+                                    <h2 className="text-lg font-bold admin-section-title">Individual Trader Roster</h2>
+                                    <p className="text-xs mt-1 admin-section-subtitle">Platform-wide overview of self-serve traders in single-member individual workspaces</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        className="input-field text-xs py-1.5 px-3"
+                                        placeholder="Search traders..."
+                                        value={traderSearchQuery}
+                                        onChange={(e) => {
+                                            setTraderSearchQuery(e.target.value);
+                                            loadTraders(e.target.value);
+                                        }}
+                                    />
+                                    <button className="admin-action-btn admin-action-btn--secondary text-xs" onClick={() => loadTraders(traderSearchQuery)}>
+                                        <RefreshCw size={12} className={tradersLoading ? "animate-spin" : ""} /> Refresh
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto rounded-xl border border-white/10">
+                                <table className="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr className="bg-white/5 text-slate-400 font-semibold border-b border-white/10">
+                                            <th className="p-3">Trader Name</th>
+                                            <th className="p-3">Email</th>
+                                            <th className="p-3">Tenant Workspace</th>
+                                            <th className="p-3">Status</th>
+                                            <th className="p-3">Virtual Capital</th>
+                                            <th className="p-3">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-white/5">
+                                        {tradersList.map((trader) => (
+                                            <tr key={trader.id} className="hover:bg-white/[0.02]">
+                                                <td className="p-3 font-semibold text-white">{trader.full_name || trader.username}</td>
+                                                <td className="p-3 text-slate-300">{trader.email}</td>
+                                                <td className="p-3">
+                                                    <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-mono">
+                                                        {trader.tenant?.name || 'Individual'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">
+                                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${trader.account_status === 'active' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                                                        {trader.account_status}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 font-mono text-emerald-400 font-bold">
+                                                    ₹{(trader.virtual_capital || 1000000).toLocaleString()}
+                                                </td>
+                                                <td className="p-3">
+                                                    <button
+                                                        className="admin-action-btn admin-action-btn--primary text-[11px] py-1 px-2.5"
+                                                        onClick={() => openManageModal(trader.id)}
+                                                    >
+                                                        Manage
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {tradersList.length === 0 && !tradersLoading && (
+                                            <tr>
+                                                <td colSpan={6} className="p-6 text-center text-slate-400">No individual traders found.</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+                    ) : (
+                    /* User Accounts Table */
                     <section className="admin-card p-4 sm:p-5">
                         <div className="flex flex-wrap justify-between items-start gap-3 mb-4">
                             <div>
@@ -2220,6 +2331,7 @@ export default function AdminPanelPage() {
                             </button>
                         </div>
                     </section>
+                    )}
                 </div>
             )}
 
