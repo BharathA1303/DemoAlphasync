@@ -703,6 +703,58 @@ function RootControlSection({
                             <div className="text-sm" style={{ color: 'var(--text-muted)' }}>No transaction records found.</div>
                         )}
                     </div>
+
+                    <div className="card-panel p-4">
+                        <h3 className="text-xs font-bold text-heading uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <Activity size={14} className="text-brand-primary" /> Detail Snapshot
+                        </h3>
+                        {detailLoading ? (
+                            <div className="flex items-center gap-2 text-xs text-text-muted"><Loader2 size={14} className="animate-spin" /> Loading snapshot...</div>
+                        ) : userDetail ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                {[
+                                    { label: 'Portfolio Value', value: userDetail.portfolio?.current_value != null ? `₹${Number(userDetail.portfolio.current_value).toLocaleString()}` : '—' },
+                                    { label: 'Capital', value: userDetail.portfolio?.available_capital != null ? `₹${Number(userDetail.portfolio.available_capital).toLocaleString()}` : '—' },
+                                    { label: 'Holdings', value: userDetail.holdings?.length || 0 },
+                                    { label: 'Orders', value: userDetail.recent_orders?.length || 0 },
+                                    { label: 'Active Devices', value: userDetail.monitoring?.active_devices ?? 0 },
+                                    { label: 'Recent Sessions', value: userDetail.monitoring?.recent_sessions ?? 0 },
+                                    { label: 'Last Seen', value: safeDate(userDetail.monitoring?.last_seen_at) },
+                                ].map(({ label, value }) => (
+                                    <div key={label} className="card-panel p-2.5">
+                                        <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">{label}</div>
+                                        <div className="font-mono font-semibold text-xs text-heading">{value}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : <div className="text-xs text-text-muted">No details available.</div>}
+                    </div>
+
+                    <div className="card-panel p-4">
+                        <h3 className="text-xs font-bold text-heading uppercase tracking-wider mb-3">Session Monitor</h3>
+                        {detailLoading ? (
+                            <div className="text-xs text-text-muted">Loading sessions...</div>
+                        ) : (userDetail?.sessions?.length ? (
+                            <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                                {userDetail.sessions.map((s) => (
+                                    <div key={s.id} className="p-2.5 rounded-xl border border-edge/10 bg-surface-950">
+                                        <div className="flex items-center justify-between gap-2 text-xs">
+                                            <span className="font-mono truncate text-text-secondary">{s.ip_address || 'Unknown IP'}</span>
+                                            <span className={`badge ${s.is_active ? 'badge-success' : 'badge-muted'} text-[10px]`}>
+                                                {s.is_active ? 'ACTIVE' : 'INACTIVE'}
+                                            </span>
+                                        </div>
+                                        <div className="text-[11px] mt-1 truncate text-text-muted">{s.user_agent || 'Unknown device'}</div>
+                                        <div className="text-[11px] mt-1 font-mono text-text-muted">
+                                            Last seen: {safeDate(s.last_seen_at)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-xs text-text-muted">No session activity found.</div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </section>
@@ -728,48 +780,45 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl animate-slide-up admin-card"
-                style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
+            <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl card-panel-elevated p-6 space-y-5 shadow-2xl relative"
                 onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
-                <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between pb-4 border-b border-edge/10">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.12)' }}>
-                            <Crown size={20} style={{ color: '#f59e0b' }} />
+                        <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                            <Crown size={20} className="text-amber-400" />
                         </div>
                         <div>
-                            <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Admin Management</h2>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Create, update, and revoke admin access</p>
+                            <h2 className="text-lg font-bold text-heading">Admin Authority Management</h2>
+                            <p className="text-xs text-text-secondary">Create, update, and revoke elevated admin access levels</p>
                         </div>
                     </div>
-                    <button className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-                        style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={18} /></button>
+                    <button className="btn-action p-1.5 rounded-xl" onClick={onClose}><X size={18} /></button>
                 </div>
 
-                <div className="p-5 flex flex-col gap-5">
+                <div className="space-y-5">
                     {/* Add New Admin */}
-                    <div className="rounded-xl p-4" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
-                        <h3 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <UserPlus size={14} style={{ color: 'var(--brand)' }} /> Add New Admin
+                    <div className="card-panel p-4">
+                        <h3 className="text-xs font-bold text-heading uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <UserPlus size={14} className="text-brand-primary" /> Add New Admin
                         </h3>
                         <div className="flex flex-wrap gap-3 items-end">
                             <div className="flex-1 min-w-[200px]">
-                                <label className="label-text">User Email</label>
-                                <input className="input-field" value={promoteEmail} placeholder="user@example.com"
+                                <label className="block text-xs font-semibold text-heading mb-1">User Email</label>
+                                <input className="w-full h-9 px-3 rounded-xl border border-edge/10 bg-surface-950 text-xs text-heading focus:outline-none focus:border-brand-primary placeholder:text-text-muted" value={promoteEmail} placeholder="user@example.com"
                                     onChange={(e) => setPromoteEmail(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handlePromote()} />
                             </div>
                             <div className="w-[160px]">
-                                <label className="label-text">Permission Level</label>
-                                <select className="input-field" value={promoteLevel} onChange={(e) => setPromoteLevel(e.target.value)}>
+                                <label className="block text-xs font-semibold text-heading mb-1">Permission Level</label>
+                                <select className="w-full h-9 px-3 rounded-xl border border-edge/10 bg-surface-950 text-xs text-heading focus:outline-none focus:border-brand-primary" value={promoteLevel} onChange={(e) => setPromoteLevel(e.target.value)}>
                                     <option value="max">Max</option>
                                     <option value="manage">Manage</option>
                                     <option value="view_only">View Only</option>
                                 </select>
                             </div>
-                            <button className="admin-action-btn admin-action-btn--primary" onClick={handlePromote} disabled={promoting}>
+                            <button className="btn-primary text-xs flex items-center gap-1.5" onClick={handlePromote} disabled={promoting}>
                                 {promoting ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
                                 Add Admin
                             </button>
@@ -778,28 +827,27 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
 
                     {/* Admin List */}
                     <div>
-                        <h3 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <Shield size={14} style={{ color: 'var(--brand)' }} /> Current Admins
+                        <h3 className="text-xs font-bold text-heading uppercase tracking-wider mb-3 flex items-center gap-2">
+                            <Shield size={14} className="text-brand-primary" /> Current Admins Roster
                         </h3>
                         {adminsLoading ? (
-                            <div className="flex items-center gap-2 text-sm py-4" style={{ color: 'var(--text-muted)' }}>
+                            <div className="flex items-center gap-2 text-xs py-4 text-text-muted">
                                 <Loader2 size={14} className="animate-spin" /> Loading admins...
                             </div>
                         ) : admins.length === 0 ? (
-                            <div className="text-sm py-4" style={{ color: 'var(--text-muted)' }}>No admins found.</div>
+                            <div className="text-xs py-4 text-text-muted">No admins found.</div>
                         ) : (
-                            <div className="flex flex-col gap-2">
+                            <div className="space-y-2">
                                 {admins.map((a) => (
-                                    <div key={a.id} className="flex items-center justify-between gap-3 p-3 rounded-xl transition-colors"
-                                        style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
+                                    <div key={a.id} className="flex items-center justify-between gap-3 p-3 rounded-xl card-panel">
                                         <div className="flex items-center gap-3 min-w-0">
                                             <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                                                 style={{ background: a.is_root ? 'rgba(245,158,11,0.12)' : 'var(--brand-glow)' }}>
-                                                {a.is_root ? <Crown size={16} style={{ color: '#f59e0b' }} /> : <Shield size={16} style={{ color: 'var(--brand)' }} />}
+                                                {a.is_root ? <Crown size={16} className="text-amber-400" /> : <Shield size={16} className="text-brand-primary" />}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="text-sm font-medium truncate">{a.full_name || a.username}</div>
-                                                <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{a.email}</div>
+                                                <div className="text-xs font-semibold text-heading truncate">{a.full_name || a.username}</div>
+                                                <div className="text-[11px] text-text-muted truncate">{a.email}</div>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
@@ -807,8 +855,7 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
                                             {!a.is_main_root && (
                                                 <div className="flex gap-1">
                                                     <select
-                                                        className="text-xs px-2 py-1 rounded-lg"
-                                                        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
+                                                        className="text-xs px-2 py-1 rounded-lg bg-surface-950 border border-edge/10 text-heading"
                                                         value={a.effective_level}
                                                         onChange={(e) => onUpdateLevel(a.id, e.target.value)}
                                                     >
@@ -817,8 +864,7 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
                                                         <option value="view_only">View Only</option>
                                                     </select>
                                                     <button
-                                                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
-                                                        style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)' }}
+                                                        className="btn-action text-xs text-loss hover:bg-loss/10"
                                                         title="Revoke admin access"
                                                         onClick={() => {
                                                             if (window.confirm(`Revoke admin access for ${a.email}?`)) {
@@ -831,7 +877,7 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
                                                 </div>
                                             )}
                                             {a.is_main_root && (
-                                                <span className="text-xs px-2 py-1 rounded-lg" style={{ color: 'var(--text-muted)' }}>Protected</span>
+                                                <span className="text-[11px] text-text-muted px-2 py-1">Protected</span>
                                             )}
                                         </div>
                                     </div>
