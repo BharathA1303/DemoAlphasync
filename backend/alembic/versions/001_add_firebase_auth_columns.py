@@ -12,7 +12,7 @@ from sqlalchemy import inspect as sa_inspect
 
 # revision identifiers, used by Alembic.
 revision = "001_firebase_auth"
-down_revision = None
+down_revision = "000_initial_schema"
 branch_labels = None
 depends_on = None
 
