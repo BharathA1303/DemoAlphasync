@@ -934,6 +934,101 @@
     text-align: center;
     max-width: 240px;
   }
+
+  /* ─── Canonical Badge / Pill System ─── */
+  /* Usage: <span className="badge badge-brand">Label</span> */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide;
+    border-width: 1px;
+    border-style: solid;
+  }
+  .badge-brand {
+    background: rgba(5, 150, 105, 0.15);
+    color: #10b981;
+    border-color: rgba(5, 150, 105, 0.30);
+  }
+  .badge-success {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.25);
+  }
+  .badge-warning {
+    background: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.25);
+  }
+  .badge-danger {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.25);
+  }
+  .badge-purple {
+    background: rgba(139, 92, 246, 0.12);
+    color: #a78bfa;
+    border-color: rgba(139, 92, 246, 0.25);
+  }
+  .badge-info {
+    background: rgba(59, 130, 246, 0.12);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.25);
+  }
+  .badge-amber {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.30);
+  }
+
+  /* ─── Canonical Card Panel ─── */
+  /* Standard card for all pages — replaces ad-hoc bg-surface-900/60 border-edge/10 */
+  .card-panel {
+    background: rgb(var(--surface-900) / 0.65);
+    border: 1px solid rgb(var(--c-edge) / 0.10);
+    border-radius: 12px;
+  }
+  .card-panel-elevated {
+    background: rgb(var(--surface-900) / 0.80);
+    border: 1px solid rgb(var(--c-edge) / 0.12);
+    border-radius: 12px;
+    backdrop-filter: blur(12px);
+  }
+
+  /* ─── Page Container ─── */
+  /* Canonical page wrapper — replaces ad-hoc padding per page */
+  .page-container {
+    @apply p-4 lg:p-6 space-y-5 max-w-screen-xl mx-auto;
+  }
+
+  /* ─── Section Headings ─── */
+  .section-heading {
+    @apply text-sm font-bold text-heading flex items-center gap-2;
+  }
+  .section-subheading {
+    @apply text-xs text-text-secondary mt-0.5;
+  }
+
+  /* ─── Canonical Action Buttons ─── */
+  /* btn-action: standard page-level ghost action button */
+  .btn-action {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-150;
+    background: rgb(var(--surface-800) / 0.6);
+    border: 1px solid rgb(var(--c-edge) / 0.12);
+    color: rgb(var(--c-heading));
+  }
+  .btn-action:hover {
+    background: rgb(var(--surface-700) / 0.8);
+    border-color: rgba(5, 150, 105, 0.25);
+    color: #10b981;
+  }
+  /* btn-action-brand: filled green action button (primary CTA within cards) */
+  .btn-action-brand {
+    @apply inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all duration-150;
+    background: rgba(5, 150, 105, 0.18);
+    border: 1px solid rgba(5, 150, 105, 0.30);
+    color: #10b981;
+  }
+  .btn-action-brand:hover {
+    background: rgba(5, 150, 105, 0.28);
+  }
 }
 
 @layer utilities {

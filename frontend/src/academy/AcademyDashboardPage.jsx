@@ -111,19 +111,20 @@ export default function AcademyDashboardPage() {
     const currentLevelXP = (stats?.xp_points || 1200) % 1000;
 
     return (
-        <div className="p-6 space-y-6 max-w-7xl mx-auto">
+        <div className="page-container">
             {/* GAMIFIED HEADER BANNER */}
-            <div className="rounded-2xl border border-edge/10 bg-gradient-to-r from-surface-900 via-surface-900 to-indigo-950/50 p-6 backdrop-blur-md relative overflow-hidden shadow-xl">
+            <div className="card-panel-elevated p-6 relative overflow-hidden shadow-lg">
+                <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 80% 50%, rgba(5,150,105,0.06), transparent 60%)' }} />
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
                     <div className="space-y-2 max-w-xl">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
-                                <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
-                                STUDENT TRADER & STRATEGEST
+                            <span className="badge badge-brand">
+                                <Sparkles className="h-3.5 w-3.5" />
+                                Student Trader & Strategist
                             </span>
-                            <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                                <Flame className="h-3.5 w-3.5 text-amber-400" />
-                                {stats.study_streak_days}-DAY STREAK 🔥
+                            <span className="badge badge-warning">
+                                <Flame className="h-3.5 w-3.5" />
+                                {stats.study_streak_days}-Day Streak 🔥
                             </span>
                         </div>
                         <h1 className="text-2xl sm:text-3xl font-bold text-heading font-display">
@@ -135,14 +136,14 @@ export default function AcademyDashboardPage() {
 
                         {teacherInfo?.assigned && (
                             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-950/80 border border-edge/10 text-xs text-brand-primary">
-                                <Shield className="h-4 w-4 text-violet-400" />
+                                <Shield className="h-4 w-4 text-brand-primary" />
                                 <span>Assigned Teacher: <strong>{teacherInfo.teacher?.full_name || teacherInfo.teacher?.email}</strong></span>
                             </div>
                         )}
                     </div>
 
                     {/* Level & XP Progress Meter */}
-                    <div className="bg-surface-950/80 border border-edge/10 rounded-2xl p-4 min-w-[260px] space-y-3 shadow-lg">
+                    <div className="card-panel p-4 min-w-[260px] space-y-3">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                                 <Trophy className="h-5 w-5 text-amber-400" />
@@ -151,7 +152,7 @@ export default function AcademyDashboardPage() {
                                     <div className="text-[10px] text-text-secondary">Quant Apprentice</div>
                                 </div>
                             </div>
-                            <span className="text-xs font-bold text-amber-300">{stats.xp_points} XP</span>
+                            <span className="badge badge-warning">{stats.xp_points} XP</span>
                         </div>
                         <div className="space-y-1">
                             <div className="flex justify-between text-[10px] text-text-muted">
@@ -159,7 +160,7 @@ export default function AcademyDashboardPage() {
                                 <span>{currentLevelXP} / 1000 XP</span>
                             </div>
                             <div className="h-2 w-full rounded-full bg-surface-800 overflow-hidden">
-                                <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-emerald-400 transition-all duration-500" style={{ width: `${(currentLevelXP / 1000) * 100}%` }} />
+                                <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-brand-primary transition-all duration-500" style={{ width: `${(currentLevelXP / 1000) * 100}%` }} />
                             </div>
                         </div>
                     </div>
@@ -175,49 +176,50 @@ export default function AcademyDashboardPage() {
             </div>
 
             {/* CURIOSITY OF THE DAY (AI Financial Mystery Card) */}
-            <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-950/20 via-surface-900 to-surface-900 p-5 space-y-3 relative">
-                <div className="flex items-center justify-between">
+            <div className="card-panel p-5 space-y-3 relative" style={{ borderColor: 'rgba(245,158,11,0.15)' }}>
+                <div className="absolute inset-0 pointer-events-none rounded-xl" style={{ background: 'radial-gradient(circle at 0% 50%, rgba(245,158,11,0.04), transparent 60%)' }} />
+                <div className="flex items-center justify-between relative z-10">
                     <div className="flex items-center gap-2">
                         <HelpCircle className="h-5 w-5 text-amber-400" />
-                        <span className="text-xs font-extrabold uppercase tracking-wider text-amber-300">Market Curiosity of the Day</span>
+                        <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">Market Curiosity of the Day</span>
                     </div>
                     <button
                         onClick={() => setCuriosityIdx((curiosityIdx + 1) % CURIOSITY_QUESTIONS.length)}
-                        className="text-xs text-text-muted hover:text-heading flex items-center gap-1"
+                        className="btn-action py-1 px-2.5 text-[11px]"
                     >
-                        <RefreshCw className="h-3.5 w-3.5" /> Next Question
+                        <RefreshCw className="h-3 w-3" /> Next
                     </button>
                 </div>
-                <div>
+                <div className="relative z-10">
                     <h3 className="text-base font-bold text-heading mb-1">{currentCuriosity.title}</h3>
                     <p className="text-xs sm:text-sm text-text-secondary">{currentCuriosity.question}</p>
                 </div>
-                <div className="pt-2 flex items-center gap-3">
+                <div className="pt-2 flex items-center gap-3 relative z-10">
                     <button
                         onClick={() => handleAskAICuriosty(currentCuriosity.prompt)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 text-surface-950 font-bold text-xs hover:bg-amber-400 transition-all shadow-md shadow-amber-500/10"
+                        className="btn-primary text-xs flex items-center gap-2"
                     >
                         <Sparkles className="h-4 w-4" />
-                        <span>Ask AI Copilot for Explanation</span>
+                        <span>Ask AI Copilot</span>
                     </button>
                     <Link
                         to="/terminal"
-                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface-800 border border-edge/10 text-heading font-medium text-xs hover:bg-surface-700 transition-all"
+                        className="btn-action"
                     >
-                        <Play className="h-3.5 w-3.5 text-emerald-400" />
-                        <span>Test in Trading Terminal</span>
+                        <Play className="h-3.5 w-3.5" />
+                        <span>Test in Terminal</span>
                     </Link>
                 </div>
             </div>
 
             {/* 2-COLUMN MAIN HUB: Challenges HUD & What-If Scenario Simulator */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 {/* Active Challenges HUD */}
-                <div className="rounded-2xl border border-edge/10 bg-surface-900/80 p-5 space-y-4">
-                    <div className="flex items-center justify-between border-b border-edge/10 pb-3">
+                <div className="card-panel p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-edge/8 pb-3">
                         <div className="flex items-center gap-2">
                             <Zap className="h-5 w-5 text-amber-400" />
-                            <h2 className="text-base font-bold text-heading">Trading Challenges HUD</h2>
+                            <h2 className="section-heading">Trading Challenges HUD</h2>
                         </div>
                         <Link to="/academy/challenges" className="text-xs font-semibold text-brand-primary hover:underline flex items-center gap-1">
                             View All <ArrowRight className="h-3.5 w-3.5" />

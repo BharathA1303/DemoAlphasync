@@ -23,6 +23,7 @@ import {
   Gem,
   FlipHorizontal2,
   Lightbulb,
+  BookOpen,
   Link2,
   GraduationCap,
   Brain,
@@ -114,7 +115,7 @@ const NAV_SECTIONS = [
       { to: "/algo", icon: Bot, label: "Algo Trading" },
       { to: "/auto-alpha", icon: Shield, label: "Alpha Auto" },
       { to: "/mentor", icon: Lightbulb, label: "AI Mentor" },
-      { to: "/trader/learn", icon: Lightbulb, label: "Trader Learn Hub", roles: ["trader"] },
+      { to: "/trader/learn", icon: BookOpen, label: "Trader Learn Hub", roles: ["trader"] },
     ],
   },
   {
@@ -146,6 +147,7 @@ function visibleNavSections(user) {
     items: section.items.filter((item) => {
       if (!item.roles) return true;
       if (item.roles.includes(acadRole)) return true;
+      if (item.roles.includes(platRole)) return true;
       if (platRole === "admin" || adminLevel) {
         if (item.roles.some((r) => ["admin", "super_admin", "root", "manage", "view_only"].includes(r))) return true;
       }

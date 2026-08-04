@@ -112,12 +112,7 @@ export default function LeaderboardPage() {
     }, [filteredEntries, sortBy]);
 
     return (
-        <div 
-            className="p-6 lg:p-8 max-w-[1700px] px-10 mx-auto space-y-6 select-none bg-gray-50/15 rounded-3xl"
-            style={{
-                backgroundImage: 'radial-gradient(circle at center, rgba(16,185,129,0.05), transparent 60%)',
-            }}
-        >
+        <div className="page-container">
             {/* Header Section */}
             <LeaderboardHeader 
                 loading={loading} 
@@ -139,8 +134,8 @@ export default function LeaderboardPage() {
                     displayHandle={displayHandle}
                 />
             ) : (
-                <div className="h-64 flex items-center justify-center border border-dashed border-gray-200 rounded-[28px] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.02)]">
-                    <p className="text-sm font-medium text-gray-400">
+                <div className="h-64 flex items-center justify-center border border-dashed border-edge/10 rounded-[28px] card-panel">
+                    <p className="text-sm font-medium text-text-secondary">
                         {loading ? 'Loading top traders...' : 'No data available for this period.'}
                     </p>
                 </div>
@@ -162,8 +157,8 @@ export default function LeaderboardPage() {
                     displayHandle={displayHandle}
                 />
             ) : (
-                <div className="h-48 flex items-center justify-center border border-dashed border-gray-200 rounded-[24px] bg-white shadow-[0_4px_12px_rgba(0,0,0,0.02)]">
-                    <p className="text-sm font-medium text-gray-400">
+                <div className="h-48 flex items-center justify-center border border-dashed border-edge/10 rounded-[24px] card-panel">
+                    <p className="text-sm font-medium text-text-secondary">
                         {loading ? 'Searching leaderboard...' : 'No matching traders found.'}
                     </p>
                 </div>
