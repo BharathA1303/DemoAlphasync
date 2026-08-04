@@ -26,6 +26,7 @@ import {
     TrendingUp,
     BadgeIndianRupee,
     Star,
+    Shield,
 } from 'lucide-react';
 
 /**
@@ -503,7 +504,7 @@ export default function Navbar({ onMenuToggle }) {
 
             {/* Right: market status, WS status, theme, bell */}
             <div className="flex items-center gap-1.5">
-                {/* Active Role Badge */}
+                {/* Active Role Badge & Admin Quick Action */}
                 {(() => {
                     const user = useAuthStore.getState().user;
                     const roleTag = user?.role === 'admin' || (user?.admin_level && user?.admin_level !== 'none')
@@ -511,15 +512,27 @@ export default function Navbar({ onMenuToggle }) {
                         : ['teacher', 'faculty', 'institution_admin', 'super_admin'].includes(user?.academy_role)
                         ? 'TEACHER'
                         : 'STUDENT';
+                    const isAdmin = roleTag === 'ADMIN';
                     return (
-                        <span className={cn(
-                            "hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wider border mr-1",
-                            roleTag === 'ADMIN' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
-                            roleTag === 'TEACHER' ? 'bg-violet-500/15 text-violet-300 border-violet-500/30' :
-                            'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        )}>
-                            ROLE: {roleTag}
-                        </span>
+                        <div className="hidden sm:flex items-center gap-1.5 mr-1">
+                            <span className={cn(
+                                "inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wider border",
+                                roleTag === 'ADMIN' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
+                                roleTag === 'TEACHER' ? 'bg-violet-500/15 text-violet-300 border-violet-500/30' :
+                                'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                            )}>
+                                ROLE: {roleTag}
+                            </span>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => navigate('/admin/panel')}
+                                    className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all cursor-pointer shadow-sm"
+                                    title="Open Admin Panel"
+                                >
+                                    <Shield className="w-3.5 h-3.5 mr-1 text-cyan-400" /> Admin Panel
+                                </button>
+                            )}
+                        </div>
                     );
                 })()}
 

@@ -10,7 +10,7 @@ import api from '../services/api';
 import {
     TrendingUp, TrendingDown, IndianRupee,
     BarChart3, ArrowRight, Zap, Briefcase,
-    ShieldCheck, ClipboardList, Globe, Landmark,
+    ShieldCheck, Shield, ClipboardList, Globe, Landmark,
 } from 'lucide-react';
 import { formatCurrency, formatPrice, formatPercent, pnlColorClass, cleanSymbol } from '../utils/formatters';
 import { buildPortfolioMetrics } from '../utils/portfolioMetrics';
@@ -475,6 +475,12 @@ export default function DashboardWorkspace() {
                     <p className="text-xs text-text-secondary">Simulated Trading Workspace & AI Strategy Terminal</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
+                    {(user?.role === 'admin' || user?.admin_level) && (
+                        <Link to="/admin/panel" className="px-3.5 py-2 rounded-xl bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold hover:bg-cyan-500/30 transition-all flex items-center gap-1.5 shadow-md">
+                            <Shield className="h-4 w-4 text-cyan-400" />
+                            <span>Admin Panel</span>
+                        </Link>
+                    )}
                     <Link to="/academy" className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-emerald-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold hover:bg-amber-500/30 transition-all flex items-center gap-1.5 shadow-md">
                         <Zap className="h-4 w-4 text-amber-400" />
                         <span>AI Curiosity Hub & Challenges</span>

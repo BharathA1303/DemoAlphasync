@@ -66,13 +66,8 @@ export default function LoginPage() {
     if (isActive) {
       localStorage.setItem("alphasync_trading_mode", "demo");
       localStorage.setItem("alphasync_onboarded", "1");
-      const platRole = (profile?.role || "").toLowerCase();
       const acadRole = (profile?.academy_role || "student").toLowerCase();
 
-      if (platRole === "admin") {
-        navigate("/admin/panel");
-        return;
-      }
       if (acadRole === "trader") {
         navigate("/terminal");
         return;
