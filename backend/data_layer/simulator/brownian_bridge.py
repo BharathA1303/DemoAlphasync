@@ -230,52 +230,6 @@ def tick_cache_key(exchange: str, segment: str, symbol: str, target_date: date, 
     )
 
 
-async def ensure_ticks_cached(
-    db: AsyncSession,
-    exchange: str,
-    segment: str,
-    symbol: str,
-    target_date: date,
-    eod_data: Optional[PriceData] = None
-) -> Optional[PriceData]:
-    """
-    Checks if ticks are cached in Redis. If not, fetches EOD data,
-    generates simulated ticks using the Brownian Bridge, and caches them.
-
-    Returns the resolved PriceData row (truthy) if ticks are ready in cache,
-    or None (falsy) if no EOD source data was found - `if await
-    ensure_ticks_cached(...):` works exactly like the old bool-returning
-    version. Callers that also need to know WHICH row was actually used
-    (e.g. to read its `.version`) should use the return value directly
-    rather than re-reading whatever `eod_data` they originally passed in:
-    when `eod_data` is None, this function resolves its own row internally,
-    so the caller's original (possibly None) local variable would be stale.
-    """
-    # Cache miss - fetch EOD data if not preloaded (needed for both the
-    # version-namespaced cache key and, on a miss, tick generation itself).
-    if not eod_data:
-        logger.info(f"Fetching current EOD data for {exchange}:{segment}:{symbol} on {target_date}...")
-        try:
-            eod_data = await get_eligible_data(
-                db=db,
-                symbol=symbol,
-                exchange=exchange,
-                segment=segment,
-                market_timestamp=target_date
-            )
-        except ValueError as e:
-            # get_eligible_data raises ValueError when target_date falls
-            # within the restricted compliance window (e.g. a session's date
-            # rolled into the delay-gate cutoff after the session was
-            # created). Treat this the same as "no data" rather than letting
-            # it propagate as an unhandled exception - callers already
-            # handle a None return (see subscribe_symbols, which also
-            # pre-checks the gate to give a clearer 400 message up front;
-            # this is the defense-in-depth backstop for any caller that
-            # doesn't pre-check).
-            logger.warning(f"Compliance gate rejected {exchange}:{segment}:{symbol} on {target_date}: {e}")
-            return None
-
 def _resolve_realistic_base_price(symbol: str, segment: str = "EQ") -> float:
     sym = str(symbol or "").strip().upper()
     if sym in ("NIFTY", "NIFTY50", "^NSEI", "NSEI"):
@@ -311,6 +265,33 @@ def _resolve_realistic_base_price(symbol: str, segment: str = "EQ") -> float:
     if segment == "FUT":
         return round(base * 1.0025, 2)
     return round(base, 2)
+
+
+async def ensure_ticks_cached(
+    db: AsyncSession,
+    exchange: str,
+    segment: str,
+    symbol: str,
+    target_date: date,
+    eod_data: Optional[PriceData] = None
+) -> Optional[PriceData]:
+    """
+    Checks if ticks are cached in Redis. If not, fetches EOD data,
+    generates simulated ticks using the Brownian Bridge, and caches them.
+    """
+    if not eod_data:
+        logger.info(f"Fetching current EOD data for {exchange}:{segment}:{symbol} on {target_date}...")
+        try:
+            eod_data = await get_eligible_data(
+                db=db,
+                symbol=symbol,
+                exchange=exchange,
+                segment=segment,
+                market_timestamp=target_date
+            )
+        except ValueError as e:
+            logger.warning(f"Compliance gate rejected {exchange}:{segment}:{symbol} on {target_date}: {e}")
+            return None
 
     if not eod_data:
         # Fallback dynamic generator so any symbol (even un-seeded ones like BPCL or derivative contracts)
