@@ -600,8 +600,9 @@ class MarketDataWorker:
             self._subscribed_symbols.add(s["symbol"])
         for i in INDIAN_INDICES:
             self._subscribed_symbols.add(i["symbol"])
-        for c in POPULAR_COMMODITIES:
-            self._subscribed_symbols.add(c["symbol"])
+        # MCX commodities auto-subscribe disabled to conserve resources
+        # for c in POPULAR_COMMODITIES:
+        #     self._subscribed_symbols.add(c["symbol"])
 
         # Also subscribe every symbol from persisted user watchlists.
         watchlist_symbols = await self._load_watchlist_symbols()

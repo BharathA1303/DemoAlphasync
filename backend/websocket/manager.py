@@ -312,11 +312,10 @@ class ConnectionManager:
             from providers.contract_symbol_map import is_commodity_symbol, mirror_canonicals_for_quote
             subscribers = self.subscriptions.get(symbol, set())
             if is_commodity_symbol(symbol):
-                logger.info(
+                logger.debug(
                     f"[MCX WS BROADCAST] {symbol} "
                     f"ltp={quote.get('price')} source={event.source} "
-                    f"subscribers={len(subscribers)} "
-                    f"all_tracked={sorted(k for k in self.subscriptions if is_commodity_symbol(k))[:10]}"
+                    f"subscribers={len(subscribers)}"
                 )
             await self.broadcast_price(symbol, quote)
 
