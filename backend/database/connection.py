@@ -245,36 +245,49 @@ async def init_db():
         # Create any missing tables (safe operation, never drops or alters existing tables)
         await conn.run_sync(Base.metadata.create_all)
 
-        # Self-healing DDL checks for schema column drift on live databases
+        # Self-healing direct DDL execution for schema column drift on live databases
         if is_postgres:
+            # 1. Ensure tenants table exists with tenant_type column
             await conn.execute(
                 text(
                     """
-                DO $$ BEGIN
-                    -- 1. Ensure tenant_type column exists on tenants table
-                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tenants') THEN
-                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'tenant_type') THEN
-                            ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';
-                        END IF;
-                    END IF;
-
-                    -- 2. Ensure trader enum value exists in tenantrole enum if enum type exists
-                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'tenantrole') THEN
-                        IF NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid WHERE t.typname = 'tenantrole' AND e.enumlabel = 'trader') THEN
-                            ALTER TYPE tenantrole ADD VALUE IF NOT EXISTS 'trader';
-                        END IF;
-                    END IF;
-
-                    -- 3. Ensure academy_role column exists on users table if missing
-                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
-                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'academy_role') THEN
-                            ALTER TABLE users ADD COLUMN academy_role VARCHAR(20);
-                        END IF;
-                    END IF;
-                END $$;
+                CREATE TABLE IF NOT EXISTS tenants (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    name VARCHAR(150) NOT NULL,
+                    slug VARCHAR(100) UNIQUE NOT NULL,
+                    domain VARCHAR(255),
+                    tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution',
+                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    max_users INTEGER DEFAULT 1000,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                );
             """
                 )
             )
+
+            # 2. Add tenant_type column if tenants table existed prior without it
+            await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';"))
+
+            # 3. Ensure user_tenant_roles table exists
+            await conn.execute(
+                text(
+                    """
+                CREATE TABLE IF NOT EXISTS user_tenant_roles (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    role VARCHAR(50) NOT NULL DEFAULT 'student',
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                );
+            """
+                )
+            )
+
+            # 4. Ensure users admin & academy columns exist
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_role VARCHAR(20);"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_level VARCHAR(20);"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(30);"))
         else:
             # SQLite safe column self-healing
             try:
@@ -286,6 +299,7 @@ async def init_db():
             except Exception:
                 pass
 
-        logger.info("Database initialized and self-healed successfully via Alembic migration & runtime DDL authority.")
+        logger.info("Database initialized and self-healed successfully via runtime DDL authority.")
+
 
 

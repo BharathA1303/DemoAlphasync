@@ -42,11 +42,23 @@ async def lifespan(app: FastAPI):
     # ── Startup ─────────────────────────────────────────────────────
     logger.info("Starting AlphaSync...")
 
+    # Run Alembic migrations on startup to apply any pending schema changes
+    try:
+        import subprocess
+        res = subprocess.run(["alembic", "upgrade", "head"], capture_output=True, text=True)
+        if res.returncode == 0:
+            logger.info("Alembic database migrations applied successfully")
+        else:
+            logger.warning(f"Alembic auto-migration notice: {res.stderr or res.stdout}")
+    except Exception as e:
+        logger.warning(f"Alembic auto-migration process notice: {e}")
+
     try:
         await init_db()
         logger.info("Database initialized")
     except Exception as e:
         logger.error(f"Database init failed: {e!r} — app will not function correctly!", exc_info=True)
+
 
     # ── Initialize local the internal simulation engine simulator background loop ──
     try:
