@@ -172,27 +172,32 @@ const LEVEL_COLORS = {
 };
 
 function StatusPill({ status }) {
-    const tone = statusTone(status);
-    const label = (status || 'unknown').toLowerCase() === 'pending_approval'
-        ? 'pending'
-        : (status || 'unknown').replaceAll('_', ' ');
+    const s = (status || '').toLowerCase();
+    let badgeClass = "badge-muted";
+    if (s === 'active') badgeClass = "badge-success";
+    else if (s === 'pending_approval' || s === 'pending') badgeClass = "badge-warning";
+    else if (s === 'expired') badgeClass = "badge-amber";
+    else if (s === 'deactivated' || s === 'deleted') badgeClass = "badge-danger";
+
+    const label = s === 'pending_approval' ? 'pending' : (status || 'unknown').replaceAll('_', ' ');
     return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
-            style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}>
-            <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: tone.text }} />
+        <span className={`badge ${badgeClass} text-[11px]`}>
             {label}
         </span>
     );
 }
 
 function LevelPill({ level }) {
-    const cfg = LEVEL_COLORS[level] || LEVEL_COLORS.view_only;
-    const Icon = cfg.icon;
+    const l = (level || '').toLowerCase();
+    let badgeClass = "badge-muted";
+    if (l === 'root' || l === 'max') badgeClass = "badge-warning";
+    else if (l === 'manage') badgeClass = "badge-brand";
+    else if (l === 'view_only') badgeClass = "badge-info";
+
     return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider whitespace-nowrap"
-            style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.text }}>
-            <Icon size={12} />
-            {(level || 'unknown').replace('_', ' ')}
+        <span className={`badge ${badgeClass} text-[11px]`}>
+            <Shield size={12} />
+            {l.replace('_', ' ')}
         </span>
     );
 }
@@ -249,47 +254,46 @@ function FeedbackCell({ rating, comment }) {
 function ManageUserModal({ user: selectedUser, userDetail, detailLoading, actionState, setActionState, onAction, onClose, actionLoading }) {
     if (!selectedUser) return null;
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-            <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl animate-slide-up"
-                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" onClick={onClose}>
+            <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl card-panel-elevated p-6 space-y-5 shadow-2xl relative"
                 onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div className="flex items-center justify-between pb-4 border-b border-edge/10">
                     <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'var(--brand-glow)' }}>
-                            <UserCheck size={20} style={{ color: 'var(--brand)' }} />
+                        <div className="w-10 h-10 rounded-xl bg-brand-primary/10 border border-brand-primary/20 flex items-center justify-center flex-shrink-0">
+                            <UserCheck size={20} className="text-brand-primary" />
                         </div>
                         <div className="min-w-0">
-                            <h2 className="text-lg font-bold truncate" style={{ color: 'var(--text-primary)' }}>Manage User</h2>
-                            <p className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>{selectedUser.email}</p>
+                            <h2 className="text-lg font-bold text-heading truncate">Manage User Account</h2>
+                            <p className="text-xs text-text-secondary truncate">{selectedUser.email}</p>
                         </div>
                     </div>
-                    <button className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
-                        style={{ color: 'var(--text-muted)' }} onClick={onClose}><X size={18} /></button>
+                    <button className="btn-action p-1.5 rounded-xl flex-shrink-0" onClick={onClose}>
+                        <X size={18} />
+                    </button>
                 </div>
-                <div className="p-5 flex flex-col gap-5">
+                <div className="space-y-5">
                     {/* ── Identity ── */}
                     <div>
-                        <div className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Identity &amp; Contact</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-text-muted mb-2">Identity &amp; Contact</div>
                         <div className="grid grid-cols-2 gap-3">
                             {[
-                                { label: 'Full Name', content: <span className="text-sm font-medium">{selectedUser.full_name || '—'}</span> },
-                                { label: 'Username', content: <span className="text-sm font-mono">{selectedUser.username || '—'}</span> },
-                                { label: 'Email / Gmail', content: <span className="text-sm break-all">{selectedUser.email}</span> },
+                                { label: 'Full Name', content: <span className="text-xs font-medium text-heading">{selectedUser.full_name || '—'}</span> },
+                                { label: 'Username', content: <span className="text-xs font-mono text-heading">{selectedUser.username || '—'}</span> },
+                                { label: 'Email / Gmail', content: <span className="text-xs text-heading break-all">{selectedUser.email}</span> },
                                 {
                                     label: 'Mobile Number', content: selectedUser.phone
-                                        ? <span className="text-sm font-mono font-semibold" style={{ color: '#10b981' }}>{selectedUser.phone}</span>
-                                        : <span className="text-sm font-semibold" style={{ color: '#f59e0b' }}>⚠ Not set</span>
+                                        ? <span className="text-xs font-mono font-semibold text-profit">{selectedUser.phone}</span>
+                                        : <span className="text-xs font-semibold text-amber-400">⚠ Not set</span>
                                 },
-                                { label: 'Auth Provider', content: <span className="text-sm">{selectedUser.auth_provider === 'google.com' ? '🔵 Google OAuth' : selectedUser.auth_provider === 'password' ? '🔑 Email / Password' : (selectedUser.auth_provider || '—')}</span> },
+                                { label: 'Auth Provider', content: <span className="text-xs text-heading">{selectedUser.auth_provider === 'google.com' ? '🔵 Google OAuth' : selectedUser.auth_provider === 'password' ? '🔑 Email / Password' : (selectedUser.auth_provider || '—')}</span> },
                                 {
                                     label: 'Email Verified', content: selectedUser.is_verified
-                                        ? <span className="flex items-center gap-1 font-semibold text-sm" style={{ color: '#10b981' }}><CheckCircle2 size={13} /> Verified</span>
-                                        : <span className="flex items-center gap-1 font-semibold text-sm" style={{ color: '#ef4444' }}><XCircle size={13} /> Unverified</span>
+                                        ? <span className="flex items-center gap-1 font-semibold text-xs text-profit"><CheckCircle2 size={13} /> Verified</span>
+                                        : <span className="flex items-center gap-1 font-semibold text-xs text-loss"><XCircle size={13} /> Unverified</span>
                                 },
                             ].map(({ label, content }) => (
-                                <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
-                                    <div className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                                <div key={label} className="card-panel p-3">
+                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">{label}</div>
                                     {content}
                                 </div>
                             ))}
@@ -298,42 +302,42 @@ function ManageUserModal({ user: selectedUser, userDetail, detailLoading, action
 
                     {/* ── Account Status ── */}
                     <div>
-                        <div className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-muted)' }}>Account Status &amp; Dates</div>
+                        <div className="text-xs font-bold uppercase tracking-wider text-text-muted mb-2">Account Status &amp; Dates</div>
                         <div className="grid grid-cols-2 gap-3">
                             {[
                                 { label: 'Status', content: <StatusPill status={selectedUser.account_status} /> },
                                 {
                                     label: 'Active', content: selectedUser.is_active
-                                        ? <span className="flex items-center gap-1.5 font-semibold text-sm" style={{ color: '#10b981' }}><CheckCircle2 size={14} /> Yes</span>
-                                        : <span className="flex items-center gap-1.5 font-semibold text-sm" style={{ color: '#ef4444' }}><XCircle size={14} /> No</span>
+                                        ? <span className="flex items-center gap-1.5 font-semibold text-xs text-profit"><CheckCircle2 size={14} /> Yes</span>
+                                        : <span className="flex items-center gap-1.5 font-semibold text-xs text-loss"><XCircle size={14} /> No</span>
                                 },
-                                { label: 'Registered On', content: <span className="text-xs font-mono">{safeDate(selectedUser.created_at)}</span> },
-                                { label: 'Last Updated', content: <span className="text-xs font-mono">{safeDate(selectedUser.updated_at)}</span> },
-                                { label: 'Access Expires', content: <span className="text-xs font-mono">{safeDate(selectedUser.access_expires_at)}</span> },
-                                { label: 'Approved At', content: <span className="text-xs font-mono">{safeDate(selectedUser.approved_at)}</span> },
+                                { label: 'Registered On', content: <span className="text-xs font-mono text-heading">{safeDate(selectedUser.created_at)}</span> },
+                                { label: 'Last Updated', content: <span className="text-xs font-mono text-heading">{safeDate(selectedUser.updated_at)}</span> },
+                                { label: 'Access Expires', content: <span className="text-xs font-mono text-heading">{safeDate(selectedUser.access_expires_at)}</span> },
+                                { label: 'Approved At', content: <span className="text-xs font-mono text-heading">{safeDate(selectedUser.approved_at)}</span> },
                             ].map(({ label, content }) => (
-                                <div key={label} className="p-3 rounded-xl" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
-                                    <div className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>{label}</div>
+                                <div key={label} className="card-panel p-3">
+                                    <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">{label}</div>
                                     {content}
                                 </div>
                             ))}
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
-                            <label className="label-text">Duration (days)</label>
-                            <input className="input-field" type="number" min={1} max={365} value={actionState.durationDays}
+                            <label className="block text-xs font-semibold text-heading mb-1">Duration (days)</label>
+                            <input className="w-full h-9 px-3 rounded-xl border border-edge/10 bg-surface-950 text-xs text-heading focus:outline-none focus:border-brand-primary" type="number" min={1} max={365} value={actionState.durationDays}
                                 onChange={(e) => setActionState((p) => ({ ...p, durationDays: Number(e.target.value || 1) }))} />
                         </div>
                         <div>
-                            <label className="label-text">Deactivation Reason</label>
-                            <input className="input-field" value={actionState.reason} placeholder="Optional reason" maxLength={500}
+                            <label className="block text-xs font-semibold text-heading mb-1">Deactivation Reason</label>
+                            <input className="w-full h-9 px-3 rounded-xl border border-edge/10 bg-surface-950 text-xs text-heading focus:outline-none focus:border-brand-primary placeholder:text-text-muted" value={actionState.reason} placeholder="Optional reason" maxLength={500}
                                 onChange={(e) => setActionState((p) => ({ ...p, reason: e.target.value }))} />
                         </div>
                         <div>
-                            <label className="label-text">Academy Role</label>
+                            <label className="block text-xs font-semibold text-heading mb-1">Academy Role</label>
                             <select
-                                className="input-field"
+                                className="w-full h-9 px-3 rounded-xl border border-edge/10 bg-surface-950 text-xs text-heading focus:outline-none focus:border-brand-primary"
                                 value={selectedUser.academy_role || 'student'}
                                 disabled={actionLoading}
                                 onChange={(e) => onAction('set-academy-role', { academyRole: e.target.value })}
@@ -345,30 +349,27 @@ function ManageUserModal({ user: selectedUser, userDetail, detailLoading, action
                         </div>
                     </div>
                     <div className="flex flex-wrap gap-2 pt-1">
-                        <button className="admin-action-btn admin-action-btn--primary text-sm" disabled={actionLoading} onClick={() => onAction('approve')}>
+                        <button className="btn-primary text-xs flex items-center gap-1.5" disabled={actionLoading} onClick={() => onAction('approve')}>
                             {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />} Approve</button>
-                        <button className="admin-action-btn admin-action-btn--primary text-sm" disabled={actionLoading} onClick={() => onAction('reactivate')}>
+                        <button className="btn-primary text-xs flex items-center gap-1.5" disabled={actionLoading} onClick={() => onAction('reactivate')}>
                             {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Reactivate</button>
-                        <button className="admin-action-btn admin-action-btn--secondary text-sm" disabled={actionLoading} onClick={() => onAction('set-duration')}>
-                            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />} Update Duration</button>
-                        <button className="flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-full transition-all"
-                            style={{ background: actionLoading ? '#6b7280' : 'linear-gradient(135deg, #ef4444, #b91c1c)', color: '#fff', opacity: actionLoading ? 0.6 : 1 }}
-                            disabled={actionLoading} onClick={() => onAction('deactivate')}>
+                        <button className="btn-action text-xs flex items-center gap-1.5" disabled={actionLoading} onClick={() => onAction('set-duration')}>
+                            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Clock size={14} />} Duration</button>
+                        <button className="btn-action text-xs flex items-center gap-1.5 text-loss hover:bg-loss/10" disabled={actionLoading} onClick={() => onAction('deactivate')}>
                             {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <UserX size={14} />} Deactivate</button>
                         <button
-                            className="admin-action-btn admin-action-btn--secondary text-sm"
+                            className="btn-action text-xs flex items-center gap-1.5"
                             disabled={actionLoading}
                             onClick={() => onAction('force-logout')}
                         >
-                            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />} Force Logout Sessions
+                            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />} Force Logout
                         </button>
                         <button
-                            className="flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-full transition-all"
-                            style={{ background: actionLoading ? 'rgba(185,28,28,0.4)' : 'rgba(185,28,28,0.18)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.35)' }}
+                            className="btn-action text-xs flex items-center gap-1.5 text-loss hover:bg-loss/20 border-loss/30"
                             disabled={actionLoading}
                             onClick={() => onAction('delete-user')}
                         >
-                            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete Permanently
+                            {actionLoading ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Delete
                         </button>
                     </div>
                     <div className="rounded-xl p-4" style={{ background: 'var(--bg-muted)', border: '1px solid var(--border)' }}>
@@ -1719,109 +1720,95 @@ export default function AdminPanelPage() {
 
     if (bootstrapping) {
         return (
-            <div className="admin-shell flex flex-col items-center justify-center gap-4 px-4">
-                <Loader2 size={40} className="animate-spin" style={{ color: 'var(--brand)' }} />
-                <div className="text-sm" style={{ color: 'var(--text-muted)' }}>Preparing secure admin workspace...</div>
+            <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 px-4">
+                <Loader2 size={40} className="animate-spin text-brand-primary" />
+                <div className="text-sm text-text-secondary font-medium">Preparing secure admin workspace...</div>
             </div>
         );
     }
 
     return (
-        <div className="admin-shell p-3 sm:p-4 md:p-5 lg:p-6">
+        <div className="page-container">
             {/* Header */}
-            <header className="admin-hero p-4 sm:p-5 lg:p-6 mb-4 sm:mb-5">
-                <div className="admin-hero-grid lg:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.9fr)] items-start lg:items-center relative z-10">
-                    <div className="space-y-4">
+            <header className="card-panel-elevated p-6 relative overflow-hidden shadow-lg mb-6">
+                <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at 90% 40%, rgba(5,150,105,0.08), transparent 60%)' }} />
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+                    <div className="space-y-3 max-w-2xl">
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-[0.2em]" style={{ background: 'rgba(0,188,212,0.12)', color: 'var(--brand)', border: '1px solid rgba(0,188,212,0.24)' }}>
+                            <span className="badge badge-brand">
                                 <Shield size={13} /> AlphaSync Control Center
                             </span>
                             {authStage === 'dashboard' && <LevelPill level={effectiveAdminLevel} />}
                             {isRoot && (
-                                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-[0.16em]" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.22)' }}>
-                                    <Crown size={12} /> Root authority
+                                <span className="badge badge-amber">
+                                    <Crown size={12} /> Root Authority
                                 </span>
                             )}
                         </div>
                         <div>
-                            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight admin-section-title">Admin Panel</h1>
-                            <p className="admin-section-subtitle mt-2 text-sm sm:text-base max-w-2xl">
-                                A cleaner control surface for approvals, groups, user actions, and elevated admin workflows — tuned for speed, clarity, and safe decision making.
+                            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-heading font-display">Admin Panel</h1>
+                            <p className="text-xs sm:text-sm text-text-secondary leading-relaxed mt-1">
+                                Modern management hub for approvals, group link distribution, role assignments, and tenant authority.
                             </p>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-w-3xl">
-                            <div className="admin-mini-stat">
-                                <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Signed in as</div>
-                                <div className="mt-1 text-sm font-semibold truncate" title={user?.email || 'admin'}>{user?.email || 'admin'}</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 max-w-3xl pt-1">
+                            <div className="card-panel p-3">
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Signed in as</div>
+                                <div className="mt-0.5 text-xs font-semibold text-heading truncate" title={user?.email || 'admin'}>{user?.email || 'admin'}</div>
                             </div>
-                            <div className="admin-mini-stat">
-                                <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Workspace</div>
-                                <div className="mt-1 text-sm font-semibold">Admin / Secure</div>
+                            <div className="card-panel p-3">
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Workspace</div>
+                                <div className="mt-0.5 text-xs font-semibold text-heading">Admin / Secure</div>
                             </div>
-                            <div className="admin-mini-stat">
-                                <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Mode</div>
-                                <div className="mt-1 text-sm font-semibold" style={{ color: canManage ? '#10b981' : '#f59e0b' }}>{canManage ? 'Manage enabled' : 'View only'}</div>
+                            <div className="card-panel p-3">
+                                <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">Mode</div>
+                                <div className="mt-0.5 text-xs font-semibold text-profit">{canManage ? 'Manage enabled' : 'View only'}</div>
                             </div>
                         </div>
                     </div>
-                    <div className="space-y-3 lg:pl-4 lg:border-l lg:border-white/10">
-                        <div className="admin-card-soft p-3 sm:p-4">
-                            <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Quick actions</div>
-                            <div className="admin-command-bar">
-                                {authStage === 'dashboard' && isRoot && (
-                                    <button
-                                        className={`admin-action-btn ${autoApprovalEnabled ? 'admin-action-btn--success' : 'admin-action-btn--secondary'}`}
-                                        style={{ opacity: (autoApprovalLoading || autoApprovalSaving) ? 0.7 : 1 }}
-                                        disabled={autoApprovalLoading || autoApprovalSaving}
-                                        onClick={handleToggleAutoApproval}
-                                        title="When ON, new users are auto-approved at first sync"
-                                    >
-                                        {(autoApprovalLoading || autoApprovalSaving) ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
-                                        Auto Approval {autoApprovalEnabled ? 'ON' : 'OFF'}
-                                    </button>
-                                )}
-                                {authStage === 'dashboard' && isRoot && (
-                                    <button className="admin-action-btn admin-action-btn--warning" onClick={openAdminManagement}>
-                                        <Crown size={14} /> Manage Admins
-                                    </button>
-                                )}
-                                {authStage === 'dashboard' && canManage && (
-                                    <button className="admin-action-btn" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981', borderColor: 'rgba(16,185,129,0.24)' }} onClick={openDataFeedModal}>
-                                        <Activity size={14} /> Data Feed
-                                    </button>
-                                )}
-                                {authStage === 'dashboard' && isRoot && (
-                                    <button className="admin-action-btn" style={{ background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', borderColor: 'rgba(14,165,233,0.24)' }} onClick={() => openRootControlPage()}>
-                                        <Settings2 size={14} /> Root Center
-                                    </button>
-                                )}
-                                <button className="admin-action-btn admin-action-btn--secondary" onClick={openAuditLogPage}>
-                                    <Activity size={14} /> Audit Log
+                    <div className="space-y-3 lg:pl-6 lg:border-l lg:border-edge/10">
+                        <div className="text-xs font-bold uppercase tracking-wider text-text-muted">Quick actions</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {authStage === 'dashboard' && isRoot && (
+                                <button
+                                    className="btn-action text-xs"
+                                    disabled={autoApprovalLoading || autoApprovalSaving}
+                                    onClick={handleToggleAutoApproval}
+                                    title="When ON, new users are auto-approved at first sync"
+                                >
+                                    {(autoApprovalLoading || autoApprovalSaving) ? <Loader2 size={14} className="animate-spin" /> : <UserCheck size={14} />}
+                                    Auto Approval {autoApprovalEnabled ? 'ON' : 'OFF'}
                                 </button>
-                                <button className="admin-action-btn admin-action-btn--secondary" onClick={openBugReportsPage}>
-                                    <FileText size={14} /> Bug Reports
+                            )}
+                            {authStage === 'dashboard' && isRoot && (
+                                <button className="btn-action text-xs" onClick={openAdminManagement}>
+                                    <Crown size={14} className="text-amber-400" /> Admins
                                 </button>
-                                <button className="admin-action-btn admin-action-btn--secondary" onClick={() => refreshDashboard()}>
-                                    <RefreshCw size={14} /> Refresh
+                            )}
+                            {authStage === 'dashboard' && canManage && (
+                                <button className="btn-action-brand text-xs" onClick={openDataFeedModal}>
+                                    <Activity size={14} /> Data Feed
                                 </button>
-                                <button className="admin-action-btn admin-action-btn--danger" onClick={handleSignOut}>
-                                    <LogOut size={14} /> Sign Out
+                            )}
+                            {authStage === 'dashboard' && isRoot && (
+                                <button className="btn-action text-xs" onClick={() => openRootControlPage()}>
+                                    <Settings2 size={14} /> Root Center
                                 </button>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="admin-mini-stat">
-                                <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Security</div>
-                                <div className="mt-1 text-sm font-semibold">Admin role required</div>
-                            </div>
-                            <div className="admin-mini-stat">
-                                <div className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Actions</div>
-                                <div className="mt-1 text-sm font-semibold">Approve, manage, audit</div>
-                            </div>
+                            )}
+                            <button className="btn-action text-xs" onClick={openBugReportsPage}>
+                                <FileText size={14} /> Bug Reports
+                            </button>
+                            <button className="btn-action text-xs" onClick={() => refreshDashboard()}>
+                                <RefreshCw size={14} /> Refresh
+                            </button>
+                            <button className="btn-action text-xs text-loss hover:bg-loss/10" onClick={handleSignOut}>
+                                <LogOut size={14} /> Sign Out
+                            </button>
                         </div>
                     </div>
                 </div>
             </header>
+
 
             {authStage === 'dashboard' && (
                 <div className="flex flex-col gap-4 sm:gap-5 animate-fade-in">

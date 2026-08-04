@@ -957,12 +957,14 @@ async def set_academy_role(
     elif user.tenant_id:
         db.add(UserTenantRole(tenant_id=user.tenant_id, user_id=user.id, role=academy_role))
 
-    # Invalidate existing active sessions so token re-authenticates with updated role
-    await db.execute(
-        update(UserSession)
-        .where(UserSession.user_id == user.id)
-        .values(is_active=False)
-    )
+    # Invalidate existing active sessions for target user ONLY if target user is not the performing admin
+    if user.id != admin_user.id:
+        await db.execute(
+            update(UserSession)
+            .where(UserSession.user_id == user.id)
+            .values(is_active=False)
+        )
+
 
     await _write_audit(
         db,
