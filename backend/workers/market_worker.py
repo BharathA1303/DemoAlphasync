@@ -214,22 +214,24 @@ class MarketDataWorker:
                     except Exception:
                         pass
 
-            if quote_coordinator is not None:
-                await quote_coordinator.ingest_equity_quote(
-                    symbol,
-                    normalized,
-                    source=source,
-                    changed=not skip_emit,
-                    emit_event=not skip_emit,
-                )
-            elif not skip_emit:
-                await event_bus.emit(
-                    Event(
-                        type=EventType.PRICE_UPDATED,
-                        data={"symbol": symbol, "quote": normalized},
+            if not skip_emit:
+                try:
+                    from market.quote_coordinator import quote_coordinator as _qc
+                    await _qc.ingest_equity_quote(
+                        symbol,
+                        normalized,
                         source=source,
+                        changed=True,
+                        emit_event=True,
                     )
-                )
+                except Exception:
+                    await event_bus.emit(
+                        Event(
+                            type=EventType.PRICE_UPDATED,
+                            data={"symbol": symbol, "quote": normalized},
+                            source=source,
+                        )
+                    )
 
         now = time.time()
         if (
