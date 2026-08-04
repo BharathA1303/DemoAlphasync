@@ -293,6 +293,38 @@ class InternalSimProvider(MarketProvider):
                 rows = await get_eligible_price_range(
                     db, exchange, base_symbol, start_date, end_date, segment=segment
                 )
+                if not rows and exchange == "BSE":
+                    rows = await get_eligible_price_range(
+                        db, "NSE", base_symbol, start_date, end_date, segment=segment
+                    )
+
+                if not rows:
+                    import random
+                    logger.info(f"Generating synthetic EOD history for {exchange}:{segment}:{base_symbol}...")
+                    rows = []
+                    curr = start_date
+                    while curr <= end_date:
+                        if curr.weekday() < 5:
+                            seed_val = sum(ord(c) for c in base_symbol.upper()) + int(curr.strftime("%Y%m%d"))
+                            rnd = random.Random(seed_val)
+                            base_p = float((seed_val * 37) % 1800 + 80)
+                            open_p = round(base_p * rnd.uniform(0.98, 1.02), 2)
+                            close_p = round(open_p * rnd.uniform(0.97, 1.03), 2)
+                            high_p = round(max(open_p, close_p) * rnd.uniform(1.002, 1.025), 2)
+                            low_p = round(min(open_p, close_p) * rnd.uniform(0.975, 0.998), 2)
+                            vol = rnd.randint(50000, 500000)
+                            rows.append({
+                                "market_timestamp": curr.isoformat(),
+                                "open": open_p,
+                                "high": high_p,
+                                "low": low_p,
+                                "close": close_p,
+                                "volume": vol,
+                                "exchange": exchange,
+                                "segment": segment,
+                                "symbol": base_symbol,
+                            })
+                        curr += timedelta(days=1)
 
                 bucket_seconds = _INTERVAL_SECONDS.get(interval)
                 if bucket_seconds:
@@ -331,12 +363,12 @@ class InternalSimProvider(MarketProvider):
 
         candles: list = []
         for row in rows:
-            ts = row.get("market_timestamp")
+            ts = row.get("market_timestamp") if isinstance(row, dict) else getattr(row, "market_timestamp", None)
             if not ts:
                 continue
             try:
-                target_date = datetime.fromisoformat(ts).date() if isinstance(ts, str) else ts
-            except ValueError:
+                target_date = datetime.fromisoformat(str(ts)).date() if isinstance(ts, str) else (ts.date() if hasattr(ts, "date") else ts)
+            except (ValueError, TypeError):
                 continue
 
             eod_data = await ensure_ticks_cached(db, exchange, segment, base_symbol, target_date)
