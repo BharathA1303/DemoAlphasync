@@ -45,8 +45,8 @@ class Tenant(Base):
     tenant_type = Column(String(20), default="institution", nullable=False, server_default=text("'institution'"))
     is_active = Column(Boolean, default=True, nullable=False, server_default=text("true"))
     max_users = Column(Integer, default=1000, nullable=False)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
-    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
     tenant_roles = relationship("UserTenantRole", back_populates="tenant", cascade="all, delete-orphan")
@@ -62,7 +62,7 @@ class UserTenantRole(Base):
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     role = Column(SQLEnum(TenantRole), nullable=False, default=TenantRole.STUDENT, index=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     tenant = relationship("Tenant", back_populates="tenant_roles")
     user = relationship("User", back_populates="tenant_roles")
