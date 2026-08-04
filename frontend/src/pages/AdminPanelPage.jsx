@@ -2301,6 +2301,7 @@ export default function AdminPanelPage() {
                             </div>
                         </div>
                     </section>
+                    )}
 
                     {isRoot && (
                         <section className="admin-card p-4 sm:p-5">
@@ -2331,7 +2332,6 @@ export default function AdminPanelPage() {
                             </button>
                         </div>
                     </section>
-                    )}
                 </div>
             )}
 
