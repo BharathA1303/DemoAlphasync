@@ -62,9 +62,9 @@ _INDEX_SIM_MAP_REVERSE = {
 
 
 def _canonical_to_sim_symbol(symbol: str) -> str:
-    """Map an AlphaSync canonical symbol (e.g. RELIANCE.NS, GOLD, ^NSEI) to the
-    engine's 'EXCHANGE:SEGMENT:SYMBOL' subscription format
-    (e.g. NSE:EQ:RELIANCE, MCX:FUT:GOLD, NSE:IDX:NIFTY50)."""
+    """Map an AlphaSync canonical symbol (e.g. RELIANCE.NS, GOLD, ^NSEI, NIFTY26AUGFUT, NIFTY26AUG25500CE)
+    to the engine's 'EXCHANGE:SEGMENT:SYMBOL' subscription format
+    (e.g. NSE:EQ:RELIANCE, MCX:FUT:GOLD, NSE:IDX:NIFTY50, NSE:FUT:NIFTY, NSE:OPT:NIFTY)."""
     clean = str(symbol or "").strip().upper()
     if clean in _INDEX_SIM_MAP:
         exchange, base = _INDEX_SIM_MAP[clean]
@@ -75,6 +75,27 @@ def _canonical_to_sim_symbol(symbol: str) -> str:
     if base in _MCX_COMMODITY_BASES:
         return f"MCX:FUT:{base}"
     exchange = "BSE" if clean.endswith(".BO") else _DEFAULT_EXCHANGE
+
+    # Parse Futures contract symbols (e.g. NIFTY26AUGFUT, BANKNIFTYFUT, RELIANCEFUT)
+    if "FUT" in base or base.endswith("FUT"):
+        import re
+        underlying = base.replace("FUT", "")
+        underlying = re.sub(r'\d{1,2}[A-Z]{3}$', '', underlying) or underlying
+        if underlying in _INDEX_SIM_MAP:
+            _, underlying = _INDEX_SIM_MAP[underlying]
+        return f"{exchange}:FUT:{underlying}"
+
+    # Parse Options contract symbols (e.g. NIFTY26AUG25500CE, NIFTY25500PE, BANKNIFTY48000CE)
+    if base.endswith(("CE", "PE")):
+        import re
+        m = re.match(r'^([A-Z]+?)(?:\d{1,2}[A-Z]{3})?(\d+)?(CE|PE)$', base)
+        if m:
+            underlying = m.group(1)
+            if underlying in _INDEX_SIM_MAP:
+                _, underlying = _INDEX_SIM_MAP[underlying]
+            return f"{exchange}:OPT:{underlying}"
+        return f"{exchange}:OPT:{base}"
+
     return f"{exchange}:{_DEFAULT_SEGMENT}:{base}"
 
 
