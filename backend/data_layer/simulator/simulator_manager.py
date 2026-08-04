@@ -57,6 +57,65 @@ class SimulatorManager:
         self.task = asyncio.create_task(self.run_loop())
         logger.info("SimulatorManager background loop started.")
 
+    async def prewarm_tick_cache(self, session_id: str) -> int:
+        """
+        Sequentially pre-load tick arrays for all subscriptions of an active session
+        into self.tick_data_cache BEFORE the run_loop fires for the first time.
+
+        Without this, the very first run_loop iteration launches 139+ concurrent
+        coroutines that all try to read their (large) tick JSON from Redis
+        simultaneously — exhausting the connection pool and producing
+        'Too many connections' errors that prevent ticks from ever being cached,
+        which then causes the same error on every subsequent tick, freezing prices
+        indefinitely.
+
+        Returns the number of symbols pre-warmed.
+        """
+        raw_state = await get_cached_response(f"session:{session_id}")
+        if not raw_state:
+            return 0
+
+        state = json.loads(raw_state)
+        if state.get("status") != "active":
+            return 0
+
+        subscriptions = state.get("subscriptions", [])
+        subscription_versions = dict(state.get("subscription_versions", {}))
+        date_str = state.get("date", "")
+        prewarmed = 0
+
+        for spec in subscriptions:
+            parts = spec.split(":")
+            if len(parts) != 3:
+                continue
+            exchange, segment, symbol = parts
+            pinned_version = subscription_versions.get(spec, 1)
+            cache_key = tick_cache_key(
+                exchange, segment, symbol, date_str_to_date(date_str), pinned_version
+            )
+            if cache_key in self.tick_data_cache:
+                prewarmed += 1
+                continue  # already in memory
+
+            try:
+                raw = await get_cached_response(cache_key)
+                if raw:
+                    self.tick_data_cache[cache_key] = json.loads(raw)
+                    prewarmed += 1
+                else:
+                    # Redis miss — regenerate
+                    ticks = await self.load_ticks_for_symbol(exchange, segment, symbol, date_str, pinned_version)
+                    if ticks:
+                        prewarmed += 1
+            except Exception as e:
+                logger.debug(f"prewarm_tick_cache: failed for {spec}: {e}")
+
+        logger.info(
+            f"[SimulatorManager] Tick-cache prewarm: {prewarmed}/{len(subscriptions)} symbols "
+            f"loaded into memory for session {session_id[:12]}."
+        )
+        return prewarmed
+
     async def stop(self):
         """Stops the background simulation loop."""
         self.is_running = False
@@ -443,6 +502,27 @@ class SimulatorManager:
 
     async def run_loop(self):
         """Infinite loop running every 1 second, advancing virtual clocks."""
+        # ── One-time prewarm ─────────────────────────────────────────────────
+        # Load all tick arrays into local memory BEFORE the first tick loop
+        # fires. Without this, 139+ coroutines all hit Redis simultaneously on
+        # the very first iteration, exhausting the connection pool and causing
+        # 'Too many connections' errors that permanently freeze prices.
+        # We prewarm sequentially (slow, done once) so every subsequent loop
+        # iteration is served entirely from self.tick_data_cache (fast, no Redis).
+        try:
+            logger.info("[SimulatorManager] Pre-warming tick cache before first loop iteration...")
+            prewarm_ids: Set[str] = set()
+            if cache_module.redis_client:
+                prewarm_ids = await cache_module.redis_client.smembers("active_sessions")
+            if prewarm_ids:
+                for sid in prewarm_ids:
+                    await self.prewarm_tick_cache(sid)
+            else:
+                logger.info("[SimulatorManager] No active sessions yet — skipping prewarm (will retry after session starts).")
+        except Exception as e:
+            logger.warning(f"[SimulatorManager] Prewarm failed (non-fatal): {e}")
+        # ── Main loop ────────────────────────────────────────────────────────
+        _prewarmed_sessions: Set[str] = set(prewarm_ids) if 'prewarm_ids' in dir() else set()
         while self.is_running:
             start_time = time_module.monotonic()
             
@@ -465,7 +545,19 @@ class SimulatorManager:
                                     active_ids.add(state["session_id"])
                             except Exception:
                                 pass
-                
+
+                # Prewarm any newly-created sessions that we haven't seen yet.
+                # This covers the case where a session is created AFTER the
+                # initial prewarm ran (e.g. after a day rollover creates a new
+                # session, or on first startup when sessions weren't ready yet).
+                new_sessions = active_ids - _prewarmed_sessions
+                for sid in new_sessions:
+                    try:
+                        await self.prewarm_tick_cache(sid)
+                        _prewarmed_sessions.add(sid)
+                    except Exception as e:
+                        logger.warning(f"[SimulatorManager] Prewarm for new session {sid[:12]} failed: {e}")
+
                 # Advance and publish ticks for each active session.
                 # Bound concurrency so a spike in active sessions can't launch
                 # an unbounded number of heavy coroutines at once and starve /
