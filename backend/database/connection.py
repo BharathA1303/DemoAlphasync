@@ -242,9 +242,50 @@ async def init_db():
         from models.bulk_file_index import BulkFileIndex  # noqa
         from models import academy as academy_models  # noqa — AlphaSync Academy (LMS) tables
 
-        # Only invoke Base.metadata.create_all during test execution
-        if getattr(settings, "ENVIRONMENT", "development") == "test":
-            await conn.run_sync(Base.metadata.create_all)
+        # Create any missing tables (safe operation, never drops or alters existing tables)
+        await conn.run_sync(Base.metadata.create_all)
 
-        logger.info("Database initialized successfully via Alembic migration authority.")
+        # Self-healing DDL checks for schema column drift on live databases
+        if is_postgres:
+            await conn.execute(
+                text(
+                    """
+                DO $$ BEGIN
+                    -- 1. Ensure tenant_type column exists on tenants table
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'tenants') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tenants' AND column_name = 'tenant_type') THEN
+                            ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';
+                        END IF;
+                    END IF;
+
+                    -- 2. Ensure trader enum value exists in tenantrole enum if enum type exists
+                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'tenantrole') THEN
+                        IF NOT EXISTS (SELECT 1 FROM pg_enum e JOIN pg_type t ON e.enumtypid = t.oid WHERE t.typname = 'tenantrole' AND e.enumlabel = 'trader') THEN
+                            ALTER TYPE tenantrole ADD VALUE IF NOT EXISTS 'trader';
+                        END IF;
+                    END IF;
+
+                    -- 3. Ensure academy_role column exists on users table if missing
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users') THEN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'academy_role') THEN
+                            ALTER TABLE users ADD COLUMN academy_role VARCHAR(20);
+                        END IF;
+                    END IF;
+                END $$;
+            """
+                )
+            )
+        else:
+            # SQLite safe column self-healing
+            try:
+                await conn.execute(text("ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution'"))
+            except Exception:
+                pass
+            try:
+                await conn.execute(text("ALTER TABLE users ADD COLUMN academy_role VARCHAR(20)"))
+            except Exception:
+                pass
+
+        logger.info("Database initialized and self-healed successfully via Alembic migration & runtime DDL authority.")
+
 
