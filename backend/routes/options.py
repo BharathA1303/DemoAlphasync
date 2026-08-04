@@ -472,40 +472,29 @@ async def _generate_simulated_option_chain(symbol: str, expiry: Optional[str], s
     sym = symbol.upper().strip()
     
     # 1. Determine Spot Price
-    spot_price = 100.0
-    if sym == "NIFTY":
-        spot_price = 24600.0
-    elif sym == "BANKNIFTY":
-        spot_price = 57700.0
-    elif sym == "SENSEX":
-        spot_price = 80200.0
-    elif sym == "FINNIFTY":
-        spot_price = 24100.0
-    elif sym == "RELIANCE":
-        spot_price = 1310.40
-    elif sym == "TCS":
-        spot_price = 4350.0
-    elif sym == "SBIN":
-        spot_price = 1044.20
-    elif sym == "AXISBANK":
-        spot_price = 1250.30
-    elif sym == "HDFCBANK":
-        spot_price = 753.15
-    elif sym == "ICICIBANK":
-        spot_price = 1445.40
-    else:
-        random.seed(sym)
-        spot_price = random.uniform(100.0, 2000.0)
-        random.seed()
+    from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
+    spot_price = _resolve_realistic_base_price(sym, "EQ")
 
     # Try to get live quote from QuoteCoordinator if available
     try:
         from market.quote_coordinator import quote_coordinator
-        for lookup_key in [sym, f"{sym}.NS", f"NSE:EQ:{sym}", f"BSE:EQ:{sym}"]:
+        lookup_keys = [sym, f"{sym}.NS", f"NSE:EQ:{sym}", f"BSE:EQ:{sym}"]
+        if sym in ("NIFTY", "NIFTY50"):
+            lookup_keys.extend(["^NSEI", "NSE:IDX:NIFTY50", "NIFTY50.NS"])
+        elif sym in ("BANKNIFTY", "NIFTYBANK"):
+            lookup_keys.extend(["^NSEBANK", "NSE:IDX:BANKNIFTY", "BANKNIFTY.NS"])
+        elif sym == "FINNIFTY":
+            lookup_keys.extend(["^CNXFIN", "NSE:IDX:FINNIFTY"])
+        elif sym == "SENSEX":
+            lookup_keys.extend(["^BSESN", "BSE:IDX:SENSEX"])
+
+        for lookup_key in lookup_keys:
             quote = await quote_coordinator.get_quote(lookup_key)
             if quote and (quote.get("price") or quote.get("ltp")):
-                spot_price = float(quote.get("price") or quote.get("ltp"))
-                break
+                p = float(quote.get("price") or quote.get("ltp"))
+                if p > 0:
+                    spot_price = p
+                    break
     except Exception:
         pass
 

@@ -509,18 +509,13 @@ async def get_underlying_spot(
         if not symbol.endswith((".NS", ".BO")):
             symbol = f"{symbol}.NS"
 
+    raw_symbol = str(symbol or "").strip().upper()
     quote = await get_system_quote_live_only(symbol, allow_recover=True)
 
-    if not quote:
-        return {
-            "symbol": symbol,
-            "ltp": None,
-            "change": 0,
-            "change_pct": 0,
-            "timestamp": int(datetime.now().timestamp()),
-            "market_open": market_session.is_trading_hours(),
-            "available": False,
-        }
+    ltp = (quote.get("ltp") or quote.get("price") or quote.get("lp")) if quote else None
+    if ltp is None:
+        from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
+        ltp = _resolve_realistic_base_price(raw_symbol, "EQ")
 
     return {
         "symbol": symbol,

@@ -83,7 +83,13 @@ def _canonical_to_sim_symbol(symbol: str) -> str:
         underlying = re.sub(r'\d{1,2}[A-Z]{3}$', '', underlying) or underlying
         if underlying in _INDEX_SIM_MAP:
             _, underlying = _INDEX_SIM_MAP[underlying]
-        return f"{exchange}:FUT:{underlying}"
+        sim_sym = f"{exchange}:FUT:{underlying}"
+        try:
+            from providers.contract_symbol_map import _TA_SYMBOL_TO_CANONICAL
+            _TA_SYMBOL_TO_CANONICAL[sim_sym] = clean
+        except Exception:
+            pass
+        return sim_sym
 
     # Parse Options contract symbols (e.g. NIFTY26AUG25500CE, NIFTY25500PE, BANKNIFTY48000CE)
     if base.endswith(("CE", "PE")):
@@ -93,8 +99,15 @@ def _canonical_to_sim_symbol(symbol: str) -> str:
             underlying = m.group(1)
             if underlying in _INDEX_SIM_MAP:
                 _, underlying = _INDEX_SIM_MAP[underlying]
-            return f"{exchange}:OPT:{underlying}"
-        return f"{exchange}:OPT:{base}"
+            sim_sym = f"{exchange}:OPT:{underlying}"
+        else:
+            sim_sym = f"{exchange}:OPT:{base}"
+        try:
+            from providers.contract_symbol_map import _TA_SYMBOL_TO_CANONICAL
+            _TA_SYMBOL_TO_CANONICAL[sim_sym] = clean
+        except Exception:
+            pass
+        return sim_sym
 
     return f"{exchange}:{_DEFAULT_SEGMENT}:{base}"
 
@@ -307,11 +320,12 @@ class InternalSimProvider(MarketProvider):
                         if curr.weekday() < 5:
                             seed_val = sum(ord(c) for c in base_symbol.upper()) + int(curr.strftime("%Y%m%d"))
                             rnd = random.Random(seed_val)
-                            base_p = float((seed_val * 37) % 1800 + 80)
-                            open_p = round(base_p * rnd.uniform(0.98, 1.02), 2)
-                            close_p = round(open_p * rnd.uniform(0.97, 1.03), 2)
-                            high_p = round(max(open_p, close_p) * rnd.uniform(1.002, 1.025), 2)
-                            low_p = round(min(open_p, close_p) * rnd.uniform(0.975, 0.998), 2)
+                            from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
+                            base_p = _resolve_realistic_base_price(base_symbol, segment)
+                            open_p = round(base_p * rnd.uniform(0.995, 1.005), 2)
+                            close_p = round(open_p * rnd.uniform(0.99, 1.01), 2)
+                            high_p = round(max(open_p, close_p) * rnd.uniform(1.001, 1.008), 2)
+                            low_p = round(min(open_p, close_p) * rnd.uniform(0.992, 0.999), 2)
                             vol = rnd.randint(50000, 500000)
                             rows.append({
                                 "market_timestamp": curr.isoformat(),

@@ -23,7 +23,7 @@ TOTAL_SECONDS = 22500  # 6 hours and 15 minutes = 22500 seconds
 # previous algorithm version are never served after a deploy - otherwise
 # a code change here would silently have no visible effect until each
 # symbol/day's 24h Redis TTL happened to expire.
-TICK_ALGO_VERSION = 6
+TICK_ALGO_VERSION = 7
 
 # Pre-calculate time strings to optimize generation loop performance
 TIME_STRINGS = []
@@ -276,17 +276,53 @@ async def ensure_ticks_cached(
             logger.warning(f"Compliance gate rejected {exchange}:{segment}:{symbol} on {target_date}: {e}")
             return None
 
+def _resolve_realistic_base_price(symbol: str, segment: str = "EQ") -> float:
+    sym = str(symbol or "").strip().upper()
+    if sym in ("NIFTY", "NIFTY50", "^NSEI", "NSEI"):
+        base = 28850.0
+    elif sym in ("BANKNIFTY", "NIFTYBANK", "^NSEBANK"):
+        base = 52100.0
+    elif sym in ("SENSEX", "^BSESN"):
+        base = 80200.0
+    elif sym in ("FINNIFTY", "^CNXFIN"):
+        base = 24100.0
+    elif sym in ("RELIANCE", "RELIANCE.NS"):
+        base = 1318.0
+    elif sym in ("TCS", "TCS.NS"):
+        base = 4460.0
+    elif sym in ("INFY", "INFY.NS"):
+        base = 1830.0
+    elif sym in ("HDFCBANK", "HDFCBANK.NS"):
+        base = 1680.0
+    elif sym in ("ICICIBANK", "ICICIBANK.NS"):
+        base = 1490.0
+    elif sym in ("SBIN", "SBIN.NS"):
+        base = 875.0
+    elif sym in ("BAJFINANCE", "BAJFINANCE.NS"):
+        base = 7450.0
+    elif sym in ("BHARTIARTL", "BHARTIARTL.NS"):
+        base = 1665.0
+    elif sym in ("TATAMOTORS", "TATAMOTORS.NS"):
+        base = 816.0
+    else:
+        seed_val = sum(ord(c) for c in sym)
+        base = float((seed_val * 47) % 2500 + 150)
+
+    if segment == "FUT":
+        return round(base * 1.0025, 2)
+    return round(base, 2)
+
     if not eod_data:
         # Fallback dynamic generator so any symbol (even un-seeded ones like BPCL or derivative contracts)
         # renders a valid historical chart instead of showing "No chart data available".
         logger.info(f"Generating dynamic EOD anchor for un-seeded symbol {exchange}:{segment}:{symbol} on {target_date}...")
         seed_val = sum(ord(c) for c in symbol.upper()) + int(target_date.strftime("%Y%m%d"))
         rnd = random.Random(seed_val)
-        base_price = float((seed_val * 37) % 1800 + 80)
-        open_p = round(base_price * rnd.uniform(0.98, 1.02), 2)
-        close_p = round(open_p * rnd.uniform(0.97, 1.03), 2)
-        high_p = round(max(open_p, close_p) * rnd.uniform(1.002, 1.025), 2)
-        low_p = round(min(open_p, close_p) * rnd.uniform(0.975, 0.998), 2)
+        base_price = _resolve_realistic_base_price(symbol, segment)
+        open_p = round(base_price * rnd.uniform(0.995, 1.005), 2)
+        close_p = round(open_p * rnd.uniform(0.99, 1.01), 2)
+        high_p = round(max(open_p, close_p) * rnd.uniform(1.001, 1.008), 2)
+        low_p = round(min(open_p, close_p) * rnd.uniform(0.992, 0.999), 2)
         vol = rnd.randint(50000, 500000)
 
         eod_data = PriceData(
