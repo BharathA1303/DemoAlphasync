@@ -770,25 +770,14 @@ async def get_history(
             return snap_hist
 
     try:
-        if market_frozen:
-            from services.market_data import get_historical_data
+        from services.market_data import get_historical_data
 
-            history = await get_historical_data(
-                symbol=sym,
-                period=period,
-                interval=interval,
-                user_id=None,
-            )
-        else:
-            from services.market_data import get_historical_data_live_only
-
-            history = await get_historical_data_live_only(
-                symbol=sym,
-                period=period,
-                interval=interval,
-                user_id=None,
-                allow_recover=True,
-            )
+        history = await get_historical_data(
+            symbol=sym,
+            period=period,
+            interval=interval,
+            user_id=None,
+        )
 
         if history:
             trimmed = history[-limit:] if limit else history

@@ -23,7 +23,7 @@ TOTAL_SECONDS = 22500  # 6 hours and 15 minutes = 22500 seconds
 # previous algorithm version are never served after a deploy - otherwise
 # a code change here would silently have no visible effect until each
 # symbol/day's 24h Redis TTL happened to expire.
-TICK_ALGO_VERSION = 5
+TICK_ALGO_VERSION = 6
 
 # Pre-calculate time strings to optimize generation loop performance
 TIME_STRINGS = []
@@ -155,28 +155,44 @@ def generate_brownian_bridge_ticks(
     prices[0] = open_price
     prices[TOTAL_SECONDS - 1] = close_price
 
-    # 4. Generate realistic market volume correlated with price momentum & log-normal spikes
-    # Base intraday activity (higher near market open and close)
-    x = np.linspace(0, 1, TOTAL_SECONDS)
-    u_shape = 0.35 * (x - 0.5) ** 2 + 0.12
+    # 4. Generate realistic market volume clustered by 5-minute candle windows
+    window_size = 300
+    n_windows = TOTAL_SECONDS // window_size
+    window_volumes = np.zeros(n_windows)
 
-    # Price momentum correlation: ticks with larger price movements receive higher volume
-    price_diffs = np.abs(np.diff(prices, prepend=prices[0]))
-    mean_diff = np.mean(price_diffs)
-    price_momentum = (price_diffs / (mean_diff + 1e-8)) if mean_diff > 0 else np.ones(TOTAL_SECONDS)
+    for w in range(n_windows):
+        idx_start = w * window_size
+        idx_end = (w + 1) * window_size
+        w_prices = prices[idx_start:idx_end]
 
-    # Log-normal noise to create realistic clustering volume spikes
-    log_noise = np.random.lognormal(mean=0.0, sigma=0.6, size=TOTAL_SECONDS)
+        w_range = np.max(w_prices) - np.min(w_prices)
+        w_body = abs(w_prices[-1] - w_prices[0])
+        w_momentum = (w_range + 2.0 * w_body) / (low_price * 0.001 + 1e-5)
 
-    # Combine intraday trend, price momentum, and clustering noise
-    volume_weights = (u_shape + 0.45 * price_momentum) * log_noise
+        # Base U-shape factor across the trading day (09:15 to 15:30)
+        u_factor = 0.5 * ((w / float(n_windows)) - 0.5) ** 2 + 0.15
 
-    # Normalize and scale to total_volume
-    volume_weights /= np.sum(volume_weights)
-    raw_volumes = np.round(volume_weights * max(10000, total_volume)).astype(int)
+        # Lognormal spike multiplier per 5-minute candle window
+        cluster_spike = rng.lognormvariate(mu=0.0, sigma=0.85)
 
-    # Zero volume on quiet consolidation ticks (~30% of ticks)
-    zero_vol_indices = np.random.choice(TOTAL_SECONDS, size=int(TOTAL_SECONDS * 0.3), replace=False)
+        window_volumes[w] = (u_factor + 0.6 * w_momentum) * cluster_spike
+
+    # Normalize window volumes to total_volume
+    window_volumes /= np.sum(window_volumes)
+    target_vol_per_window = window_volumes * max(50000, total_volume)
+
+    # Distribute window volume down to individual 1-second ticks with micro-noise
+    raw_volumes = np.zeros(TOTAL_SECONDS, dtype=int)
+    for w in range(n_windows):
+        idx_start = w * window_size
+        idx_end = (w + 1) * window_size
+        w_vol = target_vol_per_window[w]
+        tick_noise = np.random.lognormal(mean=0.0, sigma=0.5, size=window_size)
+        tick_noise /= np.sum(tick_noise)
+        raw_volumes[idx_start:idx_end] = np.round(tick_noise * w_vol).astype(int)
+
+    # Zero volume on ~35% of 1-second ticks
+    zero_vol_indices = np.random.choice(TOTAL_SECONDS, size=int(TOTAL_SECONDS * 0.35), replace=False)
     raw_volumes[zero_vol_indices] = 0
     
     # Create final tick list

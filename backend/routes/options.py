@@ -245,31 +245,24 @@ async def option_history(
     start_date = end_date - timedelta(days=days)
 
     try:
-        import httpx as _httpx
-
-        if not client._access_token:
-            async with _httpx.AsyncClient() as _hc:
-                await client._authenticate(_hc)
-        headers = {"Authorization": f"Bearer {client._access_token}"}
-        async with _httpx.AsyncClient() as hc:
-            resp = await hc.get(
-                f"{client._base_url}/v1/price/NSE/{base_symbol}/range",
-                params={
-                    "start": start_date.isoformat(),
-                    "end": end_date.isoformat(),
-                    "segment": "OPT",
-                    "expiry": expiry,
-                    "strike": strike,
-                    "option_type": option_type,
-                },
-                headers=headers,
-                timeout=15.0,
-            )
-            resp.raise_for_status()
-            rows = resp.json()
+        from services.market_data import get_historical_data
+        candles = await get_historical_data(trading_symbol, period=period, interval=interval)
+        if candles:
+            return {
+                "trading_symbol": trading_symbol,
+                "period": period,
+                "interval": interval,
+                "candles": candles,
+            }
     except Exception as e:
         logger.warning(f"Options history fetch failed for {trading_symbol}: {e}")
-        rows = []
+
+    return {
+        "trading_symbol": trading_symbol,
+        "period": period,
+        "interval": interval,
+        "candles": [],
+    }
 
     candles = [
         {

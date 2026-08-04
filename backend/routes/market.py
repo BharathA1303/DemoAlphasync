@@ -359,19 +359,13 @@ async def get_history(
         data = []
 
     min_required = _minimum_history_candles(period, interval, is_intraday)
-    if len(data) < min_required:
-        # Keep partial intraday history so charts render for newly subscribed symbols.
-        if is_intraday and len(data) >= 2:
-            logger.debug(
-                f"Using partial intraday history for {fmt_symbol} "
-                f"({len(data)} candles, preferred min {min_required})"
-            )
-        else:
-            logger.debug(
-                f"Rejected short history payload for {fmt_symbol} "
-                f"({len(data)} candles, min {min_required})"
-            )
-            data = []
+    if len(data) < min_required and len(data) >= 1:
+        logger.debug(
+            f"Using available history for {fmt_symbol} "
+            f"({len(data)} candles, preferred min {min_required})"
+        )
+    elif not data:
+        data = []
 
     # Write to Redis for next caller (skip zero-volume index payloads — they poison charts).
     if data:
