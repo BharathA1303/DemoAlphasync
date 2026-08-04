@@ -49,7 +49,9 @@ def upgrade() -> None:
     from data_layer.db.models import PriceData, APIKey, IngestionLog  # noqa
 
     # Create all tables that don't exist yet — idempotent, skips existing ones
-    Base.metadata.create_all(bind=bind.engine.sync_engine)
+    # Note: inside Alembic's run_sync(), bind is already a plain synchronous
+    # Connection — pass it directly (not bind.engine.sync_engine)
+    Base.metadata.create_all(bind=bind)
 
 
 def downgrade() -> None:
