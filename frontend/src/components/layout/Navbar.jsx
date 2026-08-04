@@ -7,6 +7,7 @@ import { usePortfolioStore } from '../../store/usePortfolioStore';
 import { useWatchlistStore } from '../../stores/useWatchlistStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import api from '../../services/api';
+import WorkspaceSwitcher from './WorkspaceSwitcher';
 
 import { cn } from '../../utils/cn';
 import { useMarketSession } from '../../hooks/useMarketSession';
@@ -504,6 +505,9 @@ export default function Navbar({ onMenuToggle }) {
 
             {/* Right: market status, WS status, theme, bell */}
             <div className="flex items-center gap-1.5">
+                {/* Multi-Tenant Workspace Context Switcher */}
+                <WorkspaceSwitcher />
+
                 {/* Active Role Badge & Admin Quick Action */}
                 {(() => {
                     const user = useAuthStore.getState().user;

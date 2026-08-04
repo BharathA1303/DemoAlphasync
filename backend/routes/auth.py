@@ -530,6 +530,7 @@ async def register(
         )
     )
 
+    profile = await _build_user_profile(user, db)
     return {
         "message": "Registration successful",
         "is_new_user": True,
@@ -539,7 +540,7 @@ async def register(
             if assigned_group
             else None
         ),
-        "user": _user_profile(user),
+        "user": profile,
     }
 
 
@@ -588,11 +589,12 @@ async def login(
         except Exception:
             pass
 
+        profile = await _build_user_profile(user, db)
         return {
             "message": "Login successful",
             "is_new_user": False,
             "token": token,
-            "user": _user_profile(user),
+            "user": profile,
         }
     except HTTPException:
         raise
@@ -665,10 +667,14 @@ async def set_phone(
 
 
 @router.get("/me")
-async def get_me(user: User = Depends(get_current_user)):
-    """Return current user profile."""
+async def get_me(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return current user profile with tenant roles."""
+    profile = await _build_user_profile(user, db)
     return {
-        **_user_profile(user),
+        **profile,
         "access_expires_at": (
             user.access_expires_at.isoformat()
             if getattr(user, "access_expires_at", None)
@@ -676,6 +682,92 @@ async def get_me(user: User = Depends(get_current_user)):
         ),
         "created_at": user.created_at.isoformat() if user.created_at else None,
     }
+
+
+class SwitchTenantRequest(BaseModel):
+    tenant_id: str
+
+
+@router.post("/switch-tenant")
+async def switch_tenant(
+    req: SwitchTenantRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Switch active tenant context for multi-tenant users."""
+    try:
+        t_id = uuid.UUID(req.tenant_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid tenant ID format")
+
+    utr_res = await db.execute(
+        select(UserTenantRole, Tenant)
+        .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
+        .where(UserTenantRole.user_id == user.id, UserTenantRole.tenant_id == t_id)
+    )
+    row = utr_res.first()
+
+    if not row:
+        if str(user.tenant_id) == req.tenant_id:
+            t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+            target_tenant = t_res.scalar_one_or_none()
+            active_role = getattr(user, "academy_role", "trader") or "trader"
+        else:
+            raise HTTPException(status_code=403, detail="You do not have access to this tenant workspace")
+    else:
+        utr, target_tenant = row
+        active_role = utr.role.value if hasattr(utr.role, "value") else str(utr.role)
+
+    user.tenant_id = target_tenant.id
+    user.academy_role = active_role
+    await db.commit()
+
+    profile = await _build_user_profile(user, db)
+    return {
+        "message": "Workspace switched successfully",
+        "active_tenant": {
+            "tenant_id": str(target_tenant.id),
+            "tenant_name": target_tenant.name,
+            "tenant_type": getattr(target_tenant, "tenant_type", "institution"),
+            "role": active_role,
+        },
+        "user": profile,
+    }
+
+
+async def _build_user_profile(user: User, db: AsyncSession) -> dict:
+    """Enrich user profile with all tenant roles for workspace switching."""
+    base = _user_profile(user)
+    tenant_roles = []
+    if db:
+        stmt = (
+            select(UserTenantRole, Tenant)
+            .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
+            .where(UserTenantRole.user_id == user.id)
+        )
+        res = await db.execute(stmt)
+        rows = res.all()
+        for utr, t in rows:
+            tenant_roles.append({
+                "tenant_id": str(t.id),
+                "tenant_name": t.name,
+                "tenant_type": getattr(t, "tenant_type", "institution"),
+                "role": utr.role.value if hasattr(utr.role, "value") else str(utr.role),
+            })
+
+    if not tenant_roles and user.tenant_id and db:
+        t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+        t = t_res.scalar_one_or_none()
+        if t:
+            tenant_roles.append({
+                "tenant_id": str(t.id),
+                "tenant_name": t.name,
+                "tenant_type": getattr(t, "tenant_type", "institution"),
+                "role": getattr(user, "academy_role", "trader") or "trader",
+            })
+
+    base["tenant_roles"] = tenant_roles
+    return base
 
 
 @router.post("/logout")

@@ -162,4 +162,13 @@ export const useAuthStore = create((set, get) => ({
         }
         return response.data;
     },
+
+    switchTenant: async (tenantId) => {
+        const response = await api.post('/auth/switch-tenant', { tenant_id: tenantId });
+        if (response.data?.user) {
+            localStorage.setItem('alphasync_user', JSON.stringify(response.data.user));
+            set({ user: response.data.user });
+        }
+        return response.data;
+    },
 }));

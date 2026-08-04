@@ -1,5 +1,6 @@
 // AcademyFacultyDashboardPage.jsx - Comprehensive Teacher Control Center & Student Performance Inspector
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Users, BookOpen, TrendingUp, Target, Search, UserPlus, Eye, Plus, Award, AlertCircle, FileText, Check, X, Shield, Activity } from 'lucide-react';
 import academyApi from './api';
 import StatTile from './components/StatTile';
@@ -7,11 +8,17 @@ import { Skeleton } from '../components/ui';
 import { toast } from 'react-hot-toast';
 
 export default function AcademyFacultyDashboardPage() {
+    const navigate = useNavigate();
     const [data, setData] = useState(null);
     const [assignedStudents, setAssignedStudents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [query, setQuery] = useState('');
+
+    const handleTestRunChallenge = (challenge) => {
+        toast.success(`Launching Test-Run Sandbox for "${challenge.title || 'Challenge'}". Trade with practice capital!`);
+        navigate('/terminal?mode=test_run_preview');
+    };
 
     // Modals & Drawers
     const [showAddStudent, setShowAddStudent] = useState(false);
@@ -267,31 +274,71 @@ export default function AcademyFacultyDashboardPage() {
                 )}
             </div>
 
-            {/* Courses Overview Section */}
-            <div className="rounded-xl border border-edge/10 bg-surface-900/60 p-5 space-y-3">
-                <h2 className="text-sm font-bold text-heading flex items-center gap-2">
-                    <BookOpen className="h-4 w-4 text-accent-blue" />
-                    <span>Catalog Courses Taught</span>
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {courses?.map((c) => (
-                        <div key={c.course_id} className="rounded-xl border border-edge/10 bg-surface-950/60 p-4 space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-brand-primary/10 text-brand-primary">{c.category}</span>
-                                <span className="text-xs text-text-muted">{c.student_count} Students</span>
-                            </div>
-                            <p className="text-sm font-semibold text-heading">{c.title}</p>
-                            <div className="space-y-1">
-                                <div className="flex justify-between text-xs text-text-secondary">
-                                    <span>Class Progress</span>
-                                    <span>{c.avg_progress}%</span>
+            {/* Courses Overview & Authored Challenge Test-Run Previews */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-xl border border-edge/10 bg-surface-900/60 p-5 space-y-3">
+                    <h2 className="text-sm font-bold text-heading flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-accent-blue" />
+                        <span>Catalog Courses Taught</span>
+                    </h2>
+                    <div className="space-y-3">
+                        {courses?.map((c) => (
+                            <div key={c.course_id} className="rounded-xl border border-edge/10 bg-surface-950/60 p-4 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-brand-primary/10 text-brand-primary">{c.category}</span>
+                                    <span className="text-xs text-text-muted">{c.student_count} Students</span>
                                 </div>
-                                <div className="h-1.5 w-full rounded-full bg-surface-800 overflow-hidden">
-                                    <div className="h-full rounded-full bg-brand-primary" style={{ width: `${c.avg_progress}%` }} />
+                                <p className="text-sm font-semibold text-heading">{c.title}</p>
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-xs text-text-secondary">
+                                        <span>Class Progress</span>
+                                        <span>{c.avg_progress}%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full rounded-full bg-surface-800 overflow-hidden">
+                                        <div className="h-full rounded-full bg-brand-primary" style={{ width: `${c.avg_progress}%` }} />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
+                </div>
+
+                {/* Faculty Challenge Sandbox Preview */}
+                <div className="rounded-xl border border-edge/10 bg-surface-900/60 p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-sm font-bold text-heading flex items-center gap-2">
+                            <Target className="h-4 w-4 text-violet-400" />
+                            <span>Authored Challenge Test-Runs</span>
+                        </h2>
+                        <button
+                            onClick={() => setShowCreateChallenge(true)}
+                            className="text-xs font-semibold text-violet-400 hover:text-violet-300 transition-colors"
+                        >
+                            + New Challenge
+                        </button>
+                    </div>
+                    <p className="text-xs text-text-secondary">Test-run your authored financial challenges using your practice portfolio before publishing to students.</p>
+                    
+                    <div className="space-y-2">
+                        {[
+                            { id: 1, title: 'Risk-Managed Intraday Challenge', target: 'PnL > ₹2,000 with Max DD < 2%', category: 'Trading & Risk' },
+                            { id: 2, title: 'Option Hedging Sandbox', target: 'Delta Neutral Strategy Execution', category: 'Options & Hedging' }
+                        ].map((ch) => (
+                            <div key={ch.id} className="p-3.5 rounded-xl border border-edge/10 bg-surface-950/60 flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-xs font-bold text-heading">{ch.title}</div>
+                                    <div className="text-[10px] text-text-muted font-mono">{ch.category} • {ch.target}</div>
+                                </div>
+                                <button
+                                    onClick={() => handleTestRunChallenge(ch)}
+                                    className="px-3 py-1.5 rounded-lg bg-violet-500/20 text-violet-300 border border-violet-500/30 text-xs font-bold hover:bg-violet-500/30 transition-all flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+                                >
+                                    <Activity className="w-3.5 h-3.5 text-violet-400" />
+                                    <span>Test-Run Preview</span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
 

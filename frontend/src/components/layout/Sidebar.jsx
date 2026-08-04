@@ -114,6 +114,7 @@ const NAV_SECTIONS = [
       { to: "/algo", icon: Bot, label: "Algo Trading" },
       { to: "/auto-alpha", icon: Shield, label: "Alpha Auto" },
       { to: "/mentor", icon: Lightbulb, label: "AI Mentor" },
+      { to: "/trader/learn", icon: Lightbulb, label: "Trader Learn Hub", roles: ["trader"] },
     ],
   },
   {

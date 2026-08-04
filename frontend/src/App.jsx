@@ -43,6 +43,7 @@ import AcademyAnalyticsPage from './academy/AcademyAnalyticsPage';
 import AcademyMentorPage from './academy/AcademyMentorPage';
 import AcademyFacultyDashboardPage from './academy/AcademyFacultyDashboardPage';
 import ChallengesPage from './academy/ChallengesPage';
+import TraderLearnPage from './pages/TraderLearnPage';
 
 
 export default function App() {
@@ -114,6 +115,7 @@ export default function App() {
                             <Route path="/auto-alpha" element={<ZeroLossPage />} />
                             <Route path="/settings" element={<SettingsPage />} />
                             <Route path="/bug-report" element={<BugReportPage />} />
+                            <Route path="/trader/learn" element={<TraderLearnPage />} />
                             <Route path="/academy" element={<AcademyDashboardPage />} />
                             <Route path="/academy/challenges" element={<ChallengesPage />} />
                             <Route path="/academy/analytics" element={<AcademyAnalyticsPage />} />
