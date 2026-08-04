@@ -29,6 +29,9 @@ from workers.access_expiry_worker import access_expiry_worker
 # ── Data Feed Session Manager (shared the internal simulation engine / simulator provider) ──
 from services.data_feed_session import data_feed_session_manager
 
+# ── Background Scheduler (bhavcopy download, DB cleanup, weekly VACUUM) ──
+from scheduler import start_scheduler, stop_scheduler
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -286,6 +289,12 @@ async def lifespan(app: FastAPI):
     # Start data feed session health check
     await data_feed_session_manager.start_health_check(interval=300.0)
 
+    # ── Start background scheduler (bhavcopy + DB cleanup + VACUUM) ──
+    try:
+        await start_scheduler()
+    except Exception as e:
+        logger.error(f"Scheduler failed to start: {e!r} — continuing without scheduled jobs")
+
     # Emit system startup event
     await event_bus.emit(
         Event(
@@ -340,6 +349,12 @@ async def lifespan(app: FastAPI):
         logger.info("Local the internal simulation engine data layer simulation manager stopped successfully")
     except Exception as e:
         logger.error(f"Failed to stop local data layer simulation manager: {e}")
+    # Stop scheduler before cancelling background tasks
+    try:
+        await stop_scheduler()
+    except Exception:
+        pass
+
     await event_bus.stop()
 
     # Close Redis

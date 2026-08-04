@@ -97,6 +97,18 @@ class Settings(BaseSettings):
     # Root admin email — has unrestricted access and can create/manage other admins.
     ROOT_ADMIN_EMAIL: str = "ashok.j2346@gmail.com"
 
+    # ── Scheduled Jobs ──────────────────────────────────────────────
+    # Master kill-switch. Set ENABLE_SCHEDULER=false in dev/staging if needed.
+    ENABLE_SCHEDULER: bool = True
+    # Rolling window for price_data: rows older than this many days are deleted
+    # by the nightly cleanup job. 200 days covers all chart timeframes (1h
+    # charts look back 190 days max). Increase if you want deeper history.
+    PRICE_DATA_RETENTION_DAYS: int = 200
+    # How long to keep superseded (NSE-corrected) rows before they are purged.
+    # 7 days gives an audit/debug window while keeping the table lean.
+    SUPERSEDED_RETENTION_DAYS: int = 7
+
+
     # ── SMS (OTP delivery for phone verification via Twilio) ─────────
     # Twilio sends from an international number — no Indian DLT registration needed.
     # Sign up at https://www.twilio.com/try-twilio (free trial credit included).
