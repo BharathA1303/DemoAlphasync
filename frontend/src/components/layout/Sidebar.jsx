@@ -127,13 +127,29 @@ const NAV_SECTIONS = [
       { to: "/academy/faculty", icon: Users2, label: "Teacher Dashboard", roles: ["teacher", "faculty", "institution_admin", "super_admin"] },
     ],
   },
-
+  {
+    label: "Administration",
+    items: [
+      { to: "/admin/panel", icon: Shield, label: "Admin Panel", roles: ["admin", "super_admin", "root", "manage", "view_only"] },
+    ],
+  },
 ];
 
-function visibleNavSections(academyRole) {
+function visibleNavSections(user) {
+  const platRole = (user?.role || "").toLowerCase();
+  const acadRole = (user?.academy_role || "").toLowerCase();
+  const adminLevel = (user?.admin_level || "").toLowerCase();
+
   return NAV_SECTIONS.map((section) => ({
     ...section,
-    items: section.items.filter((item) => !item.roles || item.roles.includes(academyRole)),
+    items: section.items.filter((item) => {
+      if (!item.roles) return true;
+      if (item.roles.includes(acadRole)) return true;
+      if (platRole === "admin" || adminLevel) {
+        if (item.roles.some((r) => ["admin", "super_admin", "root", "manage", "view_only"].includes(r))) return true;
+      }
+      return false;
+    }),
   })).filter((section) => section.items.length > 0);
 }
 
@@ -204,7 +220,7 @@ export default function Sidebar({ collapsed, onToggle }) {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const collapsedLogoSrc = theme === "dark" ? "/white-logo.png" : "/dark-logo.png";
-  const navSections = useMemo(() => visibleNavSections(user?.academy_role), [user?.academy_role]);
+  const navSections = useMemo(() => visibleNavSections(user), [user]);
 
   const closeMobileDrawer = () => {
     if (typeof window !== 'undefined' && window.innerWidth < 1024 && !collapsed) {

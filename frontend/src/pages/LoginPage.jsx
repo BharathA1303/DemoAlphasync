@@ -263,11 +263,6 @@ export default function LoginPage() {
           ═══════════════════════════════════════════════ */}
       <div className="lp-right">
 
-        <div className="lp-nav">
-          <a href="/login" className="lpn-active">Live Trading</a>
-          <a href="/admin" className="lpn-muted">Admin Panel</a>
-        </div>
-
         <div className="lp-form-area">
           <div className="lp-card">
 
