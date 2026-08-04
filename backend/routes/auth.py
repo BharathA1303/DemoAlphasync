@@ -700,18 +700,35 @@ async def switch_tenant(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid tenant ID format")
 
-    utr_res = await db.execute(
-        select(UserTenantRole, Tenant)
-        .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
-        .where(UserTenantRole.user_id == user.id, UserTenantRole.tenant_id == t_id)
-    )
-    row = utr_res.first()
+    try:
+        utr_res = await db.execute(
+            select(UserTenantRole, Tenant)
+            .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
+            .where(UserTenantRole.user_id == user.id, UserTenantRole.tenant_id == t_id)
+        )
+        row = utr_res.first()
+    except Exception:
+        row = None
 
     if not row:
         if str(user.tenant_id) == req.tenant_id:
-            t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-            target_tenant = t_res.scalar_one_or_none()
+            try:
+                t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+                target_tenant = t_res.scalar_one_or_none()
+            except Exception:
+                target_tenant = None
             active_role = getattr(user, "academy_role", "trader") or "trader"
+            if not target_tenant:
+                return {
+                    "message": "Workspace switched successfully",
+                    "active_tenant": {
+                        "tenant_id": req.tenant_id,
+                        "tenant_name": "Workspace",
+                        "tenant_type": "institution",
+                        "role": active_role,
+                    },
+                    "user": _user_profile(user),
+                }
         else:
             raise HTTPException(status_code=403, detail="You do not have access to this tenant workspace")
     else:
@@ -740,34 +757,61 @@ async def _build_user_profile(user: User, db: AsyncSession) -> dict:
     base = _user_profile(user)
     tenant_roles = []
     if db:
-        stmt = (
-            select(UserTenantRole, Tenant)
-            .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
-            .where(UserTenantRole.user_id == user.id)
-        )
-        res = await db.execute(stmt)
-        rows = res.all()
-        for utr, t in rows:
-            tenant_roles.append({
-                "tenant_id": str(t.id),
-                "tenant_name": t.name,
-                "tenant_type": getattr(t, "tenant_type", "institution"),
-                "role": utr.role.value if hasattr(utr.role, "value") else str(utr.role),
-            })
+        try:
+            stmt = (
+                select(UserTenantRole, Tenant)
+                .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
+                .where(UserTenantRole.user_id == user.id)
+            )
+            res = await db.execute(stmt)
+            rows = res.all()
+            for utr, t in rows:
+                tenant_roles.append({
+                    "tenant_id": str(t.id),
+                    "tenant_name": t.name,
+                    "tenant_type": getattr(t, "tenant_type", "institution"),
+                    "role": utr.role.value if hasattr(utr.role, "value") else str(utr.role),
+                })
+        except Exception as query_err:
+            logger.warning(f"Tenant join query error in _build_user_profile: {query_err}")
+            try:
+                utr_stmt = select(UserTenantRole).where(UserTenantRole.user_id == user.id)
+                utr_res = await db.execute(utr_stmt)
+                for utr in utr_res.scalars().all():
+                    tenant_roles.append({
+                        "tenant_id": str(utr.tenant_id),
+                        "tenant_name": "Workspace",
+                        "tenant_type": "institution",
+                        "role": utr.role.value if hasattr(utr.role, "value") else str(utr.role),
+                    })
+            except Exception:
+                pass
 
     if not tenant_roles and user.tenant_id and db:
-        t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-        t = t_res.scalar_one_or_none()
-        if t:
-            tenant_roles.append({
-                "tenant_id": str(t.id),
-                "tenant_name": t.name,
-                "tenant_type": getattr(t, "tenant_type", "institution"),
-                "role": getattr(user, "academy_role", "trader") or "trader",
-            })
+        try:
+            t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
+            t = t_res.scalar_one_or_none()
+            if t:
+                tenant_roles.append({
+                    "tenant_id": str(t.id),
+                    "tenant_name": t.name,
+                    "tenant_type": getattr(t, "tenant_type", "institution"),
+                    "role": getattr(user, "academy_role", "trader") or "trader",
+                })
+        except Exception as t_err:
+            logger.warning(f"Tenant direct query error in _build_user_profile: {t_err}")
+
+    if not tenant_roles and user.tenant_id:
+        tenant_roles.append({
+            "tenant_id": str(user.tenant_id),
+            "tenant_name": "Individual Workspace",
+            "tenant_type": "individual",
+            "role": getattr(user, "academy_role", "trader") or "trader",
+        })
 
     base["tenant_roles"] = tenant_roles
     return base
+
 
 
 @router.post("/logout")
