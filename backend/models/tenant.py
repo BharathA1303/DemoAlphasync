@@ -10,7 +10,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
-    Enum as SQLEnum,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -61,7 +60,7 @@ class UserTenantRole(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    role = Column(SQLEnum(TenantRole), nullable=False, default=TenantRole.STUDENT, index=True)
+    role = Column(String(50), nullable=False, default=lambda: TenantRole.STUDENT.name, server_default="STUDENT", index=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     tenant = relationship("Tenant", back_populates="tenant_roles")

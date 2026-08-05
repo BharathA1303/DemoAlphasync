@@ -502,7 +502,7 @@ async def register(
         user_tenant_role = UserTenantRole(
             tenant_id=ind_tenant.id,
             user_id=user.id,
-            role=tenant_role_enum,
+            role=tenant_role_enum.name,  # Store enum NAME as string e.g. "TRADER", "SUPER_ADMIN"
         )
         db.add(user_tenant_role)
 
