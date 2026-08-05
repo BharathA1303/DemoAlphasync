@@ -55,6 +55,7 @@ def do_run_migrations(connection):
         connection=connection,
         target_metadata=target_metadata,
         render_as_batch=True,
+        transaction_per_migration=True,
     )
     with context.begin_transaction():
         context.run_migrations()
