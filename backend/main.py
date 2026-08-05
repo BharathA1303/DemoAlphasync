@@ -44,8 +44,9 @@ async def lifespan(app: FastAPI):
 
     # Run Alembic migrations on startup to apply any pending schema changes
     try:
-        import subprocess
-        res = subprocess.run(["alembic", "upgrade", "head"], capture_output=True, text=True)
+        import sys
+        backend_dir = os.path.dirname(os.path.abspath(__file__))
+        res = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=backend_dir, capture_output=True, text=True)
         if res.returncode == 0:
             logger.info("Alembic database migrations applied successfully")
         else:

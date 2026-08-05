@@ -242,62 +242,91 @@ async def init_db():
         from models.bulk_file_index import BulkFileIndex  # noqa
         from models import academy as academy_models  # noqa — AlphaSync Academy (LMS) tables
 
-        # Create any missing tables (safe operation, never drops or alters existing tables)
-        await conn.run_sync(Base.metadata.create_all)
-
         # Self-healing direct DDL execution for schema column drift on live databases
         if is_postgres:
             # 1. Ensure tenants table exists with tenant_type column
-            await conn.execute(
-                text(
-                    """
-                CREATE TABLE IF NOT EXISTS tenants (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    name VARCHAR(150) NOT NULL,
-                    slug VARCHAR(100) UNIQUE NOT NULL,
-                    domain VARCHAR(255),
-                    tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution',
-                    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-                    max_users INTEGER DEFAULT 1000,
-                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                );
-            """
+            try:
+                await conn.execute(
+                    text(
+                        """
+                    CREATE TABLE IF NOT EXISTS tenants (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        name VARCHAR(150) NOT NULL,
+                        slug VARCHAR(100) UNIQUE NOT NULL,
+                        domain VARCHAR(255),
+                        tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution',
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        max_users INTEGER DEFAULT 1000,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+                """
+                    )
                 )
-            )
+            except Exception as ddl_err:
+                logger.warning(f"Self-healing DDL (create tenants table) notice: {ddl_err}")
 
             # 2. Add tenant_type column if tenants table existed prior without it
-            await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';"))
+            try:
+                await conn.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';"))
+            except Exception as ddl_err:
+                logger.warning(f"Self-healing DDL (add tenant_type column) notice: {ddl_err}")
 
             # 3. Ensure user_tenant_roles table exists
-            await conn.execute(
-                text(
-                    """
-                CREATE TABLE IF NOT EXISTS user_tenant_roles (
-                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-                    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    role VARCHAR(50) NOT NULL DEFAULT 'student',
-                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-                );
-            """
+            try:
+                await conn.execute(
+                    text(
+                        """
+                    CREATE TABLE IF NOT EXISTS user_tenant_roles (
+                        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                        tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        role VARCHAR(50) NOT NULL DEFAULT 'student',
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+                """
+                    )
                 )
-            )
+            except Exception as ddl_err:
+                logger.warning(f"Self-healing DDL (create user_tenant_roles table) notice: {ddl_err}")
 
             # 4. Ensure users admin & academy columns exist
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_role VARCHAR(20);"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_level VARCHAR(20);"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(30);"))
+            for col_sql in [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_role VARCHAR(20);",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_level VARCHAR(20);",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(30);",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id UUID;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMPTZ;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS access_duration_days INTEGER;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by UUID;",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_reason VARCHAR(500);",
+            ]:
+                try:
+                    await conn.execute(text(col_sql))
+                except Exception as ddl_err:
+                    logger.warning(f"Self-healing DDL ({col_sql}) notice: {ddl_err}")
         else:
             # SQLite safe column self-healing
-            try:
-                await conn.execute(text("ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution'"))
-            except Exception:
-                pass
-            try:
-                await conn.execute(text("ALTER TABLE users ADD COLUMN academy_role VARCHAR(20)"))
-            except Exception:
-                pass
+            for sql_stmt in [
+                "ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution'",
+                "ALTER TABLE users ADD COLUMN tenant_id VARCHAR(36)",
+                "ALTER TABLE users ADD COLUMN academy_role VARCHAR(20)",
+                "ALTER TABLE users ADD COLUMN admin_level VARCHAR(20)",
+                "ALTER TABLE users ADD COLUMN account_status VARCHAR(30)",
+                "ALTER TABLE users ADD COLUMN access_expires_at DATETIME",
+                "ALTER TABLE users ADD COLUMN access_duration_days INTEGER",
+                "ALTER TABLE users ADD COLUMN approved_at DATETIME",
+                "ALTER TABLE users ADD COLUMN approved_by VARCHAR(36)",
+                "ALTER TABLE users ADD COLUMN deactivation_reason VARCHAR(500)",
+            ]:
+                try:
+                    await conn.execute(text(sql_stmt))
+                except Exception:
+                    pass
+
+        # Create any missing tables (safe operation, never drops or alters existing tables)
+        await conn.run_sync(Base.metadata.create_all)
 
         logger.info("Database initialized and self-healed successfully via runtime DDL authority.")
 
