@@ -429,6 +429,7 @@ async def register(
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;"))
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by UUID;"))
             await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_reason VARCHAR(500);"))
+            await db.commit()
         elif bind.dialect.name == "sqlite":
             for col_sql in [
                 "ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution'",
