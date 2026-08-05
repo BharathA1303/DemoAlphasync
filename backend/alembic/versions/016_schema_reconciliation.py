@@ -6,6 +6,8 @@ Create Date: 2026-08-04 16:10:00.000000
 
 All column additions use DO $$ IF NOT EXISTS $$ blocks so they never throw
 an error when the column already exists, preventing transaction abort.
+RLS policies use single-quoted EXECUTE format() strings (no $fmt$ quoting)
+to avoid asyncpg mis-interpreting custom dollar-quote delimiters as bind params.
 """
 from alembic import op
 import sqlalchemy as sa
@@ -24,7 +26,7 @@ def upgrade() -> None:
         return  # SQLite handled by init_db self-heal
 
     # 1. Admin hierarchy & status columns on users table
-    # Use raw SQL IF NOT EXISTS to avoid transaction-aborting exceptions
+    # Uses IF NOT EXISTS inside DO block — never raises an exception, never aborts transaction
     conn.execute(sa.text("""
         DO $$
         BEGIN
@@ -100,7 +102,8 @@ def upgrade() -> None:
         END $$;
     """))
 
-    # 4. RLS policy idempotency — runs only if table exists, never aborts transaction
+    # 4. RLS policy idempotency — IMPORTANT: use single-quoted strings only inside format()
+    # DO NOT use $fmt$...$fmt$ custom dollar-quote delimiters — asyncpg misinterprets $fmt as a bind param
     conn.execute(sa.text("""
         DO $$
         DECLARE
@@ -114,24 +117,25 @@ def upgrade() -> None:
                 'holdings', 'transactions', 'watchlists', 'watchlist_items', 'futures_orders',
                 'futures_watchlists', 'futures_watchlist_items', 'algo_strategies'
             ];
+            policy_sql text;
         BEGIN
             FOREACH tbl IN ARRAY tables LOOP
                 IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = tbl) THEN
                     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
                     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY;', tbl);
                     EXECUTE format('DROP POLICY IF EXISTS tenant_isolation_policy ON %I;', tbl);
-                    EXECUTE format(
-                        $fmt$CREATE POLICY tenant_isolation_policy ON %I FOR ALL
-                            USING (
-                                tenant_id = NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid
-                                OR NULLIF(current_setting(''app.is_super_admin'', true), '''')::boolean IS TRUE
-                            )
-                            WITH CHECK (
-                                tenant_id = NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid
-                                OR NULLIF(current_setting(''app.is_super_admin'', true), '''')::boolean IS TRUE
-                            );$fmt$,
+                    policy_sql := format(
+                        'CREATE POLICY tenant_isolation_policy ON %I FOR ALL '
+                        'USING ('
+                        '    tenant_id = NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid '
+                        '    OR NULLIF(current_setting(''app.is_super_admin'', true), '''')::boolean IS TRUE'
+                        ') WITH CHECK ('
+                        '    tenant_id = NULLIF(current_setting(''app.current_tenant_id'', true), '''')::uuid '
+                        '    OR NULLIF(current_setting(''app.is_super_admin'', true), '''')::boolean IS TRUE'
+                        ');',
                         tbl
                     );
+                    EXECUTE policy_sql;
                 END IF;
             END LOOP;
         END $$;
