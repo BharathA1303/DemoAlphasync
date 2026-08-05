@@ -17,7 +17,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_, func, text
 from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime, timezone, timedelta
@@ -414,6 +414,35 @@ async def register(
 
     group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
     effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or is_first_user
+
+    # Guaranteed pre-insertion database column auto-repair for live PostgreSQL schema drift
+    try:
+        bind = await db.get_bind()
+        if bind.dialect.name == "postgresql":
+            await db.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id UUID;"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_role VARCHAR(20);"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_level VARCHAR(20);"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(30);"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMPTZ;"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_duration_days INTEGER;"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by UUID;"))
+            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_reason VARCHAR(500);"))
+        elif bind.dialect.name == "sqlite":
+            for col_sql in [
+                "ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution'",
+                "ALTER TABLE users ADD COLUMN tenant_id VARCHAR(36)",
+                "ALTER TABLE users ADD COLUMN academy_role VARCHAR(20)",
+                "ALTER TABLE users ADD COLUMN admin_level VARCHAR(20)",
+                "ALTER TABLE users ADD COLUMN account_status VARCHAR(30)",
+            ]:
+                try:
+                    await db.execute(text(col_sql))
+                except Exception:
+                    pass
+    except Exception as heal_err:
+        logger.warning(f"Registration auto schema-repair notice: {heal_err}")
 
     try:
         # Self-serve individual tenant provisioning

@@ -213,17 +213,20 @@ async def init_db():
 
         if is_postgres:
             # Ensure uuid-ossp extension is available for gen_random_uuid()
-            # Wrapped in DO block to handle race condition when multiple workers start simultaneously
-            await conn.execute(
-                text(
-                    """
-                DO $$ BEGIN
-                    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-                EXCEPTION WHEN duplicate_object THEN NULL;
-                END $$;
-            """
+            # Wrapped in try/except to guard against non-superuser permission restrictions
+            try:
+                await conn.execute(
+                    text(
+                        """
+                    DO $$ BEGIN
+                        CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+                    EXCEPTION WHEN OTHERS THEN NULL;
+                    END $$;
+                """
+                    )
                 )
-            )
+            except Exception as ext_err:
+                logger.warning(f"Extension uuid-ossp notice: {ext_err}")
         from models import tenant  # noqa — AlphaSync Campus Tenant & RBAC models
         from models import user, order, portfolio, watchlist, algo  # noqa
         from models import futures_order  # noqa  — futures paper trading tables
