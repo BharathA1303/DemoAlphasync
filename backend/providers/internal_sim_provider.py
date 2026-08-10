@@ -592,6 +592,16 @@ class InternalSimProvider(MarketProvider):
             ticks_by_symbol: Dict[str, list] = data.get("ticks", {}) or {}
             for sim_symbol, ticks in ticks_by_symbol.items():
                 canonical_symbol = _sim_symbol_to_canonical(sim_symbol)
+                # sim_symbol is "EXCHANGE:SEGMENT:SYMBOL" (e.g. "BSE:EQ:RELIANCE").
+                # Previously this was hardcoded to "NSE" below regardless of the
+                # tick's real exchange, so a BSE-origin tick (RELIANCE.BO,
+                # BAJFINANCE.BO — the only symbols seeded into both an NSE and a
+                # BSE default watchlist, see backend/routes/watchlist.py) was
+                # published with exchange="NSE". MarketPublisher._get_prev_close
+                # then scoped its prev-close lookup to the wrong exchange's EOD
+                # rows for that symbol, producing a mismatched/implausible
+                # reference price for the BSE variant on every tick.
+                tick_exchange = sim_symbol.split(":")[0].strip().upper() or "NSE"
                 for tick in ticks:
                     self._last_tick_at = time.time()
                     tick_time_str = data.get("virtual_time") or tick.get("t")
@@ -636,7 +646,7 @@ class InternalSimProvider(MarketProvider):
 
                     mapped_tick = {
                         "symbol": canonical_symbol,
-                        "exchange": "NSE",
+                        "exchange": tick_exchange,
                         "price": tick.get("p", 0.0),
                         "volume": tick.get("v", 0),
                         "bid_price": tick.get("bid"),
