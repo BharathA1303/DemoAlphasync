@@ -198,23 +198,6 @@ export default function TradingWorkspace() {
         [chartCandles],
     );
 
-    const liveChartCandles = useMemo(() => {
-        if (!chartCandles || chartCandles.length === 0) return [];
-        const livePrice = Number(displayQuote?.price || displayQuote?.ltp || displayQuote?.lp);
-        if (!Number.isFinite(livePrice) || livePrice <= 0) return chartCandles;
-
-        const copy = chartCandles.map((c) => ({ ...c }));
-        const lastIdx = copy.length - 1;
-        if (copy[lastIdx]) {
-            copy[lastIdx].close = livePrice;
-            const existingHigh = Number(copy[lastIdx].high);
-            copy[lastIdx].high = Number.isFinite(existingHigh) ? Math.max(existingHigh, livePrice) : livePrice;
-            const existingLow = Number(copy[lastIdx].low);
-            copy[lastIdx].low = Number.isFinite(existingLow) ? Math.min(existingLow, livePrice) : livePrice;
-        }
-        return copy;
-    }, [chartCandles, displayQuote?.price, displayQuote?.ltp]);
-
     const sessionTick = useSyncExternalStore(
         (cb) => marketSessionManager.subscribe(cb),
         () => marketSessionManager.getSnapshot().fetchedAt,
@@ -266,6 +249,23 @@ export default function TradingWorkspace() {
             _priceSource: resolved.priceSource,
         };
     }, [quote, selectedSymbol, normalizedCandles, liveQuotes, sessionTick]);
+
+    const liveChartCandles = useMemo(() => {
+        if (!chartCandles || chartCandles.length === 0) return [];
+        const livePrice = Number(displayQuote?.price || displayQuote?.ltp || displayQuote?.lp);
+        if (!Number.isFinite(livePrice) || livePrice <= 0) return chartCandles;
+
+        const copy = chartCandles.map((c) => ({ ...c }));
+        const lastIdx = copy.length - 1;
+        if (copy[lastIdx]) {
+            copy[lastIdx].close = livePrice;
+            const existingHigh = Number(copy[lastIdx].high);
+            copy[lastIdx].high = Number.isFinite(existingHigh) ? Math.max(existingHigh, livePrice) : livePrice;
+            const existingLow = Number(copy[lastIdx].low);
+            copy[lastIdx].low = Number.isFinite(existingLow) ? Math.min(existingLow, livePrice) : livePrice;
+        }
+        return copy;
+    }, [chartCandles, displayQuote?.price, displayQuote?.ltp]);
 
     const zlConfidence = useZeroLossStore((s) => s.confidence[selectedSymbol] || null);
 
