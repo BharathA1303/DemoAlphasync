@@ -121,6 +121,21 @@ async def subscribe_session_symbols(db, session_id: str, symbols: List[str]) -> 
             exchange, segment, symbol = parts[0].upper(), parts[1].upper(), parts[2].upper()
 
             eod_obj = eod_by_spec.get((exchange, segment, symbol))
+            # Mirror InternalSimProvider.get_historical_data's BSE→NSE EOD
+            # fallback (internal_sim_provider.py get_eligible_price_range
+            # call): symbols seeded into both an NSE and a BSE default
+            # watchlist (e.g. RELIANCE, BAJFINANCE) may have no BSE row for
+            # a given replay date. Without this fallback, live-tick
+            # generation for the BSE spec fell through to
+            # ensure_ticks_cached's un-seeded-symbol synthetic anchor
+            # (a different, symbol-only-seeded price path) while the
+            # historical candle chart for the same BSE spec was already
+            # showing real NSE-anchored prices — the two disagreed enough
+            # that the chart's live-tick guards silently rejected every
+            # live tick, freezing the chart. Using the same NSE row for
+            # both keeps live ticks and history on one consistent anchor.
+            if eod_obj is None and exchange == "BSE":
+                eod_obj = eod_by_spec.get(("NSE", segment, symbol))
             resolved_eod = await ensure_ticks_cached(
                 db=db,
                 exchange=exchange,
