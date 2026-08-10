@@ -2170,9 +2170,9 @@ export default function AdminPanelPage() {
                                         const expires = safeDateTimeParts(u.access_expires_at);
                                         const lastOnline = formatLastOnline(u.last_online_at, u.is_online, u.account_status);
                                         return (
-                                            <tr key={u.id} className="admin-row transition-colors" style={{ borderBottom: '1px solid rgba(148,163,184,0.12)', background: rootSelected ? 'rgba(245,158,11,0.08)' : 'transparent' }}>
-                                                <td className="px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs font-medium break-all" title={u.email}>
-                                                    <span className="inline-flex items-center gap-1.5 flex-wrap">
+                                            <tr key={u.id} className="admin-row transition-colors" style={{ borderBottom: '1px solid var(--border)', background: rootSelected ? 'rgba(245,158,11,0.08)' : 'transparent' }}>
+                                                <td className="px-2.5 sm:px-3 py-2.5 sm:py-3 text-xs font-medium break-all" title={u.email} style={{ color: 'var(--text-primary)' }}>
+                                                    <span className="inline-flex items-center gap-1.5 flex-wrap font-semibold" style={{ color: 'var(--text-primary)' }}>
                                                         {u.email}
                                                         {isAdminRow ? (
                                                             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"

@@ -219,5 +219,19 @@ const adminApi = {
     },
 };
 
+export function parseApiError(error, fallback = 'Request failed') {
+    if (typeof error === 'string') return error;
+    const detail = error?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+        return detail.map((d) => d.msg || d.message).filter(Boolean).join(', ') || fallback;
+    }
+    if (detail && typeof detail === 'object') {
+        return detail.msg || detail.message || JSON.stringify(detail);
+    }
+    return error?.response?.data?.message || error?.message || fallback;
+}
+
+export { adminApi };
 export default adminApi;
 

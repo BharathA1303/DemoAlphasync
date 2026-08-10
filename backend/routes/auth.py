@@ -415,7 +415,7 @@ async def register(
             matched_group = None
 
     group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
-    effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or is_first_user
+    effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or bool(matched_institution) or is_first_user
 
     inst_token = (req.institution_token or "").strip()
     matched_institution = None
@@ -429,6 +429,8 @@ async def register(
                 t_stmt = select(Tenant).where(Tenant.slug == inst_token, Tenant.is_active == True)
             t_res = await db.execute(t_stmt)
             matched_institution = t_res.scalar_one_or_none()
+            if matched_institution:
+                effective_auto_approval = True
         except Exception as inst_err:
             logger.warning(f"Failed resolving institution token {inst_token}: {inst_err}")
 
@@ -476,6 +478,8 @@ async def register(
         active_tenant_id = matched_institution.id if matched_institution else ind_tenant.id
         assigned_acad_role = "student" if matched_institution else ("super_admin" if is_first_user else "trader")
 
+        user_is_verified = admin_allowlisted or bool(matched_institution)
+
         user = User(
             email=email,
             username=username,
@@ -483,35 +487,27 @@ async def register(
             full_name=(req.full_name or username).strip(),
             auth_provider="local",
             virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
-            is_verified=admin_allowlisted,
+            is_verified=user_is_verified,
             role=("admin" if admin_allowlisted else "user"),
             academy_role=assigned_acad_role,
             tenant_id=active_tenant_id,
             admin_level=("root" if is_first_user else None),
             account_status=(
                 "active"
-                if (admin_allowlisted or effective_auto_approval)
+                if (user_is_verified or effective_auto_approval)
                 else "pending_approval"
             ),
-            is_active=(admin_allowlisted or effective_auto_approval),
+            is_active=(user_is_verified or effective_auto_approval),
             approved_at=(
                 datetime.now(timezone.utc)
-                if (effective_auto_approval and not (admin_allowlisted and not is_first_user))
+                if (effective_auto_approval or user_is_verified)
                 else None
             ),
-            access_duration_days=(
-                None
-                if (is_first_user or (admin_allowlisted and not effective_auto_approval))
-                else (_AUTO_APPROVAL_DURATION_DAYS if effective_auto_approval else None)
-            ),
+            access_duration_days=365 if matched_institution else (_AUTO_APPROVAL_DURATION_DAYS if effective_auto_approval else None),
             access_expires_at=(
-                None
-                if (is_first_user or (admin_allowlisted and not effective_auto_approval))
-                else (
-                    datetime.now(timezone.utc) + timedelta(days=_AUTO_APPROVAL_DURATION_DAYS)
-                    if effective_auto_approval
-                    else None
-                )
+                datetime.now(timezone.utc) + timedelta(days=365)
+                if matched_institution
+                else (datetime.now(timezone.utc) + timedelta(days=_AUTO_APPROVAL_DURATION_DAYS) if effective_auto_approval else None)
             ),
         )
         db.add(user)
@@ -641,6 +637,11 @@ async def login(
                         db.add(UserTenantRole(tenant_id=matched_inst.id, user_id=user.id, role="STUDENT"))
                     
                     user.tenant_id = matched_inst.id
+                    user.is_verified = True
+                    user.account_status = "active"
+                    user.is_active = True
+                    if not user.approved_at:
+                        user.approved_at = datetime.now(timezone.utc)
                     if not existing_utr:
                         user.academy_role = "student"
             except Exception as inst_err:
