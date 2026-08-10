@@ -1681,4 +1681,335 @@ async def get_trader_roster(
     }
 
 
+# ── Institution Management Schemas ──────────────────────────────────────────
+
+class CreateInstitutionRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=150)
+    domain: Optional[str] = Field(None, max_length=255)
+    max_users: Optional[int] = Field(1000, ge=1, le=100000)
+
+
+class UpdateInstitutionRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=150)
+    domain: Optional[str] = Field(None, max_length=255)
+    max_users: Optional[int] = Field(None, ge=1, le=100000)
+    is_active: Optional[bool] = None
+
+
+class SetInstitutionMemberRoleRequest(BaseModel):
+    role: str = Field(..., description="Role within institution: student, faculty, institution_admin, trader")
+
+
+# ── Institution Management Endpoints ────────────────────────────────────────
+
+@router.get("/institutions")
+async def list_institutions(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_manage_level),
+):
+    """List all institution tenants with statistics and member counts."""
+    from sqlalchemy import select, func
+    from models.tenant import Tenant, UserTenantRole
+    from models.user import User
+    from database.connection import set_super_admin_context
+
+    await set_super_admin_context(db, True)
+
+    stmt = select(Tenant).where(Tenant.tenant_type == "institution").order_by(Tenant.created_at.desc())
+    res = await db.execute(stmt)
+    tenants = res.scalars().all()
+
+    origin = request.headers.get("origin")
+    base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
+
+    result_list = []
+    for t in tenants:
+        count_stmt = select(func.count(User.id)).where(User.tenant_id == t.id)
+        count_res = await db.execute(count_stmt)
+        total_members = count_res.scalar() or 0
+
+        role_stmt = (
+            select(UserTenantRole.role, func.count(UserTenantRole.id))
+            .where(UserTenantRole.tenant_id == t.id)
+            .group_by(UserTenantRole.role)
+        )
+        role_res = await db.execute(role_stmt)
+        role_counts = {str(r_name).lower(): r_cnt for r_name, r_cnt in role_res.all()}
+
+        invite_url = f"{base_url}/login?inst={t.slug}"
+
+        result_list.append({
+            "id": str(t.id),
+            "name": t.name,
+            "slug": t.slug,
+            "domain": t.domain,
+            "tenant_type": getattr(t, "tenant_type", "institution"),
+            "is_active": t.is_active,
+            "max_users": t.max_users,
+            "member_count": total_members,
+            "role_counts": role_counts,
+            "invite_url": invite_url,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+        })
+
+    return {"success": True, "institutions": result_list}
+
+
+@router.post("/institutions")
+async def create_institution(
+    req: CreateInstitutionRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_root_admin),
+):
+    """Create a new institution tenant and return invite URL."""
+    import secrets
+    import re
+    from models.tenant import Tenant
+    from database.connection import set_super_admin_context
+
+    await set_super_admin_context(db, True)
+
+    name = req.name.strip()
+    base_slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+    if not base_slug:
+        base_slug = "inst"
+    unique_slug = f"{base_slug}-{secrets.token_hex(4)}"
+
+    tenant = Tenant(
+        name=name,
+        slug=unique_slug,
+        domain=req.domain.strip() if req.domain else None,
+        tenant_type="institution",
+        is_active=True,
+        max_users=req.max_users or 1000,
+    )
+    db.add(tenant)
+    await db.commit()
+    await db.refresh(tenant)
+
+    origin = request.headers.get("origin")
+    base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
+    invite_url = f"{base_url}/login?inst={tenant.slug}"
+
+    return {
+        "success": True,
+        "institution": {
+            "id": str(tenant.id),
+            "name": tenant.name,
+            "slug": tenant.slug,
+            "domain": tenant.domain,
+            "tenant_type": tenant.tenant_type,
+            "is_active": tenant.is_active,
+            "max_users": tenant.max_users,
+            "member_count": 0,
+            "invite_url": invite_url,
+            "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+        }
+    }
+
+
+@router.patch("/institutions/{tenant_id}")
+async def update_institution(
+    tenant_id: str,
+    req: UpdateInstitutionRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_root_admin),
+):
+    """Update institution details or active status."""
+    from models.tenant import Tenant
+    from database.connection import set_super_admin_context
+    from sqlalchemy import select
+
+    await set_super_admin_context(db, True)
+    t_uuid = _normalize_user_id(tenant_id)
+
+    res = await db.execute(select(Tenant).where(Tenant.id == t_uuid))
+    tenant = res.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Institution not found")
+
+    if req.name is not None:
+        tenant.name = req.name.strip()
+    if req.domain is not None:
+        tenant.domain = req.domain.strip() if req.domain else None
+    if req.max_users is not None:
+        tenant.max_users = req.max_users
+    if req.is_active is not None:
+        tenant.is_active = req.is_active
+
+    await db.commit()
+    await db.refresh(tenant)
+
+    return {
+        "success": True,
+        "institution": {
+            "id": str(tenant.id),
+            "name": tenant.name,
+            "slug": tenant.slug,
+            "domain": tenant.domain,
+            "tenant_type": tenant.tenant_type,
+            "is_active": tenant.is_active,
+            "max_users": tenant.max_users,
+        }
+    }
+
+
+@router.delete("/institutions/{tenant_id}")
+async def delete_institution(
+    tenant_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_root_admin),
+):
+    """Delete an institution tenant."""
+    from models.tenant import Tenant
+    from database.connection import set_super_admin_context
+    from sqlalchemy import select
+
+    await set_super_admin_context(db, True)
+    t_uuid = _normalize_user_id(tenant_id)
+
+    res = await db.execute(select(Tenant).where(Tenant.id == t_uuid))
+    tenant = res.scalar_one_or_none()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Institution not found")
+
+    await db.delete(tenant)
+    await db.commit()
+
+    return {"success": True, "message": "Institution deleted successfully"}
+
+
+@router.get("/institutions/{tenant_id}/members")
+async def get_institution_members(
+    tenant_id: str,
+    query: Optional[str] = None,
+    role: Optional[str] = None,
+    page: int = 1,
+    per_page: int = 25,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_manage_level),
+):
+    """List members belonging to a specific institution."""
+    from sqlalchemy import select, func, or_
+    from models.user import User
+    from models.tenant import UserTenantRole
+    from database.connection import set_super_admin_context
+
+    await set_super_admin_context(db, True)
+    t_uuid = _normalize_user_id(tenant_id)
+
+    stmt = select(User, UserTenantRole).outerjoin(
+        UserTenantRole, (UserTenantRole.user_id == User.id) & (UserTenantRole.tenant_id == t_uuid)
+    ).where(
+        or_(User.tenant_id == t_uuid, UserTenantRole.tenant_id == t_uuid)
+    )
+
+    if query and query.strip():
+        q = f"%{query.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.email.ilike(q),
+                User.username.ilike(q),
+                User.full_name.ilike(q),
+            )
+        )
+
+    if role and role.strip() and role.lower() != "all":
+        target_role = role.strip().lower()
+        stmt = stmt.where(
+            or_(
+                UserTenantRole.role.ilike(target_role),
+                User.academy_role.ilike(target_role)
+            )
+        )
+
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_res = await db.execute(count_stmt)
+    total = total_res.scalar() or 0
+
+    stmt = stmt.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    res = await db.execute(stmt)
+    rows = res.all()
+
+    members = []
+    for user_obj, utr_obj in rows:
+        member_role = (utr_obj.role if utr_obj else getattr(user_obj, "academy_role", "student")) or "student"
+        members.append({
+            "id": str(user_obj.id),
+            "email": user_obj.email,
+            "username": user_obj.username,
+            "full_name": user_obj.full_name,
+            "role": str(member_role).lower(),
+            "account_status": getattr(user_obj, "account_status", "active"),
+            "created_at": user_obj.created_at.isoformat() if user_obj.created_at else None,
+        })
+
+    return {
+        "success": True,
+        "members": members,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+@router.post("/institutions/{tenant_id}/members/{user_id}/role")
+async def set_institution_member_role(
+    tenant_id: str,
+    user_id: str,
+    req: SetInstitutionMemberRoleRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_manage_level),
+):
+    """Change member's role within an institution."""
+    from models.user import User
+    from models.tenant import UserTenantRole
+    from database.connection import set_super_admin_context
+    from sqlalchemy import select
+
+    await set_super_admin_context(db, True)
+    t_uuid = _normalize_user_id(tenant_id)
+    u_uuid = _normalize_user_id(user_id)
+
+    new_role = req.role.strip().lower()
+    valid_roles = {"student", "faculty", "institution_admin", "super_admin", "trader"}
+    if new_role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}")
+
+    res_user = await db.execute(select(User).where(User.id == u_uuid))
+    target_user = res_user.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    res_utr = await db.execute(
+        select(UserTenantRole).where(UserTenantRole.tenant_id == t_uuid, UserTenantRole.user_id == u_uuid)
+    )
+    utr = res_utr.scalar_one_or_none()
+    if utr:
+        utr.role = new_role
+    else:
+        utr = UserTenantRole(tenant_id=t_uuid, user_id=u_uuid, role=new_role)
+        db.add(utr)
+
+    if target_user.tenant_id == t_uuid:
+        target_user.academy_role = new_role
+
+    ip = request.client.host if request.client else None
+    await admin_service._write_audit(
+        db, admin, "set_institution_member_role",
+        target_user_id=target_user.id,
+        details={"tenant_id": str(t_uuid), "new_role": new_role},
+        ip=ip
+    )
+
+    await db.commit()
+
+    return {"success": True, "message": f"User role updated to {new_role}", "role": new_role}
+
+
+
 

@@ -144,6 +144,31 @@ const adminApi = {
         return api.get('/admin/exports/users/applied', { params, responseType: 'blob' });
     },
 
+    // ── Institution Management ─────────────────────────────────────
+    listInstitutions() {
+        return api.get('/admin/institutions');
+    },
+
+    createInstitution(data) {
+        return api.post('/admin/institutions', data);
+    },
+
+    updateInstitution(tenantId, data) {
+        return api.patch(`/admin/institutions/${safeUserId(tenantId)}`, data);
+    },
+
+    deleteInstitution(tenantId) {
+        return api.delete(`/admin/institutions/${safeUserId(tenantId)}`);
+    },
+
+    getInstitutionMembers(tenantId, params = {}) {
+        return api.get(`/admin/institutions/${safeUserId(tenantId)}/members`, { params });
+    },
+
+    updateInstitutionMemberRole(tenantId, userId, role) {
+        return api.post(`/admin/institutions/${safeUserId(tenantId)}/members/${safeUserId(userId)}/role`, { role });
+    },
+
     // ── Admin Management (root only) ────────────────────────────────
     listAdmins() {
         return api.get('/admin/admins');

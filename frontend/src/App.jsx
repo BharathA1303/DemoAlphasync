@@ -37,6 +37,7 @@ import AdminAuditLogPage from './pages/AdminAuditLogPage';
 import BugReportPage from './pages/BugReportPage';
 import AdminBugReportsPage from './pages/AdminBugReportsPage';
 import DataFeedPanel from './pages/DataFeedPanel';
+import InstitutionsManagementPage from './pages/InstitutionsManagementPage';
 import ChartEmbed from './pages/ChartEmbed';
 import AcademyDashboardPage from './academy/AcademyDashboardPage';
 import AcademyAnalyticsPage from './academy/AcademyAnalyticsPage';
@@ -83,6 +84,9 @@ export default function App() {
                         } />
                         <Route path="/admin/audit-log" element={
                             <AdminRoute><AdminAuditLogPage /></AdminRoute>
+                        } />
+                        <Route path="/admin/institutions" element={
+                            <AdminRoute><InstitutionsManagementPage /></AdminRoute>
                         } />
 
                         <Route path="/account-status" element={

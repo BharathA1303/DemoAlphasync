@@ -6,6 +6,7 @@ import {
 } from '../utils/authSessionCookie';
 
 const GROUP_TOKEN_STORAGE_KEY = 'alphasync_group_token';
+const INST_TOKEN_STORAGE_KEY = 'alphasync_inst_token';
 
 function getGroupTokenForSync() {
     try {
@@ -26,10 +27,30 @@ function getGroupTokenForSync() {
     }
 }
 
+function getInstitutionTokenForSync() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const fromUrl = (params.get('inst') || '').trim();
+        if (fromUrl) {
+            localStorage.setItem(INST_TOKEN_STORAGE_KEY, fromUrl);
+            return fromUrl;
+        }
+    } catch {
+    }
+
+    try {
+        const stored = (localStorage.getItem(INST_TOKEN_STORAGE_KEY) || '').trim();
+        return stored || '';
+    } catch {
+        return '';
+    }
+}
+
 function persistSession(token, user) {
     localStorage.setItem('alphasync_token', token);
     localStorage.setItem('alphasync_user', JSON.stringify(user));
     localStorage.removeItem(GROUP_TOKEN_STORAGE_KEY);
+    localStorage.removeItem(INST_TOKEN_STORAGE_KEY);
     setUserSessionCookie();
 }
 
@@ -96,9 +117,11 @@ export const useAuthStore = create((set, get) => ({
     // ─── Actions ──────────────────────────────────────────────────────────────
 
     login: async (usernameOrEmail, password) => {
+        const instToken = getInstitutionTokenForSync();
         const res = await api.post('/auth/login', {
             username: usernameOrEmail,
             password,
+            ...(instToken ? { institution_token: instToken } : {}),
         });
         persistSession(res.data.token, res.data.user);
         set({ user: res.data.user, loading: false, initializing: false });
@@ -107,12 +130,14 @@ export const useAuthStore = create((set, get) => ({
 
     register: async ({ username, email, password, full_name }) => {
         const groupToken = getGroupTokenForSync();
+        const instToken = getInstitutionTokenForSync();
         const res = await api.post('/auth/register', {
             username,
             email,
             password,
             full_name,
             ...(groupToken ? { group_token: groupToken } : {}),
+            ...(instToken ? { institution_token: instToken } : {}),
         });
         persistSession(res.data.token, res.data.user);
         set({ user: res.data.user, loading: false, initializing: false });

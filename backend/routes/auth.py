@@ -180,6 +180,7 @@ class RegisterRequest(BaseModel):
     password: str
     full_name: Optional[str] = None
     group_token: Optional[str] = None
+    institution_token: Optional[str] = None
 
     @field_validator("username")
     @classmethod
@@ -204,6 +205,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     username: str  # accepts username OR email
     password: str
+    institution_token: Optional[str] = None
 
 
 class PhoneSubmitRequest(BaseModel):
@@ -415,6 +417,21 @@ async def register(
     group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
     effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or is_first_user
 
+    inst_token = (req.institution_token or "").strip()
+    matched_institution = None
+    if inst_token:
+        try:
+            import uuid as uuid_module
+            try:
+                inst_uuid = uuid_module.UUID(inst_token)
+                t_stmt = select(Tenant).where(Tenant.id == inst_uuid, Tenant.is_active == True)
+            except ValueError:
+                t_stmt = select(Tenant).where(Tenant.slug == inst_token, Tenant.is_active == True)
+            t_res = await db.execute(t_stmt)
+            matched_institution = t_res.scalar_one_or_none()
+        except Exception as inst_err:
+            logger.warning(f"Failed resolving institution token {inst_token}: {inst_err}")
+
     # Guaranteed pre-insertion database column auto-repair for live PostgreSQL schema drift
     try:
         bind = await db.get_bind()
@@ -456,6 +473,9 @@ async def register(
         db.add(ind_tenant)
         await db.flush()
 
+        active_tenant_id = matched_institution.id if matched_institution else ind_tenant.id
+        assigned_acad_role = "student" if matched_institution else ("super_admin" if is_first_user else "trader")
+
         user = User(
             email=email,
             username=username,
@@ -465,8 +485,8 @@ async def register(
             virtual_capital=settings.DEFAULT_VIRTUAL_CAPITAL,
             is_verified=admin_allowlisted,
             role=("admin" if admin_allowlisted else "user"),
-            academy_role=("super_admin" if is_first_user else "trader"),
-            tenant_id=ind_tenant.id,
+            academy_role=assigned_acad_role,
+            tenant_id=active_tenant_id,
             admin_level=("root" if is_first_user else None),
             account_status=(
                 "active"
@@ -498,13 +518,17 @@ async def register(
         await db.flush()
 
         # Tenant-scoped RBAC mapping
-        tenant_role_enum = TenantRole.SUPER_ADMIN if is_first_user else TenantRole.TRADER
-        user_tenant_role = UserTenantRole(
-            tenant_id=ind_tenant.id,
-            user_id=user.id,
-            role=tenant_role_enum.name,  # Store enum NAME as string e.g. "TRADER", "SUPER_ADMIN"
-        )
-        db.add(user_tenant_role)
+        if matched_institution:
+            db.add(UserTenantRole(tenant_id=matched_institution.id, user_id=user.id, role="STUDENT"))
+            db.add(UserTenantRole(tenant_id=ind_tenant.id, user_id=user.id, role="TRADER"))
+        else:
+            tenant_role_enum = TenantRole.SUPER_ADMIN if is_first_user else TenantRole.TRADER
+            user_tenant_role = UserTenantRole(
+                tenant_id=ind_tenant.id,
+                user_id=user.id,
+                role=tenant_role_enum.name,  # Store enum NAME as string e.g. "TRADER", "SUPER_ADMIN"
+            )
+            db.add(user_tenant_role)
 
         portfolio = Portfolio(
             user_id=user.id,
@@ -594,6 +618,33 @@ async def login(
 
         if _is_admin_allowlisted(user.email):
             _apply_admin_allowlist_promotion(user)
+
+        inst_token = (req.institution_token or "").strip()
+        if inst_token:
+            try:
+                import uuid as uuid_module
+                try:
+                    inst_uuid = uuid_module.UUID(inst_token)
+                    t_stmt = select(Tenant).where(Tenant.id == inst_uuid, Tenant.is_active == True)
+                except ValueError:
+                    t_stmt = select(Tenant).where(Tenant.slug == inst_token, Tenant.is_active == True)
+                t_res = await db.execute(t_stmt)
+                matched_inst = t_res.scalar_one_or_none()
+                if matched_inst:
+                    utr_stmt = select(UserTenantRole).where(
+                        UserTenantRole.tenant_id == matched_inst.id,
+                        UserTenantRole.user_id == user.id
+                    )
+                    utr_res = await db.execute(utr_stmt)
+                    existing_utr = utr_res.scalar_one_or_none()
+                    if not existing_utr:
+                        db.add(UserTenantRole(tenant_id=matched_inst.id, user_id=user.id, role="STUDENT"))
+                    
+                    user.tenant_id = matched_inst.id
+                    if not existing_utr:
+                        user.academy_role = "student"
+            except Exception as inst_err:
+                logger.warning(f"Failed linking institution on login: {inst_err}")
 
         user.updated_at = datetime.now(timezone.utc)
 

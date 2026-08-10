@@ -29,6 +29,7 @@ import {
   Brain,
   MessagesSquare,
   Users2,
+  Building2,
 } from "lucide-react";
 
 /* ─── Avatar helpers ─────────────────────────────────────── */
@@ -133,6 +134,7 @@ const NAV_SECTIONS = [
     label: "Administration",
     items: [
       { to: "/admin/panel", icon: Shield, label: "Admin Panel", roles: ["admin", "super_admin", "root", "manage", "view_only"] },
+      { to: "/admin/institutions", icon: Building2, label: "Institutions", roles: ["admin", "super_admin", "root", "manage"] },
     ],
   },
 ];
