@@ -406,17 +406,6 @@ async def register(
     admin_allowlisted = _is_admin_allowlisted(email) or is_first_user
     auto_approval_enabled = admin_runtime_flags.is_auto_approval_enabled()
 
-    group_token = (req.group_token or "").strip()
-    matched_group = None
-    if group_token:
-        try:
-            matched_group = await admin_group_service.resolve_group_by_token(group_token)
-        except Exception:
-            matched_group = None
-
-    group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
-    effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or bool(matched_institution) or is_first_user
-
     inst_token = (req.institution_token or "").strip()
     matched_institution = None
     if inst_token:
@@ -429,40 +418,19 @@ async def register(
                 t_stmt = select(Tenant).where(Tenant.slug == inst_token, Tenant.is_active == True)
             t_res = await db.execute(t_stmt)
             matched_institution = t_res.scalar_one_or_none()
-            if matched_institution:
-                effective_auto_approval = True
         except Exception as inst_err:
             logger.warning(f"Failed resolving institution token {inst_token}: {inst_err}")
 
-    # Guaranteed pre-insertion database column auto-repair for live PostgreSQL schema drift
-    try:
-        bind = await db.get_bind()
-        if bind.dialect.name == "postgresql":
-            await db.execute(text("ALTER TABLE tenants ADD COLUMN IF NOT EXISTS tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution';"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id UUID;"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS academy_role VARCHAR(20);"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_level VARCHAR(20);"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(30);"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_expires_at TIMESTAMPTZ;"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS access_duration_days INTEGER;"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by UUID;"))
-            await db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivation_reason VARCHAR(500);"))
-            await db.commit()
-        elif bind.dialect.name == "sqlite":
-            for col_sql in [
-                "ALTER TABLE tenants ADD COLUMN tenant_type VARCHAR(20) NOT NULL DEFAULT 'institution'",
-                "ALTER TABLE users ADD COLUMN tenant_id VARCHAR(36)",
-                "ALTER TABLE users ADD COLUMN academy_role VARCHAR(20)",
-                "ALTER TABLE users ADD COLUMN admin_level VARCHAR(20)",
-                "ALTER TABLE users ADD COLUMN account_status VARCHAR(30)",
-            ]:
-                try:
-                    await db.execute(text(col_sql))
-                except Exception:
-                    pass
-    except Exception as heal_err:
-        logger.warning(f"Registration auto schema-repair notice: {heal_err}")
+    group_token = (req.group_token or "").strip()
+    matched_group = None
+    if group_token:
+        try:
+            matched_group = await admin_group_service.resolve_group_by_token(group_token)
+        except Exception:
+            matched_group = None
+
+    group_auto_approval_enabled = bool(matched_group and matched_group.get("auto_approval"))
+    effective_auto_approval = auto_approval_enabled or group_auto_approval_enabled or bool(matched_institution) or is_first_user
 
     try:
         # Self-serve individual tenant provisioning
