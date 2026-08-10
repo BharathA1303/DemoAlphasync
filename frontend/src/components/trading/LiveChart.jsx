@@ -1421,8 +1421,21 @@ const LiveChart = memo(function LiveChart({
             // apply the guard to non-rollover ticks, where a huge forward jump
             // really does indicate a stale/bad source rather than a genuine
             // session boundary.
+            //
+            // A gap this large without a rollover flag means this symbol's
+            // loaded candle history and its live tick stream have drifted onto
+            // different simulated session dates (e.g. a per-symbol replay-date
+            // resolution mismatch, or a stale cached candle set). Simply
+            // dropping the tick would wedge the symbol permanently, since
+            // candlesRef never advances and every future tick keeps failing
+            // the same check. Instead, treat it like a rollover: open a fresh
+            // candle anchored at the tick's own bucket/price so the symbol
+            // self-heals on the next live tick rather than freezing forever.
             const maxForwardGap = Math.max(pending.intervalSeconds * 12, 30 * 60);
-            if (!pending.sessionRollover && (effectiveBucketTime - lastCandle.time) > maxForwardGap) return;
+            const isUntaggedForwardGap = !pending.sessionRollover && (effectiveBucketTime - lastCandle.time) > maxForwardGap;
+            if (isUntaggedForwardGap) {
+                pending.sessionRollover = true;
+            }
 
             // Guard against cross-symbol/stale-source jumps creating extreme spikes.
             const baseClose = toFiniteNumber(lastCandle.close);
