@@ -893,13 +893,15 @@ function AdminManagementModal({ admins, adminsLoading, onClose, onPromote, onUpd
 /* ── Data Feed Configuration Modal (Zebu OAuth Only) ────────────────────────── */
 function DataFeedModal({ onClose }) {
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
-            style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
-            <div className="w-full max-w-6xl rounded-2xl animate-slide-up bg-slate-900 border border-slate-800 overflow-hidden max-h-[92vh] overflow-y-auto p-4 relative shadow-2xl"
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto bg-black/60 backdrop-blur-sm"
+            onClick={onClose}>
+            <div className="w-full max-w-6xl rounded-2xl animate-slide-up overflow-hidden max-h-[92vh] overflow-y-auto p-4 relative shadow-2xl"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}
                 onClick={(e) => e.stopPropagation()}>
                 <button 
                     onClick={onClose}
-                    className="absolute top-4 right-4 z-10 p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:white transition"
+                    className="absolute top-4 right-4 z-10 p-2 rounded-xl btn-secondary transition"
+                    title="Close"
                 >
                     <X size={18} />
                 </button>
