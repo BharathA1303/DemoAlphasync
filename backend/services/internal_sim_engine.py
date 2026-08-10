@@ -15,13 +15,31 @@ sense for genuinely external API clients (see data_layer/api/routes_admin.py
 "API key" management, still used for that purpose).
 """
 
+import asyncio
 import json
 import logging
 import uuid
+from collections import defaultdict
 from datetime import date
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# subscribe_session_symbols does read-modify-write on a session's Redis-backed
+# state (get_session_state -> mutate in memory -> save_session_state) with no
+# locking. Concurrent calls for the same session (e.g. several watchlist tabs
+# or the terminal + market-worker's auto-subscribe firing close together) race:
+# both read the same starting "subscriptions" list, each adds its own symbols
+# in memory, and whichever call's save_session_state writes last silently
+# clobbers the other call's additions — no error, no log, the symbols just
+# never appear in state["subscriptions"] and so never receive live ticks. This
+# was confirmed live: RELIANCE/BAJFINANCE (the only two symbols seeded into
+# both an NSE and a BSE default watchlist, so they're subscribed via two
+# separate concurrent calls almost every time) were completely absent from an
+# active session's subscriptions despite logs showing successful subscribe
+# calls that included them. A per-session lock serializes the whole
+# read-modify-write so no update is ever lost.
+_session_subscribe_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 def _resolve_wildcard_specs(spec_upper: str, eod_by_spec: Dict[tuple, Any]) -> List[str]:
@@ -74,7 +92,15 @@ async def subscribe_session_symbols(db, session_id: str, symbols: List[str]) -> 
     """Subscribes a session to symbols (supports 'ALL' / 'EXCHANGE:SEGMENT:ALL'
     wildcards), pre-generating and caching their simulated tick paths.
     Direct equivalent of POST /v1/sessions/{id}/subscribe (minus the
-    scope/allowlist checks, which only apply to external API keys)."""
+    scope/allowlist checks, which only apply to external API keys).
+
+    Serialized per-session (see _session_subscribe_locks above) so concurrent
+    callers' additions to state["subscriptions"] never clobber each other."""
+    async with _session_subscribe_locks[session_id]:
+        return await _subscribe_session_symbols_locked(db, session_id, symbols)
+
+
+async def _subscribe_session_symbols_locked(db, session_id: str, symbols: List[str]) -> Dict[str, Any]:
     from sqlalchemy import select
     from data_layer.db.models import PriceData
     from data_layer.core.delay_gate import get_delay_cutoff
