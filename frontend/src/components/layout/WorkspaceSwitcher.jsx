@@ -36,8 +36,11 @@ export default function WorkspaceSwitcher() {
         setLoading(true);
         try {
             await switchTenant(tId);
-            toast.success(`Switched to ${name} (${role.toUpperCase()})`);
+            toast.success(`Switched to ${name} (${(role || 'MEMBER').toUpperCase()})`);
             setOpen(false);
+            setTimeout(() => {
+                window.location.reload();
+            }, 300);
         } catch (err) {
             toast.error(err?.response?.data?.detail || 'Failed to switch workspace');
         } finally {
