@@ -61,7 +61,7 @@ export function isMarketSessionOpen() {
 }
 
 export function shouldUseRealtimePrices() {
-  return _snapshot.isOpen || hasRecentLiveTick();
+  return true;
 }
 
 /** True when session is not live trading (holiday, weekend, closed, etc.). */

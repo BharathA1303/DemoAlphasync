@@ -10,7 +10,7 @@ export default function DataFeedPanel() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState(null);
 
-  // Zebu OAuth Form states (matching Image 1 layout)
+  // Zebu OAuth Form states
   const [broker, setBroker] = useState('zebu');
   const [userId, setUserId] = useState('');
   const [clientId, setClientId] = useState('');
@@ -118,20 +118,20 @@ export default function DataFeedPanel() {
   const connStatus = status?.connection_status || 'disconnected';
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6 text-slate-100">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6" style={{ color: 'var(--text-primary)' }}>
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2 text-white">
-            <Activity className="w-7 h-7 text-indigo-400" />
+          <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Activity className="w-7 h-7 text-indigo-500" />
             Admin-Controlled Zebu Data Feed
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
             OAuth broker connection, raw tick storage (Postgres + CSV), and time-delayed replay.
           </p>
         </div>
         <button
           onClick={fetchStatus}
-          className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition"
+          className="btn-secondary flex items-center gap-2 text-sm px-3.5 py-2"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh Status
@@ -141,19 +141,19 @@ export default function DataFeedPanel() {
       {/* Grid: 2 Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Section 1: Zebu OAuth Login Panel (Matches Image 1 layout) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
-              <Key className="w-5 h-5 text-indigo-400" />
+        {/* Section 1: Zebu OAuth Login Panel */}
+        <div className="rounded-2xl p-6 space-y-5 shadow-sm" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+            <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Key className="w-5 h-5 text-indigo-500" />
               Zebu OAuth Connection
             </h2>
             <span className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${
               connStatus === 'connected'
-                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                 : connStatus === 'error'
-                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
             }`}>
               {connStatus.toUpperCase()}
             </span>
@@ -162,43 +162,43 @@ export default function DataFeedPanel() {
           <form onSubmit={handleSaveAndConnect} className="space-y-4">
             {/* Broker Dropdown */}
             <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1">BROKER</label>
+              <label className="block text-xs font-medium uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>BROKER</label>
               <select
                 value={broker}
                 onChange={(e) => setBroker(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                className="input-field w-full text-sm"
               >
                 <option value="zebu">Zebu</option>
               </select>
             </div>
 
             {/* Info Notice */}
-            <div className="flex items-center gap-2 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-xs text-blue-300">
-              <Info className="w-4 h-4 shrink-0 text-blue-400" />
+            <div className="flex items-center gap-2 p-3 rounded-xl text-xs" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', color: 'var(--text-secondary)' }}>
+              <Info className="w-4 h-4 shrink-0 text-blue-500" />
               <span>Enter your <strong>Zebu</strong> API credentials to connect.</span>
             </div>
 
             {/* User ID and Client ID */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">User ID</label>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>User ID</label>
                 <input
                   type="text"
                   value={userId}
                   onChange={(e) => setUserId(e.target.value)}
                   placeholder="e.g. Z70953"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="input-field w-full text-sm"
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Client ID</label>
+                <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Client ID</label>
                 <input
                   type="text"
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
                   placeholder="e.g. Z70953_U"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="input-field w-full text-sm"
                   required
                 />
               </div>
@@ -206,14 +206,14 @@ export default function DataFeedPanel() {
 
             {/* API Secret / Access Token */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">API SECRET / ACCESS TOKEN</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>API SECRET / ACCESS TOKEN</label>
               <div className="relative">
                 <input
                   type={showSecret ? 'text' : 'password'}
                   value={secretKey}
                   onChange={(e) => setSecretKey(e.target.value)}
                   placeholder="Enter API secret"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 pr-10"
+                  className="input-field w-full text-sm pr-10"
                   required
                 />
                 <button
@@ -228,14 +228,16 @@ export default function DataFeedPanel() {
 
             {/* Redirect URL */}
             <div>
-              <label className="block text-xs text-slate-400 mb-1">REDIRECT URL</label>
+              <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)' }}>REDIRECT URL</label>
               <input
                 type="text"
                 value={redirectUrl}
                 onChange={(e) => setRedirectUrl(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-300 focus:outline-none focus:border-indigo-500"
+                className="input-field w-full text-sm"
               />
-              <p className="text-[11px] text-slate-500 mt-1">Must end with <code className="bg-slate-800 px-1 py-0.5 rounded text-slate-300">/zebu/callback</code></p>
+              <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                Must end with <code className="px-1.5 py-0.5 rounded font-mono" style={{ background: 'var(--bg-muted)', color: 'var(--text-primary)' }}>/zebu/callback</code>
+              </p>
             </div>
 
             {/* Action Buttons */}
@@ -244,7 +246,7 @@ export default function DataFeedPanel() {
                 <button
                   type="button"
                   onClick={handleDisconnect}
-                  className="py-2.5 px-4 bg-rose-600/20 border border-rose-500/30 hover:bg-rose-600/30 text-rose-300 font-medium text-sm rounded-xl transition"
+                  className="py-2 px-4 bg-rose-600/20 border border-rose-500/30 hover:bg-rose-600/30 text-rose-500 font-medium text-sm rounded-xl transition"
                 >
                   Disconnect
                 </button>
@@ -252,7 +254,7 @@ export default function DataFeedPanel() {
               <button
                 type="submit"
                 disabled={loading}
-                className="py-2.5 px-6 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white font-semibold text-sm rounded-xl transition shadow-lg flex items-center gap-2"
+                className="btn-primary text-sm px-5 py-2 flex items-center gap-2"
               >
                 <Link className="w-4 h-4 text-emerald-400" />
                 Save & Connect
@@ -262,17 +264,17 @@ export default function DataFeedPanel() {
         </div>
 
         {/* Section 2: Delay & Redis Settings */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
-          <div className="border-b border-slate-800 pb-3">
-            <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
-              <Clock className="w-5 h-5 text-indigo-400" />
+        <div className="rounded-2xl p-6 space-y-5 shadow-sm" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+          <div className="border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+            <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Clock className="w-5 h-5 text-indigo-500" />
               Feed Time-Delay Gate & Redis Policy
             </h2>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="text-xs text-slate-400">Time Delay (Seconds)</label>
+              <label className="text-xs" style={{ color: 'var(--text-muted)' }}>Time Delay (Seconds)</label>
               <div className="flex gap-2 mt-1">
                 <input
                   type="number"
@@ -280,11 +282,11 @@ export default function DataFeedPanel() {
                   max="86400"
                   value={delaySeconds}
                   onChange={(e) => setDelaySeconds(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500"
+                  className="input-field w-full text-sm"
                 />
                 <button
                   onClick={handleSaveDelay}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl transition shrink-0"
+                  className="btn-primary text-sm px-4 py-2 shrink-0"
                 >
                   Apply Delay
                 </button>
@@ -296,10 +298,10 @@ export default function DataFeedPanel() {
                     onClick={() => {
                       setDelaySeconds(preset);
                     }}
-                    className={`px-2.5 py-1 text-xs rounded-lg border ${
+                    className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
                       Number(delaySeconds) === preset
-                        ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
-                        : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700'
+                        ? 'bg-indigo-500/20 text-indigo-500 border-indigo-500/40 font-bold'
+                        : 'btn-secondary'
                     }`}
                   >
                     {preset === 60 ? '1 min (60s)' : preset === 300 ? '5 min (300s)' : '15 min (900s)'}
@@ -308,22 +310,22 @@ export default function DataFeedPanel() {
               </div>
             </div>
 
-            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
-              <p className="text-xs text-slate-400">
-                <strong className="text-indigo-300">Live Preview:</strong> All platform users see market ticks & charts delayed by{' '}
-                <span className="text-emerald-400 font-bold">{delaySeconds} seconds</span>.
+            <div className="p-3 rounded-xl border" style={{ background: 'var(--bg-muted)', borderColor: 'var(--border)' }}>
+              <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                <strong className="text-indigo-500">Live Preview:</strong> All platform users see market ticks & charts delayed by{' '}
+                <span className="text-emerald-500 font-bold">{delaySeconds} seconds</span>.
               </p>
             </div>
 
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+            <div className="pt-3 border-t flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
               <div>
-                <span className="text-sm font-medium text-slate-200">Redis Market-Hours Policy</span>
-                <p className="text-xs text-slate-400">Cache quotes in Redis strictly during active market hours.</p>
+                <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>Redis Market-Hours Policy</span>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cache quotes in Redis strictly during active market hours.</p>
               </div>
               <button
                 onClick={handleToggleRedisPolicy}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  redisMarketHoursOnly ? 'bg-indigo-600' : 'bg-slate-700'
+                  redisMarketHoursOnly ? 'bg-indigo-600' : 'bg-slate-500'
                 }`}
               >
                 <span
@@ -339,15 +341,15 @@ export default function DataFeedPanel() {
       </div>
 
       {/* Section 3: Ingestion Monitor & Symbol Master */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2 text-white">
-            <Database className="w-5 h-5 text-indigo-400" />
+      <div className="rounded-2xl p-6 space-y-5 shadow-sm" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+        <div className="flex items-center justify-between border-b pb-3" style={{ borderColor: 'var(--border)' }}>
+          <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Database className="w-5 h-5 text-indigo-500" />
             Live Ingestion Monitor & Symbol Master
           </h2>
           <button
             onClick={handleResyncSymbols}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/30 text-indigo-300 rounded-xl text-xs font-medium transition"
+            className="btn-secondary text-xs px-3.5 py-2 flex items-center gap-1.5 font-medium"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Re-sync Symbol Master
@@ -355,48 +357,48 @@ export default function DataFeedPanel() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-slate-950 p-4 border border-slate-800 rounded-xl">
-            <span className="text-xs text-slate-400">Worker Status</span>
+          <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-muted)', borderColor: 'var(--border)' }}>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Worker Status</span>
             <div className="flex items-center gap-2 mt-1">
               {status?.worker?.is_running ? (
                 <>
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  <span className="text-sm font-semibold text-emerald-400">INGESTING</span>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                  <span className="text-sm font-semibold text-emerald-500">INGESTING</span>
                 </>
               ) : (
                 <>
-                  <XCircle className="w-5 h-5 text-slate-500" />
-                  <span className="text-sm font-semibold text-slate-400">STOPPED</span>
+                  <XCircle className="w-5 h-5 text-slate-400" />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>STOPPED</span>
                 </>
               )}
             </div>
           </div>
 
-          <div className="bg-slate-950 p-4 border border-slate-800 rounded-xl">
-            <span className="text-xs text-slate-400">Ticks Ingested Today</span>
-            <p className="text-xl font-bold text-white mt-1">
+          <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-muted)', borderColor: 'var(--border)' }}>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Ticks Ingested Today</span>
+            <p className="text-xl font-bold mt-1" style={{ color: 'var(--text-primary)' }}>
               {status?.worker?.ticks_ingested_today?.toLocaleString() || 0}
             </p>
           </div>
 
-          <div className="bg-slate-950 p-4 border border-slate-800 rounded-xl">
-            <span className="text-xs text-slate-400">Subscribed Scrips</span>
-            <p className="text-xl font-bold text-indigo-400 mt-1">
+          <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-muted)', borderColor: 'var(--border)' }}>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Subscribed Scrips</span>
+            <p className="text-xl font-bold text-indigo-500 mt-1">
               {status?.worker?.subscribed_count || 0}
             </p>
           </div>
 
-          <div className="bg-slate-950 p-4 border border-slate-800 rounded-xl">
-            <span className="text-xs text-slate-400">Active Symbol Master Rows</span>
-            <p className="text-xl font-bold text-emerald-400 mt-1">
+          <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-muted)', borderColor: 'var(--border)' }}>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Active Symbol Master Rows</span>
+            <p className="text-xl font-bold text-emerald-500 mt-1">
               {status?.active_symbols_count?.toLocaleString() || 0}
             </p>
           </div>
         </div>
 
         {status?.worker?.last_error && (
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-2 text-xs text-rose-300">
-            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex items-center gap-2 text-xs text-rose-500">
+            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
             <span>Worker Last Error: {status.worker.last_error}</span>
           </div>
         )}
