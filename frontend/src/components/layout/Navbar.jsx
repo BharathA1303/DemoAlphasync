@@ -434,8 +434,8 @@ export default function Navbar({ onMenuToggle }) {
                         placeholder="Search stocks… (e.g. RELIANCE, TCS)"
                         aria-label="Stock search"
                         className={cn(
-                            'w-[300px] lg:w-[340px] bg-surface-800/60 border border-edge/5 rounded-lg',
-                            'pl-10 pr-10 py-2 text-sm text-heading placeholder-gray-500',
+                            'w-full max-w-[240px] md:max-w-[280px] lg:max-w-[320px] bg-surface-800/60 border border-edge/5 rounded-lg',
+                            'pl-10 pr-4 py-2 text-sm text-heading placeholder-gray-500',
                             'focus:outline-none focus:border-primary-500/30 transition-all duration-200'
                         )}
                     />

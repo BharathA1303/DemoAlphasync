@@ -76,7 +76,10 @@ export default function WorkspaceSwitcher() {
             </button>
 
             {open && (
-                <div className="absolute top-full right-0 mt-2 w-64 card-panel-elevated p-2 shadow-2xl z-50">
+                <div
+                    className="absolute top-full left-0 sm:right-0 mt-2 w-64 rounded-xl border p-2 shadow-2xl z-[100] animate-slide-up"
+                    style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}
+                >
                     <div className="px-2 py-1.5 border-b border-edge/8 mb-1">
                         <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
                             <Layers className="w-3 h-3 text-brand-primary" /> Switch Workspace Context

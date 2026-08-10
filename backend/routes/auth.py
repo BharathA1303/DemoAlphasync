@@ -751,43 +751,51 @@ async def switch_tenant(
         raise HTTPException(status_code=400, detail="Invalid tenant ID format")
 
     try:
-        utr_res = await db.execute(
-            select(UserTenantRole, Tenant)
-            .join(Tenant, UserTenantRole.tenant_id == Tenant.id)
-            .where(UserTenantRole.user_id == user.id, UserTenantRole.tenant_id == t_id)
-        )
-        row = utr_res.first()
-    except Exception:
-        row = None
+        t_stmt = select(Tenant).where(Tenant.id == t_id)
+        t_res = await db.execute(t_stmt)
+        target_tenant = t_res.scalar_one_or_none()
+    except Exception as t_err:
+        logger.warning("Error fetching tenant %s: %s", req.tenant_id, t_err)
+        target_tenant = None
 
-    if not row:
-        if str(user.tenant_id) == req.tenant_id:
-            try:
-                t_res = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-                target_tenant = t_res.scalar_one_or_none()
-            except Exception:
-                target_tenant = None
-            active_role = getattr(user, "academy_role", "trader") or "trader"
-            if not target_tenant:
-                return {
-                    "message": "Workspace switched successfully",
-                    "active_tenant": {
-                        "tenant_id": req.tenant_id,
-                        "tenant_name": "Workspace",
-                        "tenant_type": "institution",
-                        "role": active_role,
-                    },
-                    "user": _user_profile(user),
-                }
-        else:
+    if not target_tenant:
+        raise HTTPException(status_code=404, detail="Tenant workspace not found")
+
+    utr = None
+    try:
+        utr_res = await db.execute(
+            select(UserTenantRole).where(
+                UserTenantRole.tenant_id == t_id,
+                UserTenantRole.user_id == user.id
+            )
+        )
+        utr = utr_res.scalar_one_or_none()
+    except Exception as utr_err:
+        logger.warning("Error checking UserTenantRole for user %s, tenant %s: %s", user.id, t_id, utr_err)
+
+    is_admin = user.role == "admin" or bool(user.admin_level and user.admin_level != "none")
+
+    if not utr:
+        if not is_admin and str(user.tenant_id or "") != req.tenant_id:
             raise HTTPException(status_code=403, detail="You do not have access to this tenant workspace")
+        active_role = getattr(user, "academy_role", "trader") or "trader"
+        try:
+            utr = UserTenantRole(tenant_id=t_id, user_id=user.id, role=active_role)
+            db.add(utr)
+        except Exception:
+            pass
     else:
-        utr, target_tenant = row
         active_role = utr.role.value if hasattr(utr.role, "value") else str(utr.role)
 
     user.tenant_id = target_tenant.id
     user.academy_role = active_role
-    await db.commit()
+
+    try:
+        await db.commit()
+        await db.refresh(user)
+    except Exception as commit_err:
+        logger.warning("Commit error in switch_tenant: %s", commit_err)
+        await db.rollback()
 
     profile = await _build_user_profile(user, db)
     return {

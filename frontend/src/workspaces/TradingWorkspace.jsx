@@ -198,6 +198,23 @@ export default function TradingWorkspace() {
         [chartCandles],
     );
 
+    const liveChartCandles = useMemo(() => {
+        if (!chartCandles || chartCandles.length === 0) return [];
+        const livePrice = Number(displayQuote?.price || displayQuote?.ltp || displayQuote?.lp);
+        if (!Number.isFinite(livePrice) || livePrice <= 0) return chartCandles;
+
+        const copy = chartCandles.map((c) => ({ ...c }));
+        const lastIdx = copy.length - 1;
+        if (copy[lastIdx]) {
+            copy[lastIdx].close = livePrice;
+            const existingHigh = Number(copy[lastIdx].high);
+            copy[lastIdx].high = Number.isFinite(existingHigh) ? Math.max(existingHigh, livePrice) : livePrice;
+            const existingLow = Number(copy[lastIdx].low);
+            copy[lastIdx].low = Number.isFinite(existingLow) ? Math.min(existingLow, livePrice) : livePrice;
+        }
+        return copy;
+    }, [chartCandles, displayQuote?.price, displayQuote?.ltp]);
+
     const sessionTick = useSyncExternalStore(
         (cb) => marketSessionManager.subscribe(cb),
         () => marketSessionManager.getSnapshot().fetchedAt,
@@ -253,10 +270,6 @@ export default function TradingWorkspace() {
     const zlConfidence = useZeroLossStore((s) => s.confidence[selectedSymbol] || null);
 
     // ── Derived: Trend data from the shared strategy store ─────────────────
-    // The StrategyDock computes engine results with user-enabled strategies
-    // and writes them to the store. We read from the store here so the chart
-    // badge always matches the dock. If the dock hasn't run yet (e.g. first
-    // load), compute a fallback with all strategies.
     const trendData = useMemo(() => {
         if (engineOutput && engineOutput.signals?.length > 0) {
             return {
@@ -265,22 +278,25 @@ export default function TradingWorkspace() {
                 weightedScore: engineOutput.weightedScore ?? 0,
             };
         }
-        // Fallback: compute with all strategies if dock hasn't run yet
-        if (!chartCandles || chartCandles.length === 0) return null;
+        if (!liveChartCandles || liveChartCandles.length === 0) return null;
         const strategies = getAvailableStrategies();
         const enabledIds = strategies.map((s) => s.id);
-        const result = runEngine(chartCandles, enabledIds);
+        const result = runEngine(liveChartCandles, enabledIds);
         return {
             overall: result.overall,
             confidence: result.confidence,
             weightedScore: result.weightedScore ?? 0,
         };
-    }, [engineOutput, chartCandles, setEngineOutput]);
+    }, [engineOutput, liveChartCandles, setEngineOutput]);
 
     // ── Effects ───────────────────────────────────────────────────────────────
     useEffect(() => {
         const cfg = CHART_PERIODS[chartPeriod] || CHART_PERIODS[DEFAULT_CHART_PERIOD];
         fetchCandles(cfg.period, cfg.interval);
+        const timer = setInterval(() => {
+            fetchCandles(cfg.period, cfg.interval);
+        }, 15_000);
+        return () => clearInterval(timer);
     }, [selectedSymbol, chartPeriod, fetchCandles]);
 
     // Register chart last-bar close as closed-session authority (matches chart Y-axis).
@@ -298,15 +314,13 @@ export default function TradingWorkspace() {
     useEffect(() => { loadWatchlist(); }, [loadWatchlist]);
     useEffect(() => { setGlobalSelectedSymbol(selectedSymbol); }, [selectedSymbol, setGlobalSelectedSymbol]);
 
-    // HTTP fallback when WS down, or after market close (EOD reconciliation via batch poll).
+    // HTTP fallback: fetch watchlist prices periodically so watchlists and terminal prices update continuously
     useEffect(() => {
         if (watchlistItems.length === 0) return;
-        if (wsStatus === 'connected' && shouldUseRealtimePrices()) return;
-
         fetchWatchlistPrices();
-        const id = setInterval(fetchWatchlistPrices, 10_000);
+        const id = setInterval(fetchWatchlistPrices, 5_000);
         return () => clearInterval(id);
-    }, [watchlistItems, fetchWatchlistPrices, wsStatus]);
+    }, [watchlistItems, fetchWatchlistPrices]);
 
     // Close drawers on breakpoint change to desktop
     useEffect(() => {
@@ -649,7 +663,7 @@ export default function TradingWorkspace() {
                 <ErrorBoundary fallback="Chart failed to load. Please refresh.">
                     <LiveChart
                         key={selectedSymbol}
-                        candles={chartCandles}
+                        candles={liveChartCandles}
                         isLoading={chartLoading}
                         trendData={trendData}
                         symbol={selectedSymbol}
@@ -739,7 +753,7 @@ export default function TradingWorkspace() {
             {/* ── Floating Strategy Dock popup ───────────────────────── */}
             <ErrorBoundary fallback="Strategy dock failed to load.">
                 <StrategyDock
-                    candles={chartCandles}
+                    candles={liveChartCandles}
                     isOpen={strategyDockOpen}
                     onClose={() => setStrategyDockOpen(false)}
                 />
