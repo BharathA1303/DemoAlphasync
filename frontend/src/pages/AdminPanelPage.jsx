@@ -18,7 +18,6 @@ const DEFAULT_ACTION_STATE = { durationDays: 30, reason: '' };
 const ACADEMY_ROLE_OPTIONS = [
     { value: 'student', label: 'Student' },
     { value: 'trader', label: 'Trader (Individual)' },
-    { value: 'teacher', label: 'Teacher' },
     { value: 'faculty', label: 'Faculty' },
     { value: 'institution_admin', label: 'Institution Admin' },
     { value: 'super_admin', label: 'Super Admin' },

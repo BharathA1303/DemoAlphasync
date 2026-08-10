@@ -25,12 +25,9 @@ class TenantRole(str, enum.Enum):
     """Tenant role hierarchy for AlphaSync Campus & Individual Traders."""
     SUPER_ADMIN = "super_admin"
     INSTITUTION_ADMIN = "institution_admin"
-    DEPT_HEAD = "dept_head"
     FACULTY = "faculty"
-    TA = "ta"
     STUDENT = "student"
     TRADER = "trader"
-    GUEST = "guest"
 
 
 class Tenant(Base):

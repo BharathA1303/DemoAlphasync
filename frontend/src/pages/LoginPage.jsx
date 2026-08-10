@@ -58,7 +58,7 @@ export default function LoginPage() {
   const existingUser = useAuthStore((s) => s.user);
   const navigate           = useNavigate();
 
-  const FACULTY_ACADEMY_ROLES = ["teacher", "faculty", "institution_admin", "super_admin"];
+  const FACULTY_ACADEMY_ROLES = ["faculty", "institution_admin", "super_admin"];
 
   const routeByAccountStatus = (profile) => {
     const status   = (profile?.account_status || "active").toLowerCase();

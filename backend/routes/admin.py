@@ -137,7 +137,7 @@ class UpdateAdminLevelRequest(BaseModel):
 
 class SetAcademyRoleRequest(BaseModel):
     academy_role: str = Field(
-        ..., pattern=r"^(student|teacher|faculty|institution_admin|super_admin)$"
+        ..., pattern=r"^(student|trader|faculty|institution_admin|super_admin)$"
     )
 
 
@@ -655,7 +655,7 @@ async def set_academy_role(
     admin: User = Depends(require_manage_level),
     db: AsyncSession = Depends(get_db),
 ):
-    """Set a user's AlphaSync Academy role (student/teacher/faculty/institution_admin/super_admin)."""
+    """Set a user's AlphaSync Academy role (student/trader/faculty/institution_admin/super_admin)."""
     normalized_user_id = _normalize_user_id(user_id)
     ip = request.client.host if request.client else None
     result = await admin_service.set_academy_role(

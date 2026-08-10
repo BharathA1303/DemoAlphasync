@@ -4,7 +4,6 @@ from enum import Enum
 
 class AcademyRole(str, Enum):
     STUDENT = "student"
-    TEACHER = "teacher"
     FACULTY = "faculty"
     INSTITUTION_ADMIN = "institution_admin"
     SUPER_ADMIN = "super_admin"
@@ -14,7 +13,6 @@ class AcademyRole(str, Enum):
 ALL_ACADEMY_ROLES = {role.value for role in AcademyRole}
 
 FACULTY_ACADEMY_ROLES = {
-    AcademyRole.TEACHER.value,
     AcademyRole.FACULTY.value,
     AcademyRole.INSTITUTION_ADMIN.value,
     AcademyRole.SUPER_ADMIN.value,
