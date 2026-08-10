@@ -231,7 +231,11 @@ def tick_cache_key(exchange: str, segment: str, symbol: str, target_date: date, 
 
 
 def _resolve_realistic_base_price(symbol: str, segment: str = "EQ") -> float:
-    sym = str(symbol or "").strip().upper()
+    raw = str(symbol or "").strip().upper()
+    sym = raw.split(":")[-1] if ":" in raw else raw
+    if sym.endswith(".NS") or sym.endswith(".BO"):
+        sym = sym[:-3]
+
     if sym in ("NIFTY", "NIFTY50", "^NSEI", "NSEI"):
         base = 28850.0
     elif sym in ("BANKNIFTY", "NIFTYBANK", "^NSEBANK"):
@@ -241,7 +245,7 @@ def _resolve_realistic_base_price(symbol: str, segment: str = "EQ") -> float:
     elif sym in ("FINNIFTY", "^CNXFIN"):
         base = 24100.0
     elif sym in ("RELIANCE", "RELIANCE.NS"):
-        base = 1318.0
+        base = 2950.0
     elif sym in ("TCS", "TCS.NS"):
         base = 4460.0
     elif sym in ("INFY", "INFY.NS"):
@@ -253,7 +257,7 @@ def _resolve_realistic_base_price(symbol: str, segment: str = "EQ") -> float:
     elif sym in ("SBIN", "SBIN.NS"):
         base = 875.0
     elif sym in ("BAJFINANCE", "BAJFINANCE.NS"):
-        base = 7450.0
+        base = 7200.0
     elif sym in ("BHARTIARTL", "BHARTIARTL.NS"):
         base = 1665.0
     elif sym in ("TATAMOTORS", "TATAMOTORS.NS"):

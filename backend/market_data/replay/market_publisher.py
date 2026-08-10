@@ -45,7 +45,7 @@ class MarketPublisher:
             from database.connection import async_session
             from data_layer.db.models import PriceData
 
-            base_symbol = canonical.split(".")[0].upper()
+            base_symbol = canonical.replace(".NS", "").replace(".BO", "").split(":")[-1].upper()
 
             # PriceData.symbol is NOT unique per instrument: the equity
             # ("RELIANCE", segment=EQ), its futures contract, and every
@@ -107,13 +107,15 @@ class MarketPublisher:
         except Exception as e:
             logger.debug(f"MarketPublisher: prev_close lookup failed for {canonical}: {e}")
 
-        # Final sanity guard: a "previous close" more than 3x away from the
-        # live tick price is not a plausible overnight move for this
-        # simulator (real EOD continuity drifts a fraction of a percent per
-        # day - see mock_price_continuity.py) and is a strong signal the
-        # lookup above resolved to an unrelated instrument's row (wrong
-        # segment/strike, stale seed, etc). Fall back to the live price
-        # itself (0.00% change) rather than publish a nonsensical percent.
+        if prev_close == lp or prev_close <= 0 or prev_close > lp * 3 or prev_close < lp / 3:
+            try:
+                from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
+                base_ref = _resolve_realistic_base_price(base_symbol)
+                if base_ref > 0 and (lp / 3 <= base_ref <= lp * 3):
+                    prev_close = base_ref
+            except Exception:
+                pass
+
         if prev_close <= 0 or prev_close > lp * 3 or prev_close < lp / 3:
             logger.warning(
                 f"MarketPublisher: implausible prev_close={prev_close} for {canonical} "

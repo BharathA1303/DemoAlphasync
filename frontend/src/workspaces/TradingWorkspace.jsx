@@ -206,6 +206,7 @@ export default function TradingWorkspace() {
 
     const displayQuote = useMemo(() => {
         const lastBar = normalizedCandles[normalizedCandles.length - 1];
+        const firstBar = normalizedCandles[0];
         const candleClose = toFiniteNumber(lastBar?.close);
         const marketOpen = shouldUseRealtimePrices();
 
@@ -215,11 +216,18 @@ export default function TradingWorkspace() {
             candleClose,
         });
 
+        const prevCloseFallback =
+            toFiniteNumber(resolved.quote?.prev_close) ??
+            toFiniteNumber(quote?.prev_close) ??
+            (normalizedCandles.length > 1 ? toFiniteNumber(normalizedCandles[normalizedCandles.length - 2]?.close) : null) ??
+            toFiniteNumber(firstBar?.open);
+
         const baseQuote = {
             ...(quote || {}),
             ...(resolved.quote || {}),
             symbol: selectedSymbol,
             name: resolved.quote?.name || quote?.name || selectedSymbol,
+            ...(prevCloseFallback ? { prev_close: prevCloseFallback } : {}),
         };
 
         const resolvedPrice = marketOpen
@@ -237,7 +245,7 @@ export default function TradingWorkspace() {
             open: candleOpen ?? toFiniteNumber(baseQuote.open),
             high: candleHigh ?? toFiniteNumber(baseQuote.high),
             low: candleLow ?? toFiniteNumber(baseQuote.low),
-            prev_close: toFiniteNumber(baseQuote.prev_close) ?? toFiniteNumber(resolved.quote?.prev_close),
+            prev_close: toFiniteNumber(withLive.prev_close) ?? prevCloseFallback,
             _priceSource: resolved.priceSource,
         };
     }, [quote, selectedSymbol, normalizedCandles, liveQuotes, sessionTick]);

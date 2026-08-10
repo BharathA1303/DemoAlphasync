@@ -63,15 +63,18 @@ export function buildQuoteWithLivePrice(baseQuote, livePrice) {
 
     const prevClose = toFiniteNumber(baseQuote?.prev_close);
     const hasPrevClose = prevClose != null && prevClose > 0;
-    const nextChange = hasPrevClose ? Number((nextPrice - prevClose).toFixed(2)) : baseQuote?.change ?? null;
+    const nextChange = hasPrevClose
+        ? Number((nextPrice - prevClose).toFixed(2))
+        : (toFiniteNumber(baseQuote?.change) ?? 0);
     const nextChangePercent = hasPrevClose
         ? Number((((nextPrice - prevClose) / prevClose) * 100).toFixed(2))
-        : baseQuote?.change_percent ?? null;
+        : (toFiniteNumber(baseQuote?.change_percent) ?? 0);
 
     return {
         ...(baseQuote || {}),
         price: Number(nextPrice.toFixed(2)),
         change: nextChange,
         change_percent: nextChangePercent,
+        ...(hasPrevClose ? { prev_close: prevClose } : {}),
     };
 }
