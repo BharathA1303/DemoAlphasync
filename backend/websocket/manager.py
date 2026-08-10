@@ -245,18 +245,27 @@ class ConnectionManager:
             self.disconnect(d)
 
     async def broadcast_price(self, symbol: str, price_data: dict):
-        """Broadcast price update to all subscribers of a symbol."""
-        subscribers = self.subscriptions.get(symbol, set())
+        """Broadcast price update to subscribers of a symbol (with fallback for raw/formatted symbol lookup)."""
+        from services.market_data import market_data
+        fmt = market_data._format_symbol(symbol)
+        raw = symbol.split('.')[0] if '.' in symbol else symbol
+
+        subscribers = set()
+        for k in (symbol, fmt, raw):
+            if k and k in self.subscriptions:
+                subscribers.update(self.subscriptions[k])
+
+        # Fallback: if clients are connected, send tick so no client misses real-time prices
+        if not subscribers and self.active_connections:
+            subscribers = set(self.active_connections.keys())
+
         dead = []
-        # Send as "quote" type with symbol at top level for frontend compat
         msg = {
             "type": "quote",
             "channel": "prices",
             "symbol": symbol,
             **price_data,
         }
-        if not subscribers:
-            logger.debug(f"Price update for {symbol} ignored — no subscribers")
 
         for conn_id in list(subscribers):
             ws = self.active_connections.get(conn_id)

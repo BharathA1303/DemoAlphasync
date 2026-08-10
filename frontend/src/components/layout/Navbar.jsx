@@ -511,19 +511,28 @@ export default function Navbar({ onMenuToggle }) {
                 {/* Active Role Badge & Admin Quick Action */}
                 {(() => {
                     const user = useAuthStore.getState().user;
+                    const acadRole = (user?.academy_role || '').toLowerCase();
                     const roleTag = user?.role === 'admin' || (user?.admin_level && user?.admin_level !== 'none')
                         ? 'ADMIN'
-                        : ['faculty', 'institution_admin', 'super_admin'].includes(user?.academy_role)
+                        : acadRole === 'institution_admin'
+                        ? 'INSTITUTION ADMIN'
+                        : acadRole === 'super_admin'
+                        ? 'SUPER ADMIN'
+                        : acadRole === 'faculty'
                         ? 'FACULTY'
-                        : 'STUDENT';
-                    const isAdmin = roleTag === 'ADMIN';
+                        : acadRole === 'trader'
+                        ? 'TRADER'
+                        : (acadRole ? acadRole.toUpperCase().replace('_', ' ') : 'STUDENT');
+                    const isAdmin = roleTag === 'ADMIN' || roleTag === 'SUPER ADMIN' || roleTag === 'INSTITUTION ADMIN';
                     return (
                         <div className="hidden sm:flex items-center gap-1.5 mr-1">
                             <span className={cn(
                                 "inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wider border",
-                                roleTag === 'ADMIN' ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' :
-                                roleTag === 'FACULTY' ? 'bg-violet-500/15 text-violet-300 border-violet-500/30' :
-                                'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                                roleTag === 'ADMIN' ? 'bg-amber-500/15 text-amber-500 border-amber-500/30' :
+                                roleTag === 'INSTITUTION ADMIN' ? 'bg-purple-500/15 text-purple-600 dark:text-purple-300 border-purple-500/30' :
+                                roleTag === 'SUPER ADMIN' ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border-indigo-500/30' :
+                                roleTag === 'FACULTY' ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-500/30' :
+                                'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/30'
                             )}>
                                 ROLE: {roleTag}
                             </span>

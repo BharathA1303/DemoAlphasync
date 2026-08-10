@@ -2020,8 +2020,9 @@ async def set_institution_member_role(
         utr = UserTenantRole(tenant_id=t_uuid, user_id=u_uuid, role=new_role)
         db.add(utr)
 
-    if target_user.tenant_id == t_uuid:
-        target_user.academy_role = new_role
+    # Always update target user's academy_role and active tenant_id
+    target_user.academy_role = new_role
+    target_user.tenant_id = t_uuid
 
     ip = request.client.host if request.client else None
     await admin_service._write_audit(
