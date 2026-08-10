@@ -95,7 +95,7 @@ async def _commit_with_retry(session: AsyncSession, retries: int = 5):
 
 
 async def set_tenant_context(session: AsyncSession, tenant_id: uuid.UUID | str | None) -> None:
-    """Sets the transaction-scoped setting `SET LOCAL app.current_tenant_id = ...` for PostgreSQL RLS isolation.
+    """Sets the transaction-scoped setting `app.current_tenant_id` for PostgreSQL RLS isolation.
     Also stores `tenant_id` in session.info for SQLite testing / application filtering.
     """
     tenant_str = str(tenant_id) if tenant_id else ""
@@ -105,16 +105,16 @@ async def set_tenant_context(session: AsyncSession, tenant_id: uuid.UUID | str |
         bind = await session.connection()
         if bind and getattr(bind.dialect, "name", "") == "postgresql":
             await session.execute(
-                text("SET LOCAL app.current_tenant_id = :tid"),
+                text("SELECT set_config('app.current_tenant_id', :tid, true)"),
                 {"tid": tenant_str},
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("set_tenant_context notice: %s", e)
 
 
 async def set_super_admin_context(session: AsyncSession, is_super_admin: bool = True) -> None:
-    """Sets transaction-scoped `SET LOCAL app.is_super_admin = 'true'` for authorized admin queries.
-    Uses PostgreSQL transaction-local SET LOCAL which automatically resets on COMMIT or ROLLBACK.
+    """Sets transaction-scoped `app.is_super_admin = 'true'` for authorized admin queries.
+    Uses PostgreSQL transaction-local set_config which automatically resets on COMMIT or ROLLBACK.
     """
     val = "true" if is_super_admin else "false"
     session.info["is_super_admin"] = is_super_admin
@@ -123,11 +123,11 @@ async def set_super_admin_context(session: AsyncSession, is_super_admin: bool = 
         bind = await session.connection()
         if bind and getattr(bind.dialect, "name", "") == "postgresql":
             await session.execute(
-                text("SET LOCAL app.is_super_admin = :val"),
+                text("SELECT set_config('app.is_super_admin', :val, true)"),
                 {"val": val},
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("set_super_admin_context notice: %s", e)
 
 
 async def reset_tenant_context(session: AsyncSession) -> None:
@@ -136,9 +136,9 @@ async def reset_tenant_context(session: AsyncSession) -> None:
     try:
         bind = await session.connection()
         if bind and getattr(bind.dialect, "name", "") == "postgresql":
-            await session.execute(text("SET LOCAL app.current_tenant_id = ''"))
-    except Exception:
-        pass
+            await session.execute(text("SELECT set_config('app.current_tenant_id', '', true)"))
+    except Exception as e:
+        logger.debug("reset_tenant_context notice: %s", e)
 
 
 
