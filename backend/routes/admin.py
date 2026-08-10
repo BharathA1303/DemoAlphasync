@@ -1714,47 +1714,63 @@ async def list_institutions(
     from models.user import User
     from database.connection import set_super_admin_context
 
-    await set_super_admin_context(db, True)
+    try:
+        await set_super_admin_context(db, True)
 
-    stmt = select(Tenant).where(Tenant.tenant_type == "institution").order_by(Tenant.created_at.desc())
-    res = await db.execute(stmt)
-    tenants = res.scalars().all()
+        stmt = select(Tenant).order_by(Tenant.created_at.desc())
+        res = await db.execute(stmt)
+        all_tenants = res.scalars().all()
 
-    origin = request.headers.get("origin")
-    base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
+        tenants = [
+            t for t in all_tenants
+            if getattr(t, "tenant_type", "institution") in ("institution", None, "")
+        ]
 
-    result_list = []
-    for t in tenants:
-        count_stmt = select(func.count(User.id)).where(User.tenant_id == t.id)
-        count_res = await db.execute(count_stmt)
-        total_members = count_res.scalar() or 0
+        origin = request.headers.get("origin")
+        base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
 
-        role_stmt = (
-            select(UserTenantRole.role, func.count(UserTenantRole.id))
-            .where(UserTenantRole.tenant_id == t.id)
-            .group_by(UserTenantRole.role)
-        )
-        role_res = await db.execute(role_stmt)
-        role_counts = {str(r_name).lower(): r_cnt for r_name, r_cnt in role_res.all()}
+        result_list = []
+        for t in tenants:
+            try:
+                count_stmt = select(func.count(User.id)).where(User.tenant_id == t.id)
+                count_res = await db.execute(count_stmt)
+                total_members = count_res.scalar() or 0
+            except Exception:
+                total_members = 0
 
-        invite_url = f"{base_url}/login?inst={t.slug}"
+            try:
+                role_stmt = (
+                    select(UserTenantRole.role, func.count(UserTenantRole.id))
+                    .where(UserTenantRole.tenant_id == t.id)
+                    .group_by(UserTenantRole.role)
+                )
+                role_res = await db.execute(role_stmt)
+                role_counts = {str(r_name or "").lower(): r_cnt for r_name, r_cnt in role_res.all()}
+            except Exception:
+                role_counts = {}
 
-        result_list.append({
-            "id": str(t.id),
-            "name": t.name,
-            "slug": t.slug,
-            "domain": t.domain,
-            "tenant_type": getattr(t, "tenant_type", "institution"),
-            "is_active": t.is_active,
-            "max_users": t.max_users,
-            "member_count": total_members,
-            "role_counts": role_counts,
-            "invite_url": invite_url,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
-        })
+            invite_url = f"{base_url}/login?inst={t.slug}"
 
-    return {"success": True, "institutions": result_list}
+            result_list.append({
+                "id": str(t.id),
+                "name": t.name,
+                "slug": t.slug,
+                "domain": getattr(t, "domain", None),
+                "tenant_type": getattr(t, "tenant_type", "institution") or "institution",
+                "is_active": bool(getattr(t, "is_active", True)),
+                "max_users": getattr(t, "max_users", 1000) or 1000,
+                "member_count": total_members,
+                "role_counts": role_counts,
+                "invite_url": invite_url,
+                "created_at": t.created_at.isoformat() if getattr(t, "created_at", None) else None,
+                "updated_at": t.updated_at.isoformat() if getattr(t, "updated_at", None) else None,
+            })
+
+        return {"success": True, "institutions": result_list}
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Error listing institutions: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch institutions: {str(e)}")
 
 
 @router.post("/institutions")
@@ -1770,45 +1786,50 @@ async def create_institution(
     from models.tenant import Tenant
     from database.connection import set_super_admin_context
 
-    await set_super_admin_context(db, True)
+    try:
+        await set_super_admin_context(db, True)
 
-    name = req.name.strip()
-    base_slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-    if not base_slug:
-        base_slug = "inst"
-    unique_slug = f"{base_slug}-{secrets.token_hex(4)}"
+        name = req.name.strip()
+        base_slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        if not base_slug:
+            base_slug = "inst"
+        unique_slug = f"{base_slug}-{secrets.token_hex(4)}"
 
-    tenant = Tenant(
-        name=name,
-        slug=unique_slug,
-        domain=req.domain.strip() if req.domain else None,
-        tenant_type="institution",
-        is_active=True,
-        max_users=req.max_users or 1000,
-    )
-    db.add(tenant)
-    await db.commit()
-    await db.refresh(tenant)
+        tenant = Tenant(
+            name=name,
+            slug=unique_slug,
+            domain=req.domain.strip() if req.domain else None,
+            tenant_type="institution",
+            is_active=True,
+            max_users=req.max_users or 1000,
+        )
+        db.add(tenant)
+        await db.commit()
+        await db.refresh(tenant)
 
-    origin = request.headers.get("origin")
-    base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
-    invite_url = f"{base_url}/login?inst={tenant.slug}"
+        origin = request.headers.get("origin")
+        base_url = origin or f"{request.url.scheme}://{request.url.netloc}"
+        invite_url = f"{base_url}/login?inst={tenant.slug}"
 
-    return {
-        "success": True,
-        "institution": {
-            "id": str(tenant.id),
-            "name": tenant.name,
-            "slug": tenant.slug,
-            "domain": tenant.domain,
-            "tenant_type": tenant.tenant_type,
-            "is_active": tenant.is_active,
-            "max_users": tenant.max_users,
-            "member_count": 0,
-            "invite_url": invite_url,
-            "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+        return {
+            "success": True,
+            "institution": {
+                "id": str(tenant.id),
+                "name": tenant.name,
+                "slug": tenant.slug,
+                "domain": tenant.domain,
+                "tenant_type": tenant.tenant_type,
+                "is_active": tenant.is_active,
+                "max_users": tenant.max_users,
+                "member_count": 0,
+                "invite_url": invite_url,
+                "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+            }
         }
-    }
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Error creating institution: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to create institution: {str(e)}")
 
 
 @router.patch("/institutions/{tenant_id}")
@@ -1898,62 +1919,66 @@ async def get_institution_members(
     from models.tenant import UserTenantRole
     from database.connection import set_super_admin_context
 
-    await set_super_admin_context(db, True)
-    t_uuid = _normalize_user_id(tenant_id)
+    try:
+        await set_super_admin_context(db, True)
+        t_uuid = _normalize_user_id(tenant_id)
 
-    stmt = select(User, UserTenantRole).outerjoin(
-        UserTenantRole, (UserTenantRole.user_id == User.id) & (UserTenantRole.tenant_id == t_uuid)
-    ).where(
-        or_(User.tenant_id == t_uuid, UserTenantRole.tenant_id == t_uuid)
-    )
-
-    if query and query.strip():
-        q = f"%{query.strip()}%"
-        stmt = stmt.where(
-            or_(
-                User.email.ilike(q),
-                User.username.ilike(q),
-                User.full_name.ilike(q),
-            )
+        stmt = select(User, UserTenantRole).outerjoin(
+            UserTenantRole, (UserTenantRole.user_id == User.id) & (UserTenantRole.tenant_id == t_uuid)
+        ).where(
+            or_(User.tenant_id == t_uuid, UserTenantRole.tenant_id == t_uuid)
         )
 
-    if role and role.strip() and role.lower() != "all":
-        target_role = role.strip().lower()
-        stmt = stmt.where(
-            or_(
-                UserTenantRole.role.ilike(target_role),
-                User.academy_role.ilike(target_role)
+        if query and query.strip():
+            q = f"%{query.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    User.email.ilike(q),
+                    User.username.ilike(q),
+                    User.full_name.ilike(q),
+                )
             )
-        )
 
-    count_stmt = select(func.count()).select_from(stmt.subquery())
-    total_res = await db.execute(count_stmt)
-    total = total_res.scalar() or 0
+        if role and role.strip() and role.lower() != "all":
+            target_role = role.strip().lower()
+            stmt = stmt.where(
+                or_(
+                    UserTenantRole.role.ilike(target_role),
+                    User.academy_role.ilike(target_role)
+                )
+            )
 
-    stmt = stmt.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
-    res = await db.execute(stmt)
-    rows = res.all()
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_res = await db.execute(count_stmt)
+        total = total_res.scalar() or 0
 
-    members = []
-    for user_obj, utr_obj in rows:
-        member_role = (utr_obj.role if utr_obj else getattr(user_obj, "academy_role", "student")) or "student"
-        members.append({
-            "id": str(user_obj.id),
-            "email": user_obj.email,
-            "username": user_obj.username,
-            "full_name": user_obj.full_name,
-            "role": str(member_role).lower(),
-            "account_status": getattr(user_obj, "account_status", "active"),
-            "created_at": user_obj.created_at.isoformat() if user_obj.created_at else None,
-        })
+        stmt = stmt.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+        res = await db.execute(stmt)
+        rows = res.all()
 
-    return {
-        "success": True,
-        "members": members,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-    }
+        members = []
+        for user_obj, utr_obj in rows:
+            member_role = (utr_obj.role if utr_obj else getattr(user_obj, "academy_role", "student")) or "student"
+            members.append({
+                "id": str(user_obj.id),
+                "email": user_obj.email,
+                "username": user_obj.username,
+                "full_name": user_obj.full_name,
+                "role": str(member_role).lower(),
+                "account_status": getattr(user_obj, "account_status", "active"),
+                "created_at": user_obj.created_at.isoformat() if user_obj.created_at else None,
+            })
+
+        return {
+            "success": True,
+            "members": members,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+    except Exception as e:
+        logger.exception("Error getting institution members: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch institution members: {str(e)}")
 
 
 @router.post("/institutions/{tenant_id}/members/{user_id}/role")

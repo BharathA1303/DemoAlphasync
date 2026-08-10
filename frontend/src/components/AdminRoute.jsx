@@ -10,8 +10,21 @@ export default function AdminRoute({ children }) {
         return <AppLoader />;
     }
 
-    if (!user || user.role !== 'admin') {
-        return <Navigate to="/admin" replace />;
+    if (!user) {
+        return <Navigate to="/login" replace />;
+    }
+
+    const platRole = (user.role || '').toLowerCase();
+    const acadRole = (user.academy_role || '').toLowerCase();
+    const adminLevel = (user.admin_level || '').toLowerCase();
+
+    const isAdmin =
+        platRole === 'admin' ||
+        Boolean(adminLevel) ||
+        ['super_admin', 'institution_admin'].includes(acadRole);
+
+    if (!isAdmin) {
+        return <Navigate to="/dashboard" replace />;
     }
 
     return children;

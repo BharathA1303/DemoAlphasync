@@ -70,24 +70,6 @@ export default function App() {
                         <Route path="/login" element={<LoginPage />} />
                         <Route path="/register" element={<LoginPage />} />
                         <Route path="/admin" element={<AdminAccessPage />} />
-                        <Route path="/admin/panel" element={
-                            <AdminRoute><AdminPanelPage /></AdminRoute>
-                        } />
-                        <Route path="/admin/data-feed" element={
-                            <AdminRoute><DataFeedPanel /></AdminRoute>
-                        } />
-                        <Route path="/admin/bug-reports" element={
-                            <AdminRoute><AdminBugReportsPage /></AdminRoute>
-                        } />
-                        <Route path="/admin/root-control" element={
-                            <AdminRoute><RootControlPage /></AdminRoute>
-                        } />
-                        <Route path="/admin/audit-log" element={
-                            <AdminRoute><AdminAuditLogPage /></AdminRoute>
-                        } />
-                        <Route path="/admin/institutions" element={
-                            <AdminRoute><InstitutionsManagementPage /></AdminRoute>
-                        } />
 
                         <Route path="/account-status" element={
                             <ProtectedRoute><AccountStatusPage /></ProtectedRoute>
@@ -104,6 +86,26 @@ export default function App() {
                                 </ProtectedRoute>
                             }
                         >
+                            {/* Admin routes inside AppShell for center layout + visible sidebar/navbar + active theme */}
+                            <Route path="/admin/panel" element={
+                                <AdminRoute><AdminPanelPage /></AdminRoute>
+                            } />
+                            <Route path="/admin/institutions" element={
+                                <AdminRoute><InstitutionsManagementPage /></AdminRoute>
+                            } />
+                            <Route path="/admin/data-feed" element={
+                                <AdminRoute><DataFeedPanel /></AdminRoute>
+                            } />
+                            <Route path="/admin/bug-reports" element={
+                                <AdminRoute><AdminBugReportsPage /></AdminRoute>
+                            } />
+                            <Route path="/admin/root-control" element={
+                                <AdminRoute><RootControlPage /></AdminRoute>
+                            } />
+                            <Route path="/admin/audit-log" element={
+                                <AdminRoute><AdminAuditLogPage /></AdminRoute>
+                            } />
+
                             <Route path="/dashboard" element={<DashboardWorkspace />} />
                             <Route path="/leaderboard" element={<LeaderboardPage />} />
                             <Route path="/mentor" element={<AIMentorPage />} />
