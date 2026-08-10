@@ -536,15 +536,6 @@ export default function Navbar({ onMenuToggle }) {
                             )}>
                                 ROLE: {roleTag}
                             </span>
-                            {isAdmin && (
-                                <button
-                                    onClick={() => navigate('/admin/panel')}
-                                    className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all cursor-pointer shadow-sm"
-                                    title="Open Admin Panel"
-                                >
-                                    <Shield className="w-3.5 h-3.5 mr-1 text-cyan-400" /> Admin Panel
-                                </button>
-                            )}
                         </div>
                     );
                 })()}

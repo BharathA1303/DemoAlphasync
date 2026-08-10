@@ -250,23 +250,6 @@ export default function TradingWorkspace() {
         };
     }, [quote, selectedSymbol, normalizedCandles, liveQuotes, sessionTick]);
 
-    const liveChartCandles = useMemo(() => {
-        if (!chartCandles || chartCandles.length === 0) return [];
-        const livePrice = Number(displayQuote?.price || displayQuote?.ltp || displayQuote?.lp);
-        if (!Number.isFinite(livePrice) || livePrice <= 0) return chartCandles;
-
-        const copy = chartCandles.map((c) => ({ ...c }));
-        const lastIdx = copy.length - 1;
-        if (copy[lastIdx]) {
-            copy[lastIdx].close = livePrice;
-            const existingHigh = Number(copy[lastIdx].high);
-            copy[lastIdx].high = Number.isFinite(existingHigh) ? Math.max(existingHigh, livePrice) : livePrice;
-            const existingLow = Number(copy[lastIdx].low);
-            copy[lastIdx].low = Number.isFinite(existingLow) ? Math.min(existingLow, livePrice) : livePrice;
-        }
-        return copy;
-    }, [chartCandles, displayQuote?.price, displayQuote?.ltp]);
-
     const zlConfidence = useZeroLossStore((s) => s.confidence[selectedSymbol] || null);
 
     // ── Derived: Trend data from the shared strategy store ─────────────────
@@ -278,16 +261,16 @@ export default function TradingWorkspace() {
                 weightedScore: engineOutput.weightedScore ?? 0,
             };
         }
-        if (!liveChartCandles || liveChartCandles.length === 0) return null;
+        if (!chartCandles || chartCandles.length === 0) return null;
         const strategies = getAvailableStrategies();
         const enabledIds = strategies.map((s) => s.id);
-        const result = runEngine(liveChartCandles, enabledIds);
+        const result = runEngine(chartCandles, enabledIds);
         return {
             overall: result.overall,
             confidence: result.confidence,
             weightedScore: result.weightedScore ?? 0,
         };
-    }, [engineOutput, liveChartCandles, setEngineOutput]);
+    }, [engineOutput, chartCandles, setEngineOutput]);
 
     // ── Effects ───────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -663,7 +646,7 @@ export default function TradingWorkspace() {
                 <ErrorBoundary fallback="Chart failed to load. Please refresh.">
                     <LiveChart
                         key={selectedSymbol}
-                        candles={liveChartCandles}
+                        candles={chartCandles}
                         isLoading={chartLoading}
                         trendData={trendData}
                         symbol={selectedSymbol}
@@ -753,7 +736,7 @@ export default function TradingWorkspace() {
             {/* ── Floating Strategy Dock popup ───────────────────────── */}
             <ErrorBoundary fallback="Strategy dock failed to load.">
                 <StrategyDock
-                    candles={liveChartCandles}
+                    candles={chartCandles}
                     isOpen={strategyDockOpen}
                     onClose={() => setStrategyDockOpen(false)}
                 />
