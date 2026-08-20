@@ -72,10 +72,6 @@ export default function LoginPage() {
         navigate("/terminal");
         return;
       }
-      if (FACULTY_ACADEMY_ROLES.includes(acadRole)) {
-        navigate("/academy/faculty");
-        return;
-      }
       navigate("/dashboard");
     } else {
       navigate("/account-status");
