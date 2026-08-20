@@ -17,6 +17,7 @@ import { buildPortfolioMetrics } from '../utils/portfolioMetrics';
 import { Skeleton } from '../components/ui';
 import { cn } from '../utils/cn';
 import LeaderboardButton from '../components/ui/LeaderboardButton';
+import StudentDashboardWorkspace from './StudentDashboardWorkspace';
 
 const NAV_CARDS = [
     { to: '/terminal', icon: BarChart3, label: 'Terminal', desc: 'Live charts & order execution', accent: true },
@@ -353,6 +354,17 @@ function IndexAreaChart({ candles, prevClose, isUp, timeframe, historyLoading })
 export default function DashboardWorkspace() {
     const navigate = useNavigate();
     const user = useAuthStore((s) => s.user);
+
+    // If user is a Student (and not Admin/Faculty/Trader), render Student Learning Home dashboard
+    const acadRole = (user?.academy_role || 'student').toLowerCase();
+    const isStudent = (user?.role === 'student' || acadRole === 'student') &&
+        user?.role !== 'admin' &&
+        !['faculty', 'institution_admin', 'super_admin', 'trader'].includes(acadRole);
+
+    if (isStudent) {
+        return <StudentDashboardWorkspace />;
+    }
+
     const portfolio = usePortfolioStore((s) => s.summary);
     const holdings = usePortfolioStore((s) => s.holdings);
     const orders = usePortfolioStore((s) => s.orders);
