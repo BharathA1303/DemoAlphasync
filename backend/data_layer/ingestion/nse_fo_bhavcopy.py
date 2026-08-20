@@ -210,6 +210,16 @@ def generate_mock_nse_fo_data(target_date: date) -> List[Dict[str, Any]]:
         "HDFCBANK": (1650.0, 0.0003),
         "ICICIBANK": (1050.0, 0.00035),
     }
+
+    # Major index underlyings — these are the most important for the options
+    # desk (NIFTY/BANKNIFTY chain). Without these, the _internal_sim_option_chain
+    # endpoint returns zero results for every leg query with segment="OPT".
+    mock_index_underlyings = {
+        "NIFTY": (24500.0, 0.0003),
+        "BANKNIFTY": (51500.0, 0.0004),
+        "FINNIFTY": (23000.0, 0.00035),
+    }
+
     records = []
     from data_layer.ingestion.mock_price_continuity import anchor_price_for_date
 
@@ -227,6 +237,14 @@ def generate_mock_nse_fo_data(target_date: date) -> List[Dict[str, Any]]:
         last_day -= timedelta(days=1)
     expiry = last_day
 
+    # Also compute the nearest weekly expiry (next Thursday).
+    weekly_expiry = target_date
+    while weekly_expiry.weekday() != 3:
+        weekly_expiry += timedelta(days=1)
+    if weekly_expiry <= target_date:
+        weekly_expiry += timedelta(days=7)
+
+    # ── Stock futures + options ──────────────────────────────────────────
     for symbol, (anchor, drift) in mock_underlyings.items():
         seed = int(target_date.strftime("%Y%m%d")) + sum(ord(c) for c in symbol)
         rng = random.Random(seed)
@@ -245,10 +263,10 @@ def generate_mock_nse_fo_data(target_date: date) -> List[Dict[str, Any]]:
             "volume": rng.randint(10000, 200000),
         })
 
-        # A small option chain: 3 strikes around spot, both CE and PE.
+        # Option chain: 7 strikes around spot, both CE and PE.
         strike_step = 50.0 if spot < 1000 else 100.0
         atm_strike = round(spot / strike_step) * strike_step
-        for offset in (-1, 0, 1):
+        for offset in (-3, -2, -1, 0, 1, 2, 3):
             strike = atm_strike + offset * strike_step
             for option_type in ("CE", "PE"):
                 intrinsic = max(0.0, (spot - strike) if option_type == "CE" else (strike - spot))
@@ -262,6 +280,62 @@ def generate_mock_nse_fo_data(target_date: date) -> List[Dict[str, Any]]:
                     "low": round(premium * 0.9, 2), "close": round(premium, 2),
                     "volume": rng.randint(500, 50000),
                 })
+
+    # ── Index futures + options (NIFTY, BANKNIFTY, FINNIFTY) ────────────
+    # These are critical: the options desk chains for indices only work if
+    # OPT rows exist in PriceData with segment='OPT' for these underlyings.
+    for symbol, (anchor, drift) in mock_index_underlyings.items():
+        seed = int(target_date.strftime("%Y%m%d")) + sum(ord(c) for c in symbol)
+        rng = random.Random(seed)
+        spot = anchor_price_for_date(anchor, drift, target_date)
+
+        strike_step = 100.0 if symbol == "BANKNIFTY" else 50.0
+        atm_strike = round(spot / strike_step) * strike_step
+
+        # Monthly futures
+        fut_close = spot * 1.002
+        fut_open = spot * 1.0015
+        records.append({
+            "symbol": symbol, "exchange": "NSE", "segment": "FUT",
+            "expiry": expiry, "strike": None, "option_type": None,
+            "open_interest": rng.randint(100000, 2000000),
+            "market_timestamp": target_date,
+            "open": round(fut_open, 2), "high": round(fut_close * 1.008, 2),
+            "low": round(fut_open * 0.992, 2), "close": round(fut_close, 2),
+            "volume": rng.randint(50000, 1000000),
+        })
+
+        # Weekly futures (for near-term contracts)
+        wfut_close = spot * 1.0005
+        records.append({
+            "symbol": symbol, "exchange": "NSE", "segment": "FUT",
+            "expiry": weekly_expiry, "strike": None, "option_type": None,
+            "open_interest": rng.randint(50000, 800000),
+            "market_timestamp": target_date,
+            "open": round(wfut_close * 0.999, 2), "high": round(wfut_close * 1.006, 2),
+            "low": round(wfut_close * 0.993, 2), "close": round(wfut_close, 2),
+            "volume": rng.randint(20000, 500000),
+        })
+
+        # Weekly options chain: 10 strikes around ATM, both monthly + weekly expiry
+        for exp_date in (weekly_expiry, expiry):
+            for offset in range(-5, 6):
+                strike = atm_strike + offset * strike_step
+                if strike <= 0:
+                    continue
+                for option_type in ("CE", "PE"):
+                    intrinsic = max(0.0, (spot - strike) if option_type == "CE" else (strike - spot))
+                    time_val = max(10.0, 200.0 - abs(offset) * 30.0) if symbol == "BANKNIFTY" else max(5.0, 150.0 - abs(offset) * 20.0)
+                    premium = intrinsic + rng.uniform(time_val * 0.8, time_val * 1.2)
+                    records.append({
+                        "symbol": symbol, "exchange": "NSE", "segment": "OPT",
+                        "expiry": exp_date, "strike": strike, "option_type": option_type,
+                        "open_interest": rng.randint(5000, 5000000),
+                        "market_timestamp": target_date,
+                        "open": round(premium * 0.97, 2), "high": round(premium * 1.12, 2),
+                        "low": round(premium * 0.88, 2), "close": round(premium, 2),
+                        "volume": rng.randint(1000, 2000000),
+                    })
 
     return records
 

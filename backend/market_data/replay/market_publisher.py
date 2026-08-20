@@ -150,12 +150,12 @@ class MarketPublisher:
         running_high = lp if session_rollover else max(lp, prev_cache.get("high", lp))
         running_low = lp if session_rollover else min(lp, prev_cache.get("low", lp))
 
-        # Build canonical quote dictionary
         quote = {
             "symbol": canonical,
             "instrument_token": canonical,
             "name": canonical,
             "price": lp,
+            "ltp": lp,
             "change": round(lp - prev_close, 2),
             "change_percent": round(((lp - prev_close) / prev_close * 100.0) if prev_close else 0.0, 2),
             "open": running_open,
@@ -173,11 +173,13 @@ class MarketPublisher:
             "exchange": exchange,
             "timestamp": tick["timestamp"],  # Matches the simulation clock
             "last_trade_time": tick["timestamp"],
-            "source": "live_ws",  # Disguise as live_ws for downstream pipelines
+            # Use 'simulation' source so quote_router accepts ticks even when
+            # the real NSE session gate reports market as 'closed' (academic site
+            # always replays historical data outside real trading hours).
+            "source": "simulation",
             # Tags the first quote of a new trading session so the frontend
             # chart can render a real gap instead of stitching sessions
-            # together — see InternalSimProvider._handle_sim_message and
-            # LiveChart.jsx's live-tick handler.
+            # together.
             "session_rollover": session_rollover,
         }
 
@@ -189,33 +191,95 @@ class MarketPublisher:
             # Derivative contract tick -> Emit FUTURES_QUOTE on the EventBus
             if _changed:
                 try:
+                    # Enrich with maxalgos-equivalent fields (lot_size, expiry, underlying_ltp, premium, etc.)
+                    lot_size = 0
+                    expiry_date_str = ""
+                    expiry_label = ""
+                    days_to_expiry = None
+                    instrument_type = "FUTSTK"
+                    underlying_ltp = 0.0
+
+                    try:
+                        from services.futures_service import get_contracts
+                        # Strip year+month suffix to recover base symbol (e.g. NIFTY26AUGFUT -> NIFTY)
+                        import re as _re
+                        base_match = _re.match(r'^([A-Z&]+)', canonical.upper())
+                        base_sym = base_match.group(1) if base_match else canonical
+                        contracts = get_contracts(base_sym, limit=3)
+                        for c in contracts:
+                            csym = str(c.get("contract_symbol") or "").upper()
+                            if csym == canonical.upper():
+                                lot_size = int(c.get("lot_size") or 0)
+                                expiry_date_str = str(c.get("expiry_date") or "")
+                                expiry_label = str(c.get("expiry_label") or "")
+                                instrument_type = str(c.get("instrument_type") or "FUTSTK")
+                                # days_to_expiry from expiry_date
+                                if expiry_date_str:
+                                    from datetime import date as _date
+                                    exp = _date.fromisoformat(expiry_date_str)
+                                    days_to_expiry = (exp - _date.today()).days
+                                break
+                    except Exception:
+                        pass
+
+                    # Underlying spot for index futures
+                    try:
+                        from market.quote_coordinator import quote_coordinator
+                        import re as _re2
+                        base2 = _re2.match(r'^([A-Z&]+)', canonical.upper())
+                        bsym = base2.group(1) if base2 else ""
+                        spot_key = f"{bsym}.NS"
+                        spot_q = quote_coordinator.get_authority_quotes().get(spot_key) or {}
+                        underlying_ltp = float(spot_q.get("price") or spot_q.get("ltp") or 0)
+                    except Exception:
+                        pass
+
+                    premium = round(lp - underlying_ltp, 2) if underlying_ltp > 0 else 0.0
+
                     futures_quote = {
+                        # Core identity
                         "contract_symbol": canonical,
                         "exchange": exchange,
                         "token": canonical,
+                        "instrument_type": instrument_type,
+                        # Pricing
                         "ltp": lp,
                         "bid": quote["bid_price"],
                         "ask": quote["ask_price"],
                         "spread": round(quote["ask_price"] - quote["bid_price"], 2),
-                        "volume": quote["volume"],
-                        "oi": quote["oi"],
+                        "avg_price": lp,
+                        # OHLCV
                         "open": quote["open"],
                         "high": quote["high"],
                         "low": quote["low"],
                         "close": quote["close"],
-                        "change": quote["change"],
-                        "percent_change": quote["change_percent"],
-                        "avg_price": lp,
+                        "prev_close": quote["prev_close"],
+                        "volume": quote["volume"],
+                        "oi": quote["oi"],
                         "bid_qty": quote["bid_qty"],
                         "ask_qty": quote["ask_qty"],
+                        # Change
+                        "change": quote["change"],
+                        "percent_change": quote["change_percent"],
+                        # Expiry metadata
+                        "expiry_date": expiry_date_str,
+                        "expiry_label": expiry_label,
+                        "days_to_expiry": days_to_expiry,
+                        "lot_size": lot_size,
+                        # Basis / analytics
+                        "underlying_ltp": underlying_ltp,
+                        "premium": premium,
+                        "basis": premium,
+                        # Timing
                         "timestamp": quote["timestamp"],
+                        "source": "simulation",
                     }
-                    
+
                     await event_bus.emit(
                         Event(
                             type=EventType.FUTURES_QUOTE,
                             data=futures_quote,
-                            source="live_ws",
+                            source="simulation",
                         )
                     )
                 except Exception as e:

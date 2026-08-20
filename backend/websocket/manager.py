@@ -383,9 +383,16 @@ class ConnectionManager:
         """Handle FUTURES_QUOTE events from market data service.
         Broadcasts real-time quotes to all subscribers of the contract.
         Also feeds FuturesStreamManager for freshness tracking.
+
+        NOTE: market_publisher.py emits the futures_quote dict FLAT as event.data
+        (i.e. event.data has contract_symbol, ltp, bid, ... at the top level,
+        NOT wrapped in a nested 'quote' key).
         """
-        contract_symbol = event.data.get("contract_symbol")
-        quote = event.data.get("quote")
+        data = event.data or {}
+        contract_symbol = data.get("contract_symbol")
+        # The flat data dict IS the quote — extract quote fields by removing the
+        # identity fields that the frontend doesn't need inside the data payload.
+        quote = {k: v for k, v in data.items() if k != "contract_symbol"}
         if contract_symbol and quote:
             try:
                 from websocket.futures_stream import futures_stream_manager

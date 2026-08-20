@@ -701,7 +701,7 @@ async def get_quote(contract_symbol: str) -> dict:
     the master data feed session. Falls back to cached data if fresh fetch unavailable.
 
     Args:
-        contract_symbol: Futures contract symbol (e.g., "RELIANCE")
+        contract_symbol: Futures contract symbol (e.g., "RELIANCE26AUGFUT")
 
     Returns:
         Quote dict with keys: ltp, open, high, low, close, volume, oi, etc.
@@ -710,6 +710,19 @@ async def get_quote(contract_symbol: str) -> dict:
     sym = str(contract_symbol or "").strip().upper()
     if not sym:
         return {}
+
+    # Ensure the contract symbol is subscribed on the master provider so the
+    # InternalSimProvider generates ticks for it. This call is idempotent and
+    # cheap if already subscribed. Without this, the provider never subscribes
+    # the full contract symbol (e.g. NIFTY26AUGFUT) and _resolve_contract_symbol
+    # falls through to synthesize a generic symbol instead of the correct one.
+    try:
+        from services.data_feed_session import data_feed_session_manager
+        provider = data_feed_session_manager.get_any_session()
+        if provider is not None:
+            await provider.subscribe([sym])
+    except Exception:
+        pass
 
     market_frozen = market_session.get_current_state() != MarketState.OPEN
 
@@ -734,12 +747,75 @@ async def get_quote(contract_symbol: str) -> dict:
             return cached
 
         snap = await get_snapshot_quote(sym)
-        return snap if snap else {}
+        if snap:
+            return snap
+
+        # Last resort: synthesize a realistic quote from the underlying spot price.
+        # This provides a non-empty response while live ticks are still being
+        # generated for the first time (InternalSimProvider needs a few seconds
+        # to subscribe and produce ticks after a fresh start).
+        return await _synthesize_futures_quote(sym)
 
     except Exception as e:
         logger.error(f"Live quote fetch error for {sym}: {e}", exc_info=True)
         snap = await get_snapshot_quote(sym)
-        return snap if snap else {}
+        return snap if snap else await _synthesize_futures_quote(sym)
+
+
+async def _synthesize_futures_quote(contract_symbol: str) -> dict:
+    """Generate a plausible synthetic futures quote from the underlying spot price.
+    Used as a warm-up fallback while InternalSimProvider is still connecting."""
+    sym = str(contract_symbol or "").strip().upper()
+
+    # Extract the underlying base symbol from the contract symbol
+    # e.g. NIFTY26AUGFUT -> NIFTY, RELIANCE26AUGFUT -> RELIANCE
+    import re as _re
+    base_match = _re.match(r'^([A-Z&]+?)(?:\d{2}[A-Z]{3})?(?:FUT|CE|PE)$', sym)
+    base = base_match.group(1) if base_match else sym.replace("FUT", "")
+
+    # Get spot from market data or brownian_bridge anchor
+    try:
+        from services.market_data import get_system_quote_live_only
+        from providers.internal_sim_provider import _INDEX_SIM_MAP
+
+        _INDEX_MAP_REVERSE = {
+            "NIFTY50": "^NSEI", "NIFTY": "^NSEI",
+            "BANKNIFTY": "^NSEBANK", "FINNIFTY": "^CNXFIN",
+            "SENSEX": "^BSESN",
+        }
+        spot_sym = _INDEX_MAP_REVERSE.get(base, f"{base}.NS")
+        spot_quote = await get_system_quote_live_only(spot_sym, allow_recover=False)
+        spot = float(spot_quote.get("price") or spot_quote.get("ltp") or 0) if spot_quote else 0.0
+    except Exception:
+        spot = 0.0
+
+    if spot <= 0:
+        try:
+            from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
+            spot = _resolve_realistic_base_price(base, "EQ")
+        except Exception:
+            spot = 1000.0
+
+    # Futures trade at a small premium (contango)
+    ltp = round(spot * 1.002, 2)
+    return {
+        "contract_symbol": sym,
+        "symbol": sym,
+        "ltp": ltp,
+        "price": ltp,
+        "lp": ltp,
+        "open": round(ltp * 0.998, 2),
+        "high": round(ltp * 1.005, 2),
+        "low": round(ltp * 0.993, 2),
+        "close": round(spot, 2),
+        "prev_close": round(spot, 2),
+        "volume": 0,
+        "oi": 0,
+        "bid": round(ltp - 0.5, 2),
+        "ask": round(ltp + 0.5, 2),
+        "source": "simulated_fallback",
+        "available": True,
+    }
 
 
 async def get_history(

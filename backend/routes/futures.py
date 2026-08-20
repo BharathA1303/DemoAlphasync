@@ -118,6 +118,71 @@ def _snapshot_envelope(data: dict, stream_symbols: list, snapshot_ts, snapshot: 
         "data": data or {},
     }
 
+def _enrich_futures_quote(contract_symbol: str, quote_dict: dict) -> dict:
+    """
+    Augment a raw futures quote with MaxAlgos-equivalent metadata fields:
+    lot_size, expiry_date, days_to_expiry, instrument_type, underlying_ltp,
+    premium, basis, spread.
+
+    All fields are best-effort — if any lookup fails, the field is omitted
+    rather than raising an error (non-blocking enrichment).
+    """
+    sym = str(contract_symbol or "").strip().upper()
+    enriched = dict(quote_dict)
+
+    # Contract metadata (lot_size, expiry, instrument_type)
+    try:
+        import re as _re
+        base_m = _re.match(r'^([A-Z&]+)', sym)
+        base_sym = base_m.group(1) if base_m else sym
+        contracts = futures_service.get_contracts(base_sym, limit=3)
+        for c in contracts:
+            csym = str(c.get("contract_symbol") or "").upper()
+            if csym == sym:
+                enriched.setdefault("lot_size", int(c.get("lot_size") or 0))
+                enriched.setdefault("tick_size", float(c.get("tick_size") or 0.05))
+                enriched.setdefault("expiry_date", str(c.get("expiry_date") or ""))
+                enriched.setdefault("expiry_label", str(c.get("expiry_label") or ""))
+                enriched.setdefault("instrument_type", str(c.get("instrument_type") or "FUTSTK"))
+                enriched.setdefault("exchange", str(c.get("exchange") or "NFO"))
+                # days_to_expiry
+                try:
+                    from datetime import date as _d
+                    exp = _d.fromisoformat(str(c.get("expiry_date") or ""))
+                    enriched.setdefault("days_to_expiry", (exp - _d.today()).days)
+                except Exception:
+                    pass
+                break
+    except Exception:
+        pass
+
+    # Spread (ask - bid)
+    bid = enriched.get("bid") or 0
+    ask = enriched.get("ask") or 0
+    if ask and bid:
+        enriched.setdefault("spread", round(float(ask) - float(bid), 2))
+
+    # Underlying LTP + premium/basis (futures LTP - spot)
+    ltp = float(enriched.get("ltp") or enriched.get("price") or 0)
+    try:
+        import re as _re2
+        from market.quote_coordinator import quote_coordinator
+        base_m2 = _re2.match(r'^([A-Z&]+)', sym)
+        bsym = base_m2.group(1) if base_m2 else ""
+        spot_key = f"{bsym}.NS"
+        spot_q = quote_coordinator.get_authority_quotes().get(spot_key) or {}
+        spot_ltp = float(spot_q.get("price") or spot_q.get("ltp") or 0)
+        if spot_ltp > 0:
+            enriched.setdefault("underlying_ltp", spot_ltp)
+            if ltp > 0:
+                premium = round(ltp - spot_ltp, 2)
+                enriched.setdefault("premium", premium)
+                enriched.setdefault("basis", premium)
+    except Exception:
+        pass
+
+    return enriched
+
 
 def _format_contracts(symbol: str, contracts: list[dict]) -> list[dict]:
     results = []
@@ -301,6 +366,8 @@ async def get_contract_quote(
     contract_symbol = contract_symbol.upper().strip()
 
     # Fast path: if token is provided by contracts list, query GetQuotes directly.
+    # Only available for Zebu OAuth provider (has _rest_post); InternalSimProvider
+    # does not expose _rest_post so we guard with hasattr to avoid AttributeError.
     token_value = str(token or "").strip()
     exchange_value = str(exchange or "").upper().strip() or "NFO"
     if token_value:
@@ -309,13 +376,13 @@ async def get_contract_quote(
 
             provider = data_feed_session_manager.get_any_session()
 
-            if provider is not None:
+            if provider is not None and hasattr(provider, "_rest_post"):
                 raw = await provider._rest_post(
                     "/GetQuotes",
                     {"exch": exchange_value, "token": token_value},
                 )
                 if raw and isinstance(raw, dict) and raw.get("stat") == "Ok":
-                    return {
+                    base_quote = {
                         "contract_symbol": contract_symbol,
                         "ltp": raw.get("lp") or raw.get("ltp") or raw.get("price"),
                         "open": raw.get("o") or raw.get("open"),
@@ -337,13 +404,14 @@ async def get_contract_quote(
                         "ask_depth": raw.get("tsq") or raw.get("ask_depth"),
                         "available": True,
                     }
+                    return _enrich_futures_quote(contract_symbol, base_quote)
         except Exception as e:
             logger.debug(f"Direct token quote failed for {contract_symbol}: {e}")
 
     # Try cache first
     cached = await futures_service.get_cache_quote(contract_symbol)
     if cached:
-        return {
+        base_quote = {
             "contract_symbol": contract_symbol,
             "ltp": cached.get("ltp") or cached.get("price") or cached.get("lp"),
             "open": cached.get("open") or cached.get("o"),
@@ -365,43 +433,39 @@ async def get_contract_quote(
             "market_open": market_session.is_trading_hours(),
             "bid_depth": cached.get("bid_depth"),
             "ask_depth": cached.get("ask_depth"),
+            # Pass through enriched fields already in the cache (from WS tick)
+            "lot_size": cached.get("lot_size"),
+            "expiry_date": cached.get("expiry_date"),
+            "expiry_label": cached.get("expiry_label"),
+            "days_to_expiry": cached.get("days_to_expiry"),
+            "instrument_type": cached.get("instrument_type"),
+            "underlying_ltp": cached.get("underlying_ltp"),
+            "premium": cached.get("premium"),
+            "basis": cached.get("basis"),
             "available": True,
         }
+        return _enrich_futures_quote(contract_symbol, base_quote)
 
     # Fetch from market data service
     quote = await futures_service.get_quote(contract_symbol)
 
     if not quote:
-        # Return unavailable response with proper structure
         return {
             "contract_symbol": contract_symbol,
-            "ltp": None,
-            "open": None,
-            "high": None,
-            "low": None,
-            "close": None,
-            "change": None,
-            "change_pct": None,
-            "change_percent": None,
-            "prev_close": None,
-            "volume": 0,
-            "oi": 0,
-            "oi_change": None,
-            "bid": None,
-            "ask": None,
-            "vwap": None,
+            "ltp": None, "open": None, "high": None, "low": None, "close": None,
+            "change": None, "change_pct": None, "change_percent": None, "prev_close": None,
+            "volume": 0, "oi": 0, "oi_change": None,
+            "bid": None, "ask": None, "vwap": None,
             "timestamp": int(datetime.now().timestamp()),
             "market_open": market_session.is_trading_hours(),
-            "bid_depth": None,
-            "ask_depth": None,
-            "available": False,
+            "bid_depth": None, "ask_depth": None, "available": False,
         }
 
     # Cache the retrieved quote
     await futures_service.set_cache_quote(contract_symbol, quote)
 
-    # Normalize quote response
-    return {
+    # Normalize and enrich quote response
+    base_quote = {
         "contract_symbol": contract_symbol,
         "ltp": quote.get("ltp") or quote.get("price") or quote.get("lp"),
         "open": quote.get("open") or quote.get("o"),
@@ -421,8 +485,18 @@ async def get_contract_quote(
         "market_open": market_session.is_trading_hours(),
         "bid_depth": quote.get("bid_depth"),
         "ask_depth": quote.get("ask_depth"),
+        # Pass through enriched fields already set by the simulation engine
+        "lot_size": quote.get("lot_size"),
+        "expiry_date": quote.get("expiry_date"),
+        "expiry_label": quote.get("expiry_label"),
+        "days_to_expiry": quote.get("days_to_expiry"),
+        "instrument_type": quote.get("instrument_type"),
+        "underlying_ltp": quote.get("underlying_ltp"),
+        "premium": quote.get("premium"),
+        "basis": quote.get("basis"),
         "available": True,
     }
+    return _enrich_futures_quote(contract_symbol, base_quote)
 
 
 @router.get("/history/{contract_symbol}")

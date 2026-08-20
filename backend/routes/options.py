@@ -463,153 +463,369 @@ async def _internal_sim_option_chain(
 
 async def _generate_simulated_option_chain(symbol: str, expiry: Optional[str], strikes: int) -> dict:
     """
-    Generates a realistic simulated option chain with weekly expiries and strikes.
+    Generates a realistic simulated option chain with weekly expiries, strikes,
+    and full Black-Scholes greeks (IV, Delta, Gamma, Theta, Vega).
+
+    Key improvements over previous version:
+    - Spot price pulled from the LIVE simulation clock (updates every tick)
+    - Real Black-Scholes pricing — option LTPs move as underlying moves
+    - Full greeks: IV, delta, gamma, theta, vega per strike
+    - MaxAlgos-equivalent fields: intrinsic_value, time_value, days_to_expiry,
+      underlying_ltp, lotsize, tick_size, prev_close, open, high, low
+    - ATM center follows current spot — options chain shifts dynamically
     """
-    import random
-    from datetime import datetime, timedelta, timezone
+    import math
+    import random as _random
+    from datetime import datetime, timedelta, date, timezone
     from market_data.replay.simulation_clock import simulation_clock
 
     sym = symbol.upper().strip()
-    
-    # 1. Determine Spot Price
-    from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
-    spot_price = _resolve_realistic_base_price(sym, "EQ")
 
-    # Try to get live quote from QuoteCoordinator if available
+    # ── 1. Live Spot Price (from simulation clock via QuoteCoordinator) ──────
+    spot_price = 0.0
     try:
         from market.quote_coordinator import quote_coordinator
-        lookup_keys = [sym, f"{sym}.NS", f"NSE:EQ:{sym}", f"BSE:EQ:{sym}"]
+        # Priority: QuoteCoordinator authority (gets real simulation ticks)
+        authority = quote_coordinator.get_authority_quotes()
+        lookup_keys = [sym, f"{sym}.NS"]
         if sym in ("NIFTY", "NIFTY50"):
-            lookup_keys.extend(["^NSEI", "NSE:IDX:NIFTY50", "NIFTY50.NS"])
-        elif sym in ("BANKNIFTY", "NIFTYBANK"):
-            lookup_keys.extend(["^NSEBANK", "NSE:IDX:BANKNIFTY", "BANKNIFTY.NS"])
+            lookup_keys.extend(["^NSEI", "NIFTY50.NS"])
+        elif sym == "BANKNIFTY":
+            lookup_keys.extend(["^NSEBANK", "BANKNIFTY.NS"])
         elif sym == "FINNIFTY":
-            lookup_keys.extend(["^CNXFIN", "NSE:IDX:FINNIFTY"])
+            lookup_keys.extend(["^CNXFIN"])
         elif sym == "SENSEX":
-            lookup_keys.extend(["^BSESN", "BSE:IDX:SENSEX"])
-
-        for lookup_key in lookup_keys:
-            quote = await quote_coordinator.get_quote(lookup_key)
-            if quote and (quote.get("price") or quote.get("ltp")):
-                p = float(quote.get("price") or quote.get("ltp"))
-                if p > 0:
-                    spot_price = p
-                    break
+            lookup_keys.extend(["^BSESN"])
+        elif sym == "MIDCPNIFTY":
+            lookup_keys.extend(["^CNXMIDCAP"])
+        for key in lookup_keys:
+            q = authority.get(key) or {}
+            p = float(q.get("price") or q.get("ltp") or 0)
+            if p > 100:
+                spot_price = p
+                break
     except Exception:
         pass
 
-    # 2. Determine Expiry Dates (next 4 Thursdays)
+    if spot_price <= 0:
+        # Fallback: REST quote
+        try:
+            spot_sym = _SPOT_MAP.get(sym, f"{sym}.NS")
+            sq = await get_system_quote_live_only(spot_sym, allow_recover=True)
+            spot_price = float(sq.get("ltp") or sq.get("price") or 0) if sq else 0.0
+        except Exception:
+            pass
+
+    if spot_price <= 0:
+        # Last resort: deterministic base price
+        try:
+            from data_layer.simulator.brownian_bridge import _resolve_realistic_base_price
+            spot_price = _resolve_realistic_base_price(sym, "EQ")
+        except Exception:
+            spot_price = 24000.0 if sym == "NIFTY" else 52000.0 if sym == "BANKNIFTY" else 5000.0
+
+    # ── 2. Simulation Clock ──────────────────────────────────────────────────
     now = simulation_clock.now()
-    expiry_dates = []
-    
-    # Find next Thursdays
-    current = now
-    while len(expiry_dates) < 4:
-        current += timedelta(days=1)
-        if current.weekday() == 3:  # Thursday
-            # Format as DD-MMM-YYYY (e.g. 02-Jul-2026)
-            expiry_dates.append(current.strftime("%d-%b-%Y"))
 
-    selected_expiry = expiry if expiry else expiry_dates[0]
+    # ── 3. Expiry Dates (next 4 Thursdays from sim clock) ───────────────────
+    expiry_dates_iso = []
+    cur = now
+    while len(expiry_dates_iso) < 4:
+        cur += timedelta(days=1)
+        if cur.weekday() == 3:  # Thursday
+            expiry_dates_iso.append(cur.strftime("%Y-%m-%d"))
 
-    # 3. Determine Strike Price Parameters
-    strike_step = 50
-    if sym == "BANKNIFTY" or sym == "SENSEX":
-        strike_step = 100
-    elif sym == "NIFTY" or sym == "FINNIFTY":
-        strike_step = 50
-    elif spot_price > 5000:
-        strike_step = 100
-    elif spot_price > 1000:
-        strike_step = 50
-    elif spot_price > 500:
-        strike_step = 10
+    # Human-readable format for display
+    expiry_dates_display = [
+        datetime.strptime(d, "%Y-%m-%d").strftime("%d-%b-%Y")
+        for d in expiry_dates_iso
+    ]
+
+    # Select expiry
+    if expiry:
+        parsed = _parse_expiry_date(expiry)
+        selected_expiry_iso = parsed or expiry_dates_iso[0]
     else:
-        strike_step = 5
+        selected_expiry_iso = expiry_dates_iso[0]
+
+    selected_expiry_display = datetime.strptime(selected_expiry_iso, "%Y-%m-%d").strftime("%d-%b-%Y")
+
+    # ── 4. Days to Expiry (from simulation clock's date) ────────────────────
+    try:
+        expiry_date_obj = datetime.strptime(selected_expiry_iso, "%Y-%m-%d").date()
+        sim_date = now.date()
+        dte = max(0, (expiry_date_obj - sim_date).days)
+    except Exception:
+        dte = 7
+
+    T = max(dte / 365.0, 1 / 365.0)  # time to expiry in years (min 1 day)
+
+    # ── 5. Strike Parameters ─────────────────────────────────────────────────
+    strike_step = _OPTION_STRIKE_STEP.get(sym, 50)
+    if sym not in _OPTION_STRIKE_STEP:
+        if spot_price > 5000:
+            strike_step = 100
+        elif spot_price > 1000:
+            strike_step = 50
+        elif spot_price > 200:
+            strike_step = 10
+        else:
+            strike_step = 5
 
     center_strike = int(round(spot_price / strike_step) * strike_step)
-    
-    # Generate strikes around ATM
+
+    # ── 6. Lot Size / Tick Size ──────────────────────────────────────────────
+    _LOT_SIZES = {
+        "NIFTY": 75, "BANKNIFTY": 35, "FINNIFTY": 65,
+        "MIDCPNIFTY": 120, "NIFTYNXT50": 25, "SENSEX": 20,
+    }
+    lot_size = _LOT_SIZES.get(sym, 100)
+    tick_size = 0.05
+
+    # ── 7. Implied Volatility surface (realistic by moneyness) ───────────────
+    # ATM IV calibrated per index; wings have vol skew
+    _ATM_IV = {
+        "NIFTY": 0.13, "BANKNIFTY": 0.16, "FINNIFTY": 0.15,
+        "MIDCPNIFTY": 0.18, "SENSEX": 0.14,
+    }
+    atm_iv = _ATM_IV.get(sym, 0.20)
+
+    # Risk-free rate (India ~6.5%)
+    r = 0.065
+
+    # ── 8. Black-Scholes helpers ─────────────────────────────────────────────
+    def _norm_cdf(x: float) -> float:
+        return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+    def _norm_pdf(x: float) -> float:
+        return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+    def bs_price(S: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
+        if T <= 0 or sigma <= 0:
+            return max(S - K, 0.0) if is_call else max(K - S, 0.0)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        if is_call:
+            return S * _norm_cdf(d1) - K * math.exp(-r * T) * _norm_cdf(d2)
+        else:
+            return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+
+    def bs_delta(S: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
+        if T <= 0 or sigma <= 0:
+            return (1.0 if S > K else 0.0) if is_call else (-1.0 if S < K else 0.0)
+        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+        return _norm_cdf(d1) if is_call else _norm_cdf(d1) - 1.0
+
+    def bs_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
+        if T <= 0 or sigma <= 0 or S <= 0:
+            return 0.0
+        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+        return _norm_pdf(d1) / (S * sigma * math.sqrt(T))
+
+    def bs_theta(S: float, K: float, T: float, r: float, sigma: float, is_call: bool) -> float:
+        """Theta per calendar day (not per year)."""
+        if T <= 0 or sigma <= 0:
+            return 0.0
+        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        term1 = -(S * _norm_pdf(d1) * sigma) / (2.0 * math.sqrt(T))
+        if is_call:
+            term2 = -r * K * math.exp(-r * T) * _norm_cdf(d2)
+        else:
+            term2 = r * K * math.exp(-r * T) * _norm_cdf(-d2)
+        return round((term1 + term2) / 365.0, 4)
+
+    def bs_vega(S: float, K: float, T: float, r: float, sigma: float) -> float:
+        """Vega per 1% change in IV."""
+        if T <= 0 or sigma <= 0 or S <= 0:
+            return 0.0
+        d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+        return round(S * _norm_pdf(d1) * math.sqrt(T) * 0.01, 4)
+
+    # ── 9. Seed for deterministic OI/volume (changes each 5-min bar) ─────────
+    bar_ts = int(now.timestamp()) // 300  # 5-min buckets
+    seed_val = sum(ord(c) for c in sym) + int(now.strftime("%Y%m%d")) + hash(selected_expiry_iso) % 100000
+    rng = _random.Random(seed_val)
+
+    # ── 10. Build Chain ───────────────────────────────────────────────────────
     chain = []
     stream_symbols = []
-    
-    # Render option contracts
-    # E.g. NIFTY26JUL22000CE
-    # Format expiry for contract symbol (e.g. 26JUL)
+
     try:
-        exp_dt = datetime.strptime(selected_expiry, "%d-%b-%Y")
-        expiry_sym_str = exp_dt.strftime("%y%b").upper() # e.g. 26JUL
-        # Option contract symbol format: NIFTY26JUL22000CE
+        exp_dt = datetime.strptime(selected_expiry_iso, "%Y-%m-%d")
+        expiry_sym_str = exp_dt.strftime("%y%b").upper()  # e.g. 26AUG
     except Exception:
-        expiry_sym_str = "26JUL"
+        expiry_sym_str = now.strftime("%y%b").upper()
 
     for i in range(-strikes, strikes + 1):
         strike = center_strike + (i * strike_step)
         if strike <= 0:
             continue
 
+        K = float(strike)
+        moneyness = K / spot_price  # 1.0 = ATM
+
+        # Volatility skew: OTM puts have higher IV (typical Indian market)
+        skew_adjustment = 0.02 * (1.0 - moneyness)  # smile/skew
+        ce_iv = max(0.05, atm_iv + skew_adjustment * (-1 if moneyness < 1 else 0.5))
+        pe_iv = max(0.05, atm_iv + skew_adjustment * (1.2 if moneyness < 1 else -0.3))
+
+        # CE calculations
+        ce_theo = bs_price(spot_price, K, T, r, ce_iv, True)
+        ce_intrinsic = max(0.0, spot_price - K)
+        ce_time_val = max(0.0, ce_theo - ce_intrinsic)
+        ce_ltp = max(0.05, round(ce_theo, 2))
+        ce_delta = round(bs_delta(spot_price, K, T, r, ce_iv, True), 4)
+        ce_gamma = round(bs_gamma(spot_price, K, T, r, ce_iv), 6)
+        ce_theta = bs_theta(spot_price, K, T, r, ce_iv, True)
+        ce_vega = bs_vega(spot_price, K, T, r, ce_iv)
+
+        # PE calculations
+        pe_theo = bs_price(spot_price, K, T, r, pe_iv, False)
+        pe_intrinsic = max(0.0, K - spot_price)
+        pe_time_val = max(0.0, pe_theo - pe_intrinsic)
+        pe_ltp = max(0.05, round(pe_theo, 2))
+        pe_delta = round(bs_delta(spot_price, K, T, r, pe_iv, False), 4)
+        pe_gamma = round(bs_gamma(spot_price, K, T, r, pe_iv), 6)
+        pe_theta = bs_theta(spot_price, K, T, r, pe_iv, False)
+        pe_vega = bs_vega(spot_price, K, T, r, pe_iv)
+
+        # Bid-ask spread (tighter at ATM, wider OTM)
+        spread_factor = 1.0 + abs(i) * 0.15
+        ce_spread = max(tick_size, round(ce_ltp * 0.003 * spread_factor, 2))
+        pe_spread = max(tick_size, round(pe_ltp * 0.003 * spread_factor, 2))
+
+        # OI distribution (higher OI near ATM)
+        oi_multiplier = max(0.1, 1.0 - abs(i) * 0.08)
+        base_oi = rng.randint(50000, 3000000)
+        base_vol = rng.randint(10000, 800000)
+
+        # ATM label
+        if i == 0:
+            label = "ATM"
+        elif i > 0:
+            label = f"OTM{abs(i)}"
+        else:
+            label = f"ITM{abs(i)}"
+
         ce_symbol = f"{sym}{expiry_sym_str}{strike}CE"
         pe_symbol = f"{sym}{expiry_sym_str}{strike}PE"
-        
-        # Calculate theoretical prices (simple intrinsic + time value)
-        dist_from_atm = abs(spot_price - strike)
-        time_value = max(5.0, 150.0 - (dist_from_atm * 0.8)) if sym in ("NIFTY", "BANKNIFTY", "SENSEX") else max(1.0, 25.0 - (dist_from_atm * 0.8))
-        
-        ce_intrinsic = max(0.0, spot_price - strike)
-        pe_intrinsic = max(0.0, strike - spot_price)
-        
-        ce_ltp = round(ce_intrinsic + time_value, 2)
-        pe_ltp = round(pe_intrinsic + time_value, 2)
-        
-        # Bid/Ask spreads
-        ce_bid = round(ce_ltp - 0.15, 2)
-        ce_ask = round(ce_ltp + 0.15, 2)
-        pe_bid = round(pe_ltp - 0.15, 2)
-        pe_ask = round(pe_ltp + 0.15, 2)
 
-        # Build row
+        # Simulate open/high/low from LTP with slight noise
+        ce_prev_close = max(0.05, round(ce_ltp * rng.uniform(0.92, 1.08), 2))
+        pe_prev_close = max(0.05, round(pe_ltp * rng.uniform(0.92, 1.08), 2))
+        ce_open = max(0.05, round(ce_prev_close * rng.uniform(0.98, 1.02), 2))
+        pe_open = max(0.05, round(pe_prev_close * rng.uniform(0.98, 1.02), 2))
+        ce_high = max(ce_ltp, round(ce_ltp * rng.uniform(1.0, 1.05), 2))
+        pe_high = max(pe_ltp, round(pe_ltp * rng.uniform(1.0, 1.05), 2))
+        ce_low = min(ce_ltp, max(0.05, round(ce_ltp * rng.uniform(0.95, 1.0), 2)))
+        pe_low = min(pe_ltp, max(0.05, round(pe_ltp * rng.uniform(0.95, 1.0), 2)))
+
         row = {
             "strike": strike,
+            "label": label,
+            "days_to_expiry": dte,
+            "underlying_ltp": spot_price,
             "CE": {
                 "symbol": ce_symbol,
                 "token": ce_symbol,
+                "tsym": ce_symbol,
+                "option_type": "CE",
+                "strike": strike,
+                "expiry": selected_expiry_display,
+                "lotsize": lot_size,
+                "tick_size": tick_size,
+                "exchange": "NFO",
+                # Pricing
                 "ltp": ce_ltp,
                 "price": ce_ltp,
-                "change": round(random.uniform(-5, 5), 2),
-                "change_percent": round(random.uniform(-3, 3), 2),
-                "oi": random.randint(10000, 2500000),
-                "volume": random.randint(5000, 1000000),
-                "bid_price": ce_bid,
-                "ask_price": ce_ask,
-                "bid_qty": random.randint(100, 5000),
-                "ask_qty": random.randint(100, 5000),
-                "exchange": "NFO",
+                "prev_close": ce_prev_close,
+                "open": ce_open,
+                "high": ce_high,
+                "low": ce_low,
+                "change": round(ce_ltp - ce_prev_close, 2),
+                "change_percent": round((ce_ltp - ce_prev_close) / ce_prev_close * 100, 2) if ce_prev_close > 0 else 0.0,
+                # Depth
+                "bid_price": max(0.05, round(ce_ltp - ce_spread, 2)),
+                "ask_price": round(ce_ltp + ce_spread, 2),
+                "bid_qty": rng.randint(50, 5000),
+                "ask_qty": rng.randint(50, 5000),
+                # Open Interest & Volume
+                "oi": int(base_oi * oi_multiplier),
+                "oi_change": int(base_oi * oi_multiplier * rng.uniform(-0.05, 0.05)),
+                "volume": int(base_vol * oi_multiplier),
+                # Intrinsic / Time Value
+                "intrinsic_value": round(ce_intrinsic, 2),
+                "time_value": round(ce_time_val, 2),
+                # Greeks (Black-Scholes)
+                "iv": round(ce_iv * 100, 2),  # as percentage
+                "delta": ce_delta,
+                "gamma": ce_gamma,
+                "theta": ce_theta,
+                "vega": ce_vega,
+                "rho": round(K * T * math.exp(-r * T) * _norm_cdf(
+                    (math.log(spot_price / K) + (r + 0.5 * ce_iv ** 2) * T) / (ce_iv * math.sqrt(T)) - ce_iv * math.sqrt(T)
+                ) * 0.01, 4) if T > 0 and ce_iv > 0 else 0.0,
             },
             "PE": {
                 "symbol": pe_symbol,
                 "token": pe_symbol,
+                "tsym": pe_symbol,
+                "option_type": "PE",
+                "strike": strike,
+                "expiry": selected_expiry_display,
+                "lotsize": lot_size,
+                "tick_size": tick_size,
+                "exchange": "NFO",
+                # Pricing
                 "ltp": pe_ltp,
                 "price": pe_ltp,
-                "change": round(random.uniform(-5, 5), 2),
-                "change_percent": round(random.uniform(-3, 3), 2),
-                "oi": random.randint(10000, 2500000),
-                "volume": random.randint(5000, 1000000),
-                "bid_price": pe_bid,
-                "ask_price": pe_ask,
-                "bid_qty": random.randint(100, 5000),
-                "ask_qty": random.randint(100, 5000),
-                "exchange": "NFO",
-            }
+                "prev_close": pe_prev_close,
+                "open": pe_open,
+                "high": pe_high,
+                "low": pe_low,
+                "change": round(pe_ltp - pe_prev_close, 2),
+                "change_percent": round((pe_ltp - pe_prev_close) / pe_prev_close * 100, 2) if pe_prev_close > 0 else 0.0,
+                # Depth
+                "bid_price": max(0.05, round(pe_ltp - pe_spread, 2)),
+                "ask_price": round(pe_ltp + pe_spread, 2),
+                "bid_qty": rng.randint(50, 5000),
+                "ask_qty": rng.randint(50, 5000),
+                # Open Interest & Volume
+                "oi": int(base_oi * oi_multiplier * rng.uniform(0.8, 1.2)),
+                "oi_change": int(base_oi * oi_multiplier * rng.uniform(-0.05, 0.05)),
+                "volume": int(base_vol * oi_multiplier * rng.uniform(0.8, 1.2)),
+                # Intrinsic / Time Value
+                "intrinsic_value": round(pe_intrinsic, 2),
+                "time_value": round(pe_time_val, 2),
+                # Greeks (Black-Scholes)
+                "iv": round(pe_iv * 100, 2),  # as percentage
+                "delta": pe_delta,
+                "gamma": pe_gamma,
+                "theta": pe_theta,
+                "vega": pe_vega,
+                "rho": round(-K * T * math.exp(-r * T) * _norm_cdf(
+                    -(((math.log(spot_price / K) + (r + 0.5 * pe_iv ** 2) * T) / (pe_iv * math.sqrt(T))) - pe_iv * math.sqrt(T))
+                ) * 0.01, 4) if T > 0 and pe_iv > 0 else 0.0,
+            },
         }
-        
         chain.append(row)
         stream_symbols.extend([ce_symbol, pe_symbol])
 
     return {
         "symbol": sym,
         "underlying_price": spot_price,
-        "expiry_dates": expiry_dates,
-        "selected_expiry": selected_expiry,
+        "underlying_ltp": spot_price,
+        "expiry_dates": expiry_dates_display,
+        "expiry_dates_iso": expiry_dates_iso,
+        "selected_expiry": selected_expiry_display,
+        "selected_expiry_iso": selected_expiry_iso,
+        "days_to_expiry": dte,
+        "lot_size": lot_size,
+        "tick_size": tick_size,
+        "strike_step": strike_step,
+        "atm_strike": center_strike,
+        "interest_rate": round(r * 100, 2),
         "chain": chain,
         "stream_symbols": stream_symbols,
         "timestamp": now.isoformat() + "Z",
@@ -695,6 +911,19 @@ async def option_chain(
     if result:
         result["source"] = "tickalpha"
 
+        # Subscribe stream_symbols to the master provider so InternalSimProvider
+        # generates ticks for CE/PE contract symbols (e.g. NIFTY26AUG28850CE).
+        # Without this, option symbol ticks are never produced because the provider
+        # only ticks symbols from its active session's subscriptions.
+        stream_symbols = result.get("stream_symbols") or []
+        if stream_symbols:
+            try:
+                from services.data_feed_session import data_feed_session_manager
+                provider = data_feed_session_manager.get_any_session()
+                if provider is not None:
+                    await provider.subscribe(stream_symbols)
+            except Exception as sub_err:
+                logger.debug(f"Option stream_symbols subscribe failed for {sym}: {sub_err}")
 
     if result:
         chain_rows = result.get("chain") or []
@@ -717,9 +946,13 @@ async def option_chain(
                     snapshot=False,
                 )
             return result
-        logger.warning(f"the internal simulation engine chain for {sym} returned no live LTP — not caching zeros")
+        # Simulated chain always has LTPs (from _generate_simulated_option_chain)
+        # — serve it directly so the options desk is never left with a blank table.
+        logger.info(f"Serving simulated option chain for {sym}: {len(chain_rows)} strikes")
+        await _set_redis_options_cache(cache_key, result, ttl_seconds=30)
+        return result
 
-    # Do not serve stale zero-quote snapshots — force a fresh the internal simulation engine fetch or error.
+    # Try stale cached result before giving up.
     cached = await _get_redis_options_cache(cache_key)
     if not cached:
         cached = await _get_redis_options_cache(latest_cache_key)
@@ -742,14 +975,11 @@ async def option_chain(
                 )
             return cached
 
-    logger.warning(f"Option chain data unavailable from all sources for {sym}")
-    raise HTTPException(
-        status_code=503,
-        detail=(
-            f"Option chain data unavailable for {sym}. "
-            "The internal simulation engine data feed is not currently connected."
-        ),
-    )
+    # Final fallback: generate simulated chain on the fly.
+    logger.warning(f"Option chain falling back to synthetic generation for {sym}")
+    fallback_result = await _generate_simulated_option_chain(sym, expiry, strikes)
+    return fallback_result
+
 
 
 @router.get("/expiry/{symbol}")
@@ -781,10 +1011,20 @@ async def expiry_dates(
         )
         return {"symbol": sym, "expiry_dates": dates, "source": source}
 
-    raise HTTPException(
-        status_code=503,
-        detail=f"No expiry dates available for {sym}.",
-    )
+    # Fallback: generate the next 4 weekly Thursday expiry dates.
+    # This matches the approach in _generate_simulated_option_chain so the
+    # frontend's expiry selector always has valid options.
+    from datetime import timedelta as _td
+    now_dt = datetime.utcnow()
+    generated_dates = []
+    cursor = now_dt
+    while len(generated_dates) < 4:
+        cursor += _td(days=1)
+        if cursor.weekday() == 3:  # Thursday
+            generated_dates.append(cursor.strftime("%d-%b-%Y"))
+
+    logger.info(f"Options expiry using generated Thursdays for {sym}: {generated_dates}")
+    return {"symbol": sym, "expiry_dates": generated_dates, "source": "generated"}
 
 
 @router.post("/promote-hot")

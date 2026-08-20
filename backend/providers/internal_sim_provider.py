@@ -131,6 +131,51 @@ def _sim_symbol_to_canonical(sim_symbol: str) -> str:
     return f"{base}.NS"
 
 
+def _resolve_contract_symbol(base_symbol: str, segment: str, subscribed_symbols: set) -> str:
+    """Map a simulator base symbol (e.g. 'NIFTY', segment='FUT') to the actual
+    full contract symbol the UI subscribed (e.g. 'NIFTY26AUGFUT').
+
+    Search order:
+    1. Find a matching subscribed symbol (fastest, most accurate).
+    2. Look up futures_service in-memory contracts cache.
+    3. Synthesize the current near-month contract symbol as fallback.
+    """
+    base = base_symbol.upper().strip()
+    seg = segment.upper().strip()
+
+    # 1. Search the provider's own subscribed set for a matching contract.
+    #    A subscribed symbol like 'NIFTY26AUGFUT' starts with the base name.
+    for sym in subscribed_symbols:
+        s = str(sym or "").upper().strip()
+        if seg == "FUT" and s.startswith(base) and s.endswith("FUT"):
+            return s
+        if seg == "OPT" and s.startswith(base) and (s.endswith("CE") or s.endswith("PE")):
+            return s
+
+    # 2. Check futures_service in-memory contract cache.
+    try:
+        from services.futures_service import get_contracts
+        contracts = get_contracts(base, limit=1)
+        if contracts:
+            return str(contracts[0].get("contract_symbol") or base)
+    except Exception:
+        pass
+
+    # 3. Synthesize from current calendar date (last Thursday of current month).
+    try:
+        import calendar as _cal
+        now = datetime.now()
+        m, y = now.month, now.year
+        last_day_num = _cal.monthrange(y, m)[1]
+        last_day = datetime(y, m, last_day_num)
+        while last_day.weekday() != 3:  # Thursday
+            last_day -= timedelta(days=1)
+        code = last_day.strftime("%y%b").upper()
+        return f"{base}{code}FUT"
+    except Exception:
+        return f"{base}FUT"
+
+
 def _eligible_dates(max_lookback: int = 10) -> List[str]:
     """Trading dates that clear the engine's 3-rolling-day compliance delay
     gate, most-recent first, skipping weekends. The engine only has EOD data
@@ -591,17 +636,33 @@ class InternalSimProvider(MarketProvider):
 
             ticks_by_symbol: Dict[str, list] = data.get("ticks", {}) or {}
             for sim_symbol, ticks in ticks_by_symbol.items():
-                canonical_symbol = _sim_symbol_to_canonical(sim_symbol)
-                # sim_symbol is "EXCHANGE:SEGMENT:SYMBOL" (e.g. "BSE:EQ:RELIANCE").
-                # Previously this was hardcoded to "NSE" below regardless of the
-                # tick's real exchange, so a BSE-origin tick (RELIANCE.BO,
-                # BAJFINANCE.BO — the only symbols seeded into both an NSE and a
-                # BSE default watchlist, see backend/routes/watchlist.py) was
-                # published with exchange="NSE". MarketPublisher._get_prev_close
-                # then scoped its prev-close lookup to the wrong exchange's EOD
-                # rows for that symbol, producing a mismatched/implausible
-                # reference price for the BSE variant on every tick.
-                tick_exchange = sim_symbol.split(":")[0].strip().upper() or "NSE"
+                # sim_symbol format: "EXCHANGE:SEGMENT:SYMBOL" e.g. "NSE:FUT:NIFTY"
+                # We need to split it to detect if this is a derivative tick.
+                sim_parts = sim_symbol.split(":")
+                sim_segment = sim_parts[1].upper() if len(sim_parts) >= 2 else "EQ"
+                sim_base = sim_parts[2].upper() if len(sim_parts) >= 3 else sim_parts[-1].upper()
+
+                is_derivative = sim_segment in ("FUT", "OPT")
+
+                if is_derivative:
+                    # For FUT/OPT ticks: the exchange must be NFO (not NSE) so
+                    # MarketPublisher routes the tick through FUTURES_QUOTE event
+                    # (not the equity QuoteCoordinator path). Without this, all
+                    # futures ticks land as equity price updates for NIFTY.NS etc.
+                    tick_exchange = "NFO"
+                    # Resolve the actual contract symbol (e.g. NIFTY26AUGFUT) from
+                    # the subscribed symbols set. The internal sim uses the base
+                    # underlying name ("NIFTY") but the UI subscribes the full
+                    # contract symbol with expiry code. We must emit the full
+                    # contract symbol so ConnectionManager.futures_subscriptions
+                    # match and broadcast to the right clients.
+                    canonical_symbol = _resolve_contract_symbol(sim_base, sim_segment, self._subscribed_symbols)
+                else:
+                    # Equity/Index/Commodity — preserve exchange from sim_symbol
+                    # (handles BSE-origin ticks like RELIANCE.BO correctly).
+                    tick_exchange = sim_parts[0].strip().upper() if sim_parts else "NSE"
+                    canonical_symbol = _sim_symbol_to_canonical(sim_symbol)
+
                 for tick in ticks:
                     self._last_tick_at = time.time()
                     tick_time_str = data.get("virtual_time") or tick.get("t")

@@ -255,7 +255,9 @@ class ReplayProvider(MarketProvider):
             "exchange": exchange,
             "timestamp": tick["timestamp"],  # Matches the simulation clock
             "last_trade_time": tick["timestamp"],
-            "source": "live_ws",  # Disguise as live_ws for the downstream pipeline
+            # Use 'simulation' source so quote_router accepts ticks even when
+            # the real NSE session gate reports market as 'closed'.
+            "source": "simulation",
         }
 
         # Update local cache
@@ -296,7 +298,7 @@ class ReplayProvider(MarketProvider):
                             Event(
                                 type=EventType.FUTURES_QUOTE,
                                 data=futures_quote,
-                                source="live_ws",
+                                source="simulation",
                             )
                         )
                     )
@@ -315,7 +317,7 @@ class ReplayProvider(MarketProvider):
                     quote_coordinator.ingest_equity_quote(
                         canonical,
                         quote,
-                        source="live_ws",
+                        source="simulation",
                         changed=_changed,
                         mirror_symbols=mirrors,
                         write_redis=bool(self._redis),

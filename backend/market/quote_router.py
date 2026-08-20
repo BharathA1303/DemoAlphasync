@@ -11,6 +11,7 @@ from typing import Any, Optional
 _SOURCE_RANK_OPEN = {
     "live_ws": 5,
     "live": 5,
+    "simulation": 5,   # sim ticks treated same as live feed
     "market_data_worker": 4,
     "poll": 3,
     "worker": 3,
@@ -25,6 +26,7 @@ _SOURCE_RANK_CLOSED = {
     "eod": 10,
     "frozen": 9,
     "history_snapshot": 8,
+    "simulation": 7,   # simulation always wins — academic site never truly "closed"
     "live_ws": 0,
     "live": 0,
     "poll": 4,
