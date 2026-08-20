@@ -295,7 +295,7 @@ class MarketPublisher:
                 await quote_coordinator.ingest_equity_quote(
                     canonical,
                     quote,
-                    source="live_ws",
+                    source="simulation",
                     changed=_changed,
                     mirror_symbols=mirrors,
                     write_redis=bool(self._redis),
