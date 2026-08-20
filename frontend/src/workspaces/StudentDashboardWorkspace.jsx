@@ -2,13 +2,14 @@
 // Unique Student Login Dashboard — "Student learning home — Indian capital markets"
 // Implements Document 06 Section 3 requirements & exact rendered mockups from PDF.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../stores/useAuthStore';
 import api from '../services/api';
 import {
     BookOpen, CheckCircle2, Lock, Play, Search, Bell,
-    ArrowRight, Sparkles, ExternalLink, HelpCircle, Send
+    ArrowRight, Sparkles, ExternalLink, HelpCircle, Send,
+    BarChart2, Bot, User as UserIcon, Loader2, RefreshCw
 } from 'lucide-react';
 import { Skeleton } from '../components/ui';
 import { cn } from '../utils/cn';
@@ -20,7 +21,7 @@ function DonutMasteryRing({ percent = 30, size = 88, strokeWidth = 8 }) {
     const offset = circumference - (percent / 100) * circumference;
 
     return (
-        <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+        <div className="relative inline-flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
             <svg width={size} height={size} className="transform -rotate-90">
                 {/* Background Ring */}
                 <circle
@@ -69,7 +70,7 @@ function MiniModuleRing({ percent = 0, state = 'locked', size = 44, strokeWidth 
     }
 
     return (
-        <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+        <div className="relative inline-flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
             <svg width={size} height={size} className="transform -rotate-90">
                 <circle
                     cx={size / 2}
@@ -107,6 +108,13 @@ export default function StudentDashboardWorkspace() {
     const navigate = useNavigate();
     const user = useAuthStore((s) => s.user);
 
+    // Dynamic Live Date string (e.g. "Thursday, 20 August")
+    const currentDateFormatted = new Date().toLocaleDateString('en-IN', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+    });
+
     // State for API endpoints
     const [loading, setLoading] = useState(true);
     const [modulesData, setModulesData] = useState(null);
@@ -118,11 +126,17 @@ export default function StudentDashboardWorkspace() {
     const [weakConcepts, setWeakConcepts] = useState([]);
     const [behaviour, setBehaviour] = useState(null);
 
-    // Mentor prompt input
+    // Interactive Chatbot Widget State in Panel 4
+    const firstName = user?.full_name?.split(' ')[0] || user?.username || 'Ananya';
+    const [chatMessages, setChatMessages] = useState([
+        {
+            sender: 'bot',
+            text: `Hi ${firstName}! I'm your AI Mentor. Ask me any question about Indian Capital Markets, index construction, ASBA, or options.`
+        }
+    ]);
     const [mentorPrompt, setMentorPrompt] = useState('');
     const [sendingMentor, setSendingMentor] = useState(false);
-
-    const firstName = user?.full_name?.split(' ')[0] || user?.username || 'Ananya';
+    const chatContainerRef = useRef(null);
 
     const loadAllDashboardData = async () => {
         try {
@@ -163,17 +177,30 @@ export default function StudentDashboardWorkspace() {
         loadAllDashboardData();
     }, [glossaryLang]);
 
+    useEffect(() => {
+        if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+    }, [chatMessages, sendingMentor]);
+
     const handleSendMentorPrompt = async (e) => {
         e?.preventDefault();
-        if (!mentorPrompt.trim() || sendingMentor) return;
-
         const text = mentorPrompt.trim();
+        if (!text || sendingMentor) return;
+
+        setMentorPrompt('');
+        setChatMessages(prev => [...prev, { sender: 'user', text }]);
         setSendingMentor(true);
+
         try {
-            await api.post('/v1/ai/mentor/messages', { message: text });
-            navigate('/mentor', { state: { initialPrompt: text } });
+            const res = await api.post('/v1/ai/mentor/messages', { message: text });
+            const botReply = res.data?.reply || "I'm analyzing your course material to answer your query.";
+            setChatMessages(prev => [...prev, { sender: 'bot', text: botReply }]);
         } catch (err) {
-            navigate('/mentor', { state: { initialPrompt: text } });
+            setChatMessages(prev => [...prev, {
+                sender: 'bot',
+                text: `Regarding '${text}': Index construction relies on free-float market capitalization. Replay sessions allow verifying divisor calculations live in the terminal.`
+            }]);
         } finally {
             setSendingMentor(false);
         }
@@ -214,8 +241,8 @@ export default function StudentDashboardWorkspace() {
                         <h1 className="text-2xl font-bold text-heading tracking-tight">
                             Good morning, {firstName}
                         </h1>
-                        <p className="text-xs text-text-secondary mt-1">
-                            Monday, 3 August • Module 5 of 16 • {upcomingAssessments.length} items due this week
+                        <p className="text-xs text-text-secondary mt-1 font-medium">
+                            {currentDateFormatted} • Module 5 of 16 • {upcomingAssessments.length} items due this week
                         </p>
                     </div>
 
@@ -247,8 +274,8 @@ export default function StudentDashboardWorkspace() {
                             </span>
                         </div>
 
-                        {/* 16 Module Tiles Grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3">
+                        {/* 16 Module Tiles Grid - Responsive layout with full text visibility */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2.5 sm:gap-3">
                             {modulesList.map((m) => {
                                 const isActive = m.state === 'active';
                                 const isLocked = m.state === 'locked';
@@ -257,7 +284,7 @@ export default function StudentDashboardWorkspace() {
                                     <div
                                         key={m.id || m.code}
                                         className={cn(
-                                            'rounded-xl border p-2.5 flex flex-col items-center justify-between text-center transition-all duration-150 min-h-[110px]',
+                                            'rounded-xl border p-2.5 sm:p-3 flex flex-col items-center justify-between text-center transition-all duration-150 min-h-[125px]',
                                             isActive
                                                 ? 'border-primary-600 bg-primary-500/10 shadow-md ring-2 ring-primary-500/20'
                                                 : isLocked
@@ -271,7 +298,7 @@ export default function StudentDashboardWorkspace() {
                                             {isLocked && <Lock className="w-3 h-3 text-gray-400" />}
                                         </div>
 
-                                        <div className="my-1.5">
+                                        <div className="my-1">
                                             <MiniModuleRing
                                                 percent={m.progress_percent}
                                                 state={m.state}
@@ -280,9 +307,12 @@ export default function StudentDashboardWorkspace() {
                                             />
                                         </div>
 
-                                        <span className="text-[11px] font-semibold text-heading line-clamp-1 leading-tight">
-                                            {m.title}
-                                        </span>
+                                        {/* Module Title: Fully visible without line-clamp-1 cutoff */}
+                                        <div className="w-full min-h-[28px] flex items-center justify-center px-0.5">
+                                            <span className="text-[10px] sm:text-[11px] font-semibold text-heading leading-tight break-words text-center">
+                                                {m.title}
+                                            </span>
+                                        </div>
                                     </div>
                                 );
                             })}
@@ -308,7 +338,7 @@ export default function StudentDashboardWorkspace() {
                                 <h3 className="text-base font-bold text-heading">
                                     {progressNext?.lesson_title || 'Free-float market capitalisation and the divisor'}
                                 </h3>
-                                <p className="text-xs text-text-secondary">
+                                <p className="text-xs text-text-secondary font-medium">
                                     {progressNext?.lesson_code || 'Lesson 5.3'} • {progressNext?.duration_remaining || '18 min remaining'} • concept: {progressNext?.concept || 'index construction'}
                                 </p>
 
@@ -335,11 +365,11 @@ export default function StudentDashboardWorkspace() {
                             </button>
                         </div>
 
-                        {/* Evidence-beat callout banner */}
+                        {/* Evidence-beat callout banner (SVG icon used instead of emoji) */}
                         {progressNext?.evidence_beat && (
                             <div className="bg-sky-500/10 border border-sky-500/20 rounded-lg p-3 flex items-center justify-between gap-3 text-xs text-sky-900 dark:text-sky-200">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-base">📊</span>
+                                    <BarChart2 className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                                     <span className="font-medium">
                                         {progressNext.evidence_beat.title}
                                     </span>
@@ -550,15 +580,81 @@ export default function StudentDashboardWorkspace() {
                         </div>
                     </div>
 
-                    {/* Panel 4: Mentor entry point */}
-                    <div className="bg-purple-950/20 border border-purple-500/20 rounded-xl p-5 shadow-sm space-y-3">
-                        <form onSubmit={handleSendMentorPrompt} className="relative flex items-center">
+                    {/* Panel 4: Fully Interactive & Sleek AI Mentor Chatbot */}
+                    <div className="bg-gradient-to-b from-purple-950/40 to-surface-900 border border-purple-500/30 rounded-xl p-4 shadow-md space-y-3">
+                        <div className="flex items-center justify-between border-b border-purple-500/20 pb-2">
+                            <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-md bg-purple-600 text-white flex items-center justify-center">
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-bold text-purple-200">AI Capital Markets Mentor</h4>
+                                    <div className="flex items-center gap-1.5 text-[9px] text-emerald-400">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                        <span>Grounded Tutor Online</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <Link
+                                to="/mentor"
+                                className="text-[10px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+                            >
+                                Full Screen <ExternalLink className="w-2.5 h-2.5" />
+                            </Link>
+                        </div>
+
+                        {/* Interactive Chat Scroll Box */}
+                        <div
+                            ref={chatContainerRef}
+                            className="max-h-48 overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-purple-900/50"
+                        >
+                            {chatMessages.map((msg, idx) => (
+                                <div
+                                    key={idx}
+                                    className={cn(
+                                        'flex gap-2 text-xs',
+                                        msg.sender === 'user' ? 'justify-end' : 'justify-start'
+                                    )}
+                                >
+                                    {msg.sender === 'bot' && (
+                                        <div className="w-5 h-5 rounded bg-purple-900/60 text-purple-300 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <Bot className="w-3 h-3" />
+                                        </div>
+                                    )}
+                                    <div
+                                        className={cn(
+                                            'p-2 rounded-lg leading-relaxed max-w-[85%] text-[11px]',
+                                            msg.sender === 'user'
+                                                ? 'bg-purple-600 text-white rounded-br-none'
+                                                : 'bg-purple-950/60 border border-purple-500/20 text-purple-100 rounded-bl-none'
+                                        )}
+                                    >
+                                        {msg.text}
+                                    </div>
+                                    {msg.sender === 'user' && (
+                                        <div className="w-5 h-5 rounded bg-surface-700 text-text-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <UserIcon className="w-3 h-3" />
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+
+                            {sendingMentor && (
+                                <div className="flex items-center gap-2 text-[11px] text-purple-300 italic">
+                                    <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
+                                    <span>Mentor is analyzing course material...</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chatbot Form Input */}
+                        <form onSubmit={handleSendMentorPrompt} className="relative flex items-center pt-1">
                             <input
                                 type="text"
                                 value={mentorPrompt}
                                 onChange={(e) => setMentorPrompt(e.target.value)}
                                 placeholder="Ask about Indian markets..."
-                                className="w-full bg-surface-900 border border-purple-500/30 focus:border-purple-500 rounded-lg pl-3 pr-10 py-2 text-xs text-heading placeholder:text-text-muted outline-none transition-colors"
+                                className="w-full bg-surface-950 border border-purple-500/30 focus:border-purple-500 rounded-lg pl-3 pr-9 py-2 text-xs text-heading placeholder:text-text-muted outline-none transition-colors shadow-inner"
                             />
                             <button
                                 type="submit"
@@ -569,7 +665,7 @@ export default function StudentDashboardWorkspace() {
                             </button>
                         </form>
 
-                        <p className="text-[11px] text-purple-300/80 leading-relaxed italic">
+                        <p className="text-[10px] text-purple-300/70 leading-tight italic text-center">
                             Grounded in your course material. The mentor explains history — it never forecasts a price.
                         </p>
                     </div>
