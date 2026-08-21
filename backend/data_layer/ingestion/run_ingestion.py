@@ -176,11 +176,16 @@ async def save_records_to_db(db, records: List[Dict[str, Any]]) -> int:
         # since two concurrent writers computing the same "next version" for
         # the same source data would try to insert identical or equivalent
         # rows anyway.
-        stmt = pg_insert(PriceData).values(to_insert)
-        stmt = stmt.on_conflict_do_nothing(
-            constraint="uq_price_data_symbol_exchange_segment_date_version"
-        )
-        await db.execute(stmt)
+        # Postgres caps bound parameters per statement at 65535; chunk large
+        # batches (e.g. a full-market bhavcopy day) to stay well under that.
+        INSERT_CHUNK_SIZE = 2000
+        for i in range(0, len(to_insert), INSERT_CHUNK_SIZE):
+            chunk = to_insert[i:i + INSERT_CHUNK_SIZE]
+            stmt = pg_insert(PriceData).values(chunk)
+            stmt = stmt.on_conflict_do_nothing(
+                constraint="uq_price_data_symbol_exchange_segment_date_version"
+            )
+            await db.execute(stmt)
 
     return written_count
 
