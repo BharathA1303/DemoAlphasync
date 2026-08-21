@@ -121,11 +121,18 @@ class DelayedFeedProvider(MarketProvider):
 
     async def health(self) -> ProviderHealth:
         uptime = (datetime.now(timezone.utc) - self._start_time).total_seconds() if self._start_time else 0.0
+        last_tick_at = None
+        try:
+            from workers.live_feed_ingestion_worker import live_ingestion_worker
+            ts = live_ingestion_worker.last_tick_timestamp
+            last_tick_at = ts.isoformat() if ts else None
+        except Exception:
+            last_tick_at = None
         return ProviderHealth(
             status=self._status,
             provider_name="DelayedFeedProvider (Zebu OAuth)",
             subscribed_symbols=len(self._subscribed_symbols),
-            last_tick_at=datetime.now(timezone.utc).isoformat(),
+            last_tick_at=last_tick_at,
             uptime_seconds=uptime,
         )
 

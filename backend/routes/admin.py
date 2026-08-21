@@ -1498,6 +1498,7 @@ async def get_data_feed_status(
     from models.symbol_master import SymbolMaster
     from workers.live_feed_ingestion_worker import live_ingestion_worker
     from sqlalchemy import select, func
+    from datetime import timezone
 
     config = None
     try:
@@ -1521,8 +1522,22 @@ async def get_data_feed_status(
     except Exception as e:
         logger.warning(f"Worker status query failed: {e}")
 
+    oauth_status = getattr(config, "oauth_connection_status", "disconnected") if config else "disconnected"
+    effective_status = oauth_status
+    if oauth_status == "connected":
+        last_tick_iso = worker_status.get("last_tick_timestamp")
+        is_ticking = False
+        if last_tick_iso:
+            try:
+                last_tick_dt = datetime.fromisoformat(last_tick_iso)
+                is_ticking = (datetime.now(timezone.utc) - last_tick_dt).total_seconds() < 15
+            except Exception:
+                is_ticking = False
+        effective_status = "connected" if is_ticking else "stalled"
+
     return {
-        "connection_status": getattr(config, "oauth_connection_status", "disconnected") if config else "disconnected",
+        "connection_status": effective_status,
+        "oauth_status": oauth_status,
         "client_id": getattr(config, "oauth_client_id", None) if config else None,
         "feed_delay_seconds": getattr(config, "feed_delay_seconds", 300) if config else 300,
         "redis_active_market_hours_only": getattr(config, "redis_active_market_hours_only", True) if config else True,

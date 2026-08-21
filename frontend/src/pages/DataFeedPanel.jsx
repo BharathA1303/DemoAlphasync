@@ -116,6 +116,7 @@ export default function DataFeedPanel() {
   };
 
   const connStatus = status?.connection_status || 'disconnected';
+  const oauthStatus = status?.oauth_status || connStatus;
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6" style={{ color: 'var(--text-primary)' }}>
@@ -158,6 +159,13 @@ export default function DataFeedPanel() {
               {connStatus.toUpperCase()}
             </span>
           </div>
+          {connStatus === 'stalled' && (
+            <p className="text-xs -mt-2" style={{ color: 'var(--text-muted)' }}>
+              OAuth token is valid but no ticks have arrived recently
+              {status?.worker?.last_error ? `: ${status.worker.last_error}` : '.'}
+              {status?.worker?.last_tick_timestamp ? ` Last tick: ${new Date(status.worker.last_tick_timestamp).toLocaleTimeString()}.` : ''}
+            </p>
+          )}
 
           <form onSubmit={handleSaveAndConnect} className="space-y-4">
             {/* Broker Dropdown */}
@@ -242,7 +250,7 @@ export default function DataFeedPanel() {
 
             {/* Action Buttons */}
             <div className="flex items-center justify-end gap-3 pt-2">
-              {connStatus === 'connected' && (
+              {oauthStatus === 'connected' && (
                 <button
                   type="button"
                   onClick={handleDisconnect}
